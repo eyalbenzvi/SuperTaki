@@ -78,6 +78,18 @@ describe('invite links', () => {
     expect(buildInviteUrl({ roomCode: 'TIGER-MANGO-42' }, `${base}?debug=1`)).not.toContain('debug');
   });
 
+  it('keeps the same-browser transport override so the link still works', () => {
+    expect(buildInviteUrl({ roomCode: 'TIGER-MANGO-42' }, `${base}?transport=broadcast`)).toBe(
+      'https://example.github.io/color-rush/?transport=broadcast#/join?room=TIGER-MANGO-42',
+    );
+  });
+
+  it('does not carry an unknown transport value', () => {
+    expect(buildInviteUrl({ roomCode: 'TIGER-MANGO-42' }, `${base}?transport=wat`)).not.toContain(
+      'transport',
+    );
+  });
+
   it('includes a non-derived host id only when needed', () => {
     expect(
       buildInviteUrl({ roomCode: 'TIGER-MANGO-42', hostPeerId: 'crush-tiger-mango-42' }, base),

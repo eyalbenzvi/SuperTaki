@@ -1,0 +1,5 @@
+# Color Rush is meant for private use among people who know each other, so the
+# deployed site asks crawlers to stay out. Delete this file (or replace the rule
+# with `Disallow:`) if you would rather have the page indexed.
+User-agent: *
+Disallow: /

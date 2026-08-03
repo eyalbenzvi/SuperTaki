@@ -250,6 +250,15 @@ requirements, and repository readiness.
 - **fixed — Playwright could not find a browser** in an environment that pre-installs Chromium at a
   fixed path. Added an opt-in `PLAYWRIGHT_CHROMIUM_EXECUTABLE` override, so CI downloads a browser
   as usual while a container with one already present uses it.
+- **fixed — Invite links dropped the `transport` query parameter.** The README documents
+  `?transport=broadcast` for playing on one device, but `buildInviteUrl` cleared the whole query
+  string, so the generated link opened in a second tab tried real WebRTC and failed. The builder
+  now carries a `broadcast` override across (and nothing else, so production links stay clean).
+  Found by building with a sub-path base and playing a real game through the preview server.
+- **verified — A sub-path deployment actually works.** Built with
+  `VITE_BASE_PATH=/color-rush/`, served from that path, and played a two-player game: no 4xx for
+  any asset, no page errors, correct invite URL. This is the classic "blank page after deploying"
+  failure, so it is checked rather than assumed.
 - **verified — Base path resolution.** `actions/configure-pages` reports the real serving path, and
   the workflow normalises it to a Vite `base`. Project pages, user pages and custom domains all work
   with no edit, and renaming the repository needs no change.

@@ -82,8 +82,12 @@ Building locally for a project page:
 
 ```bash
 VITE_BASE_PATH=/color-rush/ npm run build
-npm run preview      # note: preview serves at / regardless, which is fine for a smoke test
+VITE_BASE_PATH=/color-rush/ npm run preview   # serves at http://localhost:4173/color-rush/
 ```
+
+Pass the variable to `preview` as well: `vite.config.ts` reads it when the config loads, so
+without it the preview server would serve the sub-path build from `/` and every asset would
+404 — which is exactly the failure this check is meant to catch.
 
 If you rename the repository, nothing needs changing — the next deploy picks up the new path.
 

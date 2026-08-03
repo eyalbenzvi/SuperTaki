@@ -13,7 +13,7 @@ Date of this run: after the review passes recorded in [review-notes.md](review-n
 | `npm run format:check`  | ✅ pass — Prettier clean across source, tests and docs               |
 | `npm run lint`          | ✅ pass — 0 errors, 0 warnings (ESLint, type-aware rules)            |
 | `npm run typecheck`     | ✅ pass — TypeScript strict, project references, 0 errors            |
-| `npm test`              | ✅ **439 tests in 28 files** pass                                    |
+| `npm test`              | ✅ **441 tests in 28 files** pass                                    |
 | `npm run test:coverage` | ✅ pass — thresholds met (below)                                     |
 | `npm run build`         | ✅ pass — `dist/` ≈ 457 kB JS (132 kB gzip), 17 kB CSS (4.2 kB gzip) |
 | `npm run test:e2e`      | ✅ **40 tests** pass (20 scenarios × desktop + mobile)               |
@@ -55,14 +55,14 @@ Exact counts per file (from `vitest --reporter=json`):
 ```
  121  tests/unit/engine/*         deck, prng, setup, matching, commands, specialCards,
                                   taki, drawPile, win, views
- 111  tests/unit/network/*        protocol, envelope, roomCode, sessions, clientSession
+ 113  tests/unit/network/*        protocol, envelope, roomCode, sessions, clientSession
   54  tests/unit/state/*          persistence, selectors, storeFlow
   36  tests/unit/lib/*            sanitize, storage, misc (ids, logger, share)
   21  tests/unit/ui/*             cardText, eventText
   14  tests/unit/i18n.test.ts     dictionary parity and interpolation
   82  tests/component/*           landing, forms, lobby, game, gameOver
  ----
- 439  total
+ 441  total
 ```
 
 ### Unit — game engine (`tests/unit/engine/`, 121 tests)
@@ -80,14 +80,14 @@ Exact counts per file (from `vitest --reporter=json`):
 - **Views**: public state exposes counts only, private hand isolation, standings with ties, rule context parity between host and client.
 - **Immutability**: input state is asserted unchanged after every command; the version increments exactly once.
 
-### Unit — network (`tests/unit/network/`, 111 tests)
+### Unit — network (`tests/unit/network/`, 113 tests)
 
 - **Schema validation**: every message type accepted; primitives, arrays, `null`, missing envelope fields, unknown types, bad payloads, over-long names, oversized and cyclic messages all rejected with the right code.
 - **Direction**: a host-only message on the host's inbound path is rejected, and vice versa.
 - **Extra fields**: unknown payload keys are stripped, not trusted.
 - **Envelope**: schema-valid output, unique ids across 200 messages, injectable clock.
 - **De-duplication**: repeats dropped, LRU eviction at capacity, reset.
-- **Room codes**: generation validity and variety, no repeated word, normalisation of sloppy input, validation, peer-id derivation, invite build/parse round trip, invalid host override ignored.
+- **Room codes**: generation validity and variety, no repeated word, normalisation of sloppy input, validation, peer-id derivation, invite build/parse round trip, invalid host override ignored, transport override preserved.
 - **Sessions over a mock transport** (32 tests): seating, name de-duplication, hostile-name sanitising, room full, player limits, table language, kicking, leaving, host departure, start requirements, private deals, public card counts, shared events, host and client actions, out-of-turn rejection, unknown card, playing a card you do not hold, late joins refused, reconnection with hand restore, wrong/unknown resume rejection, **a complete round played to a winner**, play-again voting and a fresh deal with continuing versions.
 - **Hostile traffic**: malformed messages, protocol mismatch, wrong room, replay, duplicate connections, actions from a peer that never joined.
 - **Client behaviour** (22 tests): join handshake, fail-fast on an absent room, stale snapshot dropped, equal version accepted, another player's hand ignored, out-of-order hand dropped, replay dropped, wrong room ignored, protocol mismatch reported, malformed ignored, ping/pong, event forwarding, kick and host-closed handling, no auto-retry after a definitive rejection, manual retry, intents carry no player id, leave announced, idempotent destroy.
@@ -132,6 +132,16 @@ WebRTC is covered by the manual checklist below.
 ## Manual test checklist
 
 Performed against the production build. WebRTC items require two devices.
+
+### Deployment shape
+
+- [x] Built with `VITE_BASE_PATH=/color-rush/` and served from that sub-path: no 4xx for any
+      asset, no page errors, a room created and joined, and both players dealt 8 cards.
+      This is the "blank page after deploying" failure mode, checked directly.
+- [x] The generated invite link carries the sub-path (`/color-rush/#/join?room=…`).
+- [x] `dist/` contains `.nojekyll` and `robots.txt` from `public/`, and the workflow adds
+      `404.html`.
+- [x] Built with no base override and served from `/`: identical behaviour.
 
 ### Connectivity (real WebRTC)
 
@@ -244,7 +254,12 @@ Each of these was found by testing, not by inspection, and each is now covered b
    below the contrast floor in dark mode. Now 0.82 with no desaturation; the ring and the real
    `disabled` state carry the meaning.
 9. **A seat-less viewer saw a truncated table.** Fixed to show all players in seat order.
-10. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
+10. **Invite links dropped the transport override.** In same-browser mode
+    (`?transport=broadcast`, the documented way to play on one device) the generated link
+    stripped the parameter, so opening it in a second tab tried real WebRTC and could not reach
+    the host. The link now carries a `transport=broadcast` override across, and nothing else.
+    Found by driving a sub-path deployment end to end.
+11. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
     named "Play Red 5", so it failed whenever the hand held a red card. Now scoped to the dialog
     with an exact match; verified stable over repeated runs.
 
@@ -273,7 +288,7 @@ Inherent to the architecture, not defects. All are surfaced to players in the UI
 | Gate                              | Status                  |
 | --------------------------------- | ----------------------- |
 | Formatting, lint, typecheck       | ✅                      |
-| Unit, component, end-to-end tests | ✅ 439 + 40             |
+| Unit, component, end-to-end tests | ✅ 441 + 40             |
 | Coverage thresholds               | ✅                      |
 | Production build                  | ✅                      |
 | Dependency audit                  | ✅ 0 vulnerabilities    |

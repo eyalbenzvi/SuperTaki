@@ -132,7 +132,11 @@ export interface InviteDetails {
  */
 export function buildInviteUrl(details: InviteDetails, baseUrl: string): string {
   const url = new URL(baseUrl);
-  url.search = '';
+  // Carry the transport override across, so an invite generated in
+  // same-browser mode still works when opened in another tab. In production the
+  // parameter is absent and the link stays clean.
+  const transport = url.searchParams.get('transport');
+  url.search = transport === 'broadcast' ? `?transport=${transport}` : '';
   const params = new URLSearchParams({ room: details.roomCode });
   const derived = hostPeerIdForRoom(details.roomCode);
   if (details.hostPeerId && details.hostPeerId !== derived) {

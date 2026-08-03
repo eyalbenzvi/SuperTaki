@@ -68,13 +68,14 @@ jobs:
           VITE_ICE_SERVERS: ${{ vars.VITE_ICE_SERVERS }}
         run: npm run build
 
-      - name: Add SPA fallback and disable Jekyll
+      - name: Add SPA fallback
         run: |
           # GitHub Pages cannot rewrite unknown paths, so a copy of index.html
           # is served as 404.html. Routing itself uses the URL hash, so this is
-          # only a safety net for mistyped paths.
+          # only a safety net for mistyped paths. (`.nojekyll` and `robots.txt`
+          # come from `public/`, which Vite copies verbatim.)
           cp dist/index.html dist/404.html
-          touch dist/.nojekyll
+          test -f dist/.nojekyll
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
