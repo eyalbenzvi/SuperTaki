@@ -135,16 +135,16 @@ runtime environment variables.
 
 ## Deploying to GitHub Pages
 
-Short version: **push to `main` and wait.**
+1. **Enable Pages once, by hand.** Repository → **Settings** → **Pages** → **Build and
+   deployment** → **Source** → **GitHub Actions**. This step cannot be automated: the workflow's
+   `GITHUB_TOKEN` is allowed to _deploy_ to Pages but not to _create_ the Pages site.
+2. **Push to `main`.** The `Deploy to GitHub Pages` workflow builds and publishes on every push
+   to `main`, and on manual dispatch from the Actions tab.
 
-The `Deploy to GitHub Pages` workflow runs on every push to `main` (and on manual dispatch). It
-declares the permissions Pages needs (`pages: write`, `id-token: write`) and enables Pages on the
-first run, so there is no setting to flip. The finished URL appears in the run summary and under
-**Settings → Pages** — `https://<user>.github.io/<repo>/` for a project page.
-
-If your organisation blocks the API call that enables Pages, set **Settings → Pages → Source** to
-**GitHub Actions** once, by hand. Full details, including custom domains and troubleshooting, are
-in [docs/deployment.md](docs/deployment.md).
+The finished URL appears in the run summary and under Settings → Pages —
+`https://<user>.github.io/<repo>/` for a project page. Until step 1 is done the workflow fails
+with `Get Pages site failed`, which is the reminder to do it. Full details, including custom
+domains and troubleshooting, are in [docs/deployment.md](docs/deployment.md).
 
 ## Configuring the base path
 

@@ -264,9 +264,12 @@ Each of these was found by testing, not by inspection, and each is now covered b
     `127.0.0.1`; the run died with `Timed out waiting 120000ms from config.webServer`. The
     server is now bound explicitly with `--host 127.0.0.1`. Found by reading the first real CI
     run — the suite had only ever been run locally, where `localhost` resolves to IPv4.
-12. **The Pages deploy required a manual setting.** The first run failed with
-    `Get Pages site failed`. `actions/configure-pages` now runs with `enablement: true`, so the
-    workflow turns Pages on itself.
+12. **The Pages deploy requires Pages to be enabled once, by hand — confirmed, not assumed.**
+    The first run failed with `Get Pages site failed`. Automating it with
+    `enablement: true` was tried and refused: `Resource not accessible by integration` — the
+    default `GITHUB_TOKEN` may deploy to an existing Pages site but not create one. The setting
+    was reverted, because it replaces an actionable message with a confusing permissions error.
+    The README and deployment guide state the manual step plainly.
 13. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
     named "Play Red 5", so it failed whenever the hand held a red card. Now scoped to the dialog
     with an exact match; verified stable over repeated runs.

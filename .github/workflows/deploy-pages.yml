@@ -33,14 +33,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Note: `enablement: true` looks tempting here, but the default GITHUB_TOKEN
+      # is not allowed to *create* a Pages site ("Resource not accessible by
+      # integration"), and setting it replaces the clear "Pages is not enabled"
+      # message with a confusing permissions error. Pages has to be switched on
+      # once by hand — see docs/deployment.md.
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
-        with:
-          # Turn Pages on (with GitHub Actions as the source) the first time this
-          # runs, so no manual repository setting is needed. Requires the
-          # `pages: write` permission granted above.
-          enablement: true
 
       - name: Resolve base path
         id: base

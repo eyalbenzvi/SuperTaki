@@ -8,15 +8,15 @@ artifact, publish. The repository already contains a workflow that does all of i
 1. **Push the repository to GitHub** (any visibility; Pages works on public repositories on
    every plan, and on private repositories on paid plans).
 
-2. **Nothing to click — the workflow enables Pages itself.**
-   `actions/configure-pages` runs with `enablement: true`, so the first deploy turns Pages on
-   and sets the source to **GitHub Actions** using the `pages: write` permission the workflow
-   already holds.
+2. **Enable Pages.**
+   Repository → **Settings** → **Pages** → **Build and deployment** → **Source**:
+   choose **GitHub Actions**.
 
-   If you would rather do it by hand (or the API call is blocked by an organisation policy):
-   Repository → **Settings** → **Pages** → **Build and deployment** → **Source** → **GitHub
-   Actions**. Do _not_ pick "Deploy from a branch" — that would serve the raw source instead of
-   the build.
+   This is the only manual step, and it genuinely cannot be automated. Setting
+   `enablement: true` on `actions/configure-pages` was tried and refused with
+   `Resource not accessible by integration` — the default `GITHUB_TOKEN` may deploy to an
+   existing Pages site but not create one. Do _not_ pick "Deploy from a branch" either; that
+   would serve the raw source instead of the build.
 
 3. **Check Actions permissions** (usually already correct).
    Settings → **Actions** → **General** → **Workflow permissions**: "Read repository contents
@@ -41,10 +41,9 @@ artifact, publish. The repository already contains a workflow that does all of i
 That is the whole setup. There is nothing to configure per environment, no secret to add and no
 service to sign up for.
 
-> The very first push before this fix was in place failed with
-> `Get Pages site failed … verify that the repository has Pages enabled`. That is what
-> `enablement: true` now prevents. If you still see it, enable Pages manually as described in
-> step 2.
+> Until step 2 is done, the workflow fails at the "Configure Pages" step with
+> `Get Pages site failed … verify that the repository has Pages enabled`. That message is the
+> reminder; nothing else is wrong. Re-run the workflow (or push again) once Pages is on.
 
 ## What the workflow does
 

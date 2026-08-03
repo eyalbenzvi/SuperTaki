@@ -265,10 +265,12 @@ requirements, and repository readiness.
   `Timed out waiting 120000ms from config.webServer`. Now bound explicitly with
   `--host 127.0.0.1`. This one only surfaced by reading the first real CI run: locally
   `localhost` resolves to IPv4, so the suite had always passed.
-- **fixed — The Pages deploy needed a manual repository setting.**
-  `actions/configure-pages` now runs with `enablement: true`, so the first deploy turns Pages on
-  using the `pages: write` permission it already has, instead of failing with
-  `Get Pages site failed`.
+- **accepted — Pages must be enabled once by hand, and that is not automatable.** The first
+  deploy failed with `Get Pages site failed`. Adding `enablement: true` to
+  `actions/configure-pages` was tried and refused with
+  `Resource not accessible by integration`: the default `GITHUB_TOKEN` may deploy to an existing
+  Pages site but may not create one. The setting was reverted, since it trades an actionable
+  error message for a confusing permissions one. Documented as a required first step instead.
 - **verified — Base path resolution.** `actions/configure-pages` reports the real serving path, and
   the workflow normalises it to a Vite `base`. Project pages, user pages and custom domains all work
   with no edit, and renaming the repository needs no change.
