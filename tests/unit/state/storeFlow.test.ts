@@ -88,7 +88,7 @@ describe('creating a room through the store', () => {
   it('does not store resume metadata for the host', async () => {
     await store().createRoom({ name: 'דנה', maxPlayers: 2, tableLanguage: 'he' });
     expect(store().resumable).toBeNull();
-    expect(localStorage.getItem('colorRush:resumableRoom')).toBeNull();
+    expect(localStorage.getItem('superTaki:resumableRoom')).toBeNull();
   });
 
   it('retries with a new room code when the first one is taken', async () => {
@@ -287,7 +287,7 @@ describe('joining a room through the store', () => {
     expect(state.hand).toEqual([]);
     expect(state.feed).toEqual([]);
     expect(state.resumable).toBeNull();
-    expect(localStorage.getItem('colorRush:resumableRoom')).toBeNull();
+    expect(localStorage.getItem('superTaki:resumableRoom')).toBeNull();
     host.destroy('leftVoluntarily');
   });
 });
@@ -296,32 +296,22 @@ describe('preferences and navigation', () => {
   it('persists language and theme and applies them to the document', () => {
     store().setLanguage('en');
     expect(document.documentElement.dir).toBe('ltr');
-    expect(localStorage.getItem('colorRush:language')).toBe('en');
+    expect(localStorage.getItem('superTaki:language')).toBe('en');
 
     store().setTheme('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
-    expect(localStorage.getItem('colorRush:theme')).toBe('dark');
+    expect(localStorage.getItem('superTaki:theme')).toBe('dark');
   });
 
   it('sanitises and persists the display name', () => {
     store().setDisplayName('  אלי  ');
     expect(store().displayName).toBe('אלי');
-    expect(localStorage.getItem('colorRush:displayName')).toBe('אלי');
-  });
-
-  it('returns from the rules page to wherever it was opened', () => {
-    store().goTo('create');
-    store().openRules();
-    expect(store().screen).toBe('rules');
-
-    store().openRules();
-    store().closeRules();
-    expect(store().screen).toBe('create');
+    expect(localStorage.getItem('superTaki:displayName')).toBe('אלי');
   });
 
   it('forgets stored resume metadata on request', () => {
     localStorage.setItem(
-      'colorRush:resumableRoom',
+      'superTaki:resumableRoom',
       JSON.stringify({
         roomCode: TEST_ROOM,
         hostPeerId: hostPeerIdForRoom(TEST_ROOM),

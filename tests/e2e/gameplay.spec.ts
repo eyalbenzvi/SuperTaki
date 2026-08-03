@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { BROADCAST, createRoom, joinRoom, openApp } from './helpers.ts';
 
 /**
@@ -8,10 +8,32 @@ import { BROADCAST, createRoom, joinRoom, openApp } from './helpers.ts';
  * Taki sequence when nothing else is legal, otherwise draw. This exercises long
  * chains of real host-validated commands — including special cards, Taki
  * sequences and draw-pile recycling — and ends on the game-over screen.
+ *
+ * The budget is generous: the 124-card deck, with +2 runs inflating hands,
+ * makes for long rounds.
  */
-const MAX_ACTIONS = 400;
+const MAX_ACTIONS = 900;
+
+/*
+ * Both players are tabs in one browser, so one of them is always in the
+ * background — and Chromium stops firing `requestAnimationFrame` there.
+ * Playwright's actionability check waits on two animation frames, so a click on
+ * a background tab would wait for ever even though the element is perfectly
+ * clickable. Reading the DOM is unaffected, so only the clicks need this.
+ */
+async function clickInForeground(page: Page, locator: Locator): Promise<void> {
+  await page.bringToFront();
+  await locator.click();
+}
 
 async function takeOneAction(page: Page): Promise<boolean> {
+  // An open +3 suspends the turn order, so this comes before the turn check.
+  const breakPrompt = page.getByRole('button', { name: 'Let it through' });
+  if (await breakPrompt.isVisible().catch(() => false)) {
+    await clickInForeground(page, breakPrompt);
+    return true;
+  }
+
   const onTurn = await page
     .getByText('Your turn')
     .isVisible()
@@ -22,7 +44,7 @@ async function takeOneAction(page: Page): Promise<boolean> {
 
   const playable = page.locator('.hand .card--playable').first();
   if (await playable.count()) {
-    await playable.click();
+    await clickInForeground(page, playable);
     const picker = page.getByRole('dialog');
     if (await picker.isVisible().catch(() => false)) {
       await picker.getByRole('button', { name: 'Green', exact: true }).click();
@@ -32,20 +54,20 @@ async function takeOneAction(page: Page): Promise<boolean> {
 
   const closeTaki = page.getByRole('button', { name: 'Close Taki' });
   if (await closeTaki.isVisible().catch(() => false)) {
-    await closeTaki.click();
+    await clickInForeground(page, closeTaki);
     return true;
   }
 
   const drawPile = page.getByRole('button', { name: /Draw pile, \d+ cards/ });
   if (await drawPile.isEnabled().catch(() => false)) {
-    await drawPile.click();
+    await clickInForeground(page, drawPile);
     return true;
   }
   return false;
 }
 
 test.describe('a complete round', () => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
 
   test('plays to a winner and offers another round', async ({ context }) => {
     const host = await context.newPage();

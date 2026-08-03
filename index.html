@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="Color Rush - a private, zero-cost peer-to-peer colour-card game that runs entirely in the browser."
+      content="Super Taki - a private, zero-cost peer-to-peer Taki game that runs entirely in the browser."
     />
     <!--
       Content Security Policy.
@@ -34,12 +34,16 @@
                connect-src 'self' https://0.peerjs.com wss://0.peerjs.com https://*.peerjs.com wss://*.peerjs.com stun: turn: turns:;
                manifest-src 'self'"
     />
-    <link rel="icon" href="data:," />
-    <title>Color Rush</title>
+    <!-- The wordmark's four suit colours, inline so the icon costs no request. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314141b'/%3E%3Crect x='4' y='4' width='11' height='11' rx='2.5' fill='%23e4002b'/%3E%3Crect x='17' y='4' width='11' height='11' rx='2.5' fill='%23ffcc00'/%3E%3Crect x='4' y='17' width='11' height='11' rx='2.5' fill='%2300843d'/%3E%3Crect x='17' y='17' width='11' height='11' rx='2.5' fill='%230057b8'/%3E%3C/svg%3E"
+    />
+    <title>Super Taki</title>
   </head>
   <body>
     <div id="root"></div>
-    <noscript>Color Rush needs JavaScript to run.</noscript>
+    <noscript>Super Taki needs JavaScript to run.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

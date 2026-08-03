@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 const FOCUSABLE = [
   'a[href]',
@@ -25,6 +25,17 @@ export function useFocusTrap(
   active: boolean,
   onEscape?: () => void,
 ): void {
+  /*
+   * Held in a ref rather than a dependency. Callers pass an inline arrow, so a
+   * dependency would tear the trap down and rebuild it on every render of the
+   * screen behind the dialog — which moves focus twice each time, scrolling
+   * both the dialog and whatever was focused before it opened.
+   */
+  const escapeRef = useRef(onEscape);
+  useEffect(() => {
+    escapeRef.current = onEscape;
+  }, [onEscape]);
+
   useEffect(() => {
     if (!active) {
       return;
@@ -39,10 +50,11 @@ export function useFocusTrap(
     initial.focus();
 
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && onEscape) {
+      const escape = escapeRef.current;
+      if (event.key === 'Escape' && escape) {
         event.stopPropagation();
         event.preventDefault();
-        onEscape();
+        escape();
         return;
       }
       if (event.key !== 'Tab') {
@@ -71,5 +83,5 @@ export function useFocusTrap(
       document.removeEventListener('keydown', onKeyDown, true);
       previouslyFocused?.focus?.();
     };
-  }, [active, containerRef, onEscape]);
+  }, [active, containerRef]);
 }

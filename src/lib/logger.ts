@@ -6,7 +6,7 @@
  * log nothing unless a user explicitly opts in while troubleshooting.
  */
 
-const SESSION_FLAG = 'colorRush:debug';
+const SESSION_FLAG = 'superTaki:debug';
 
 function readFlag(): boolean {
   if (typeof window === 'undefined') {
@@ -47,7 +47,7 @@ export interface Logger {
 }
 
 export function createLogger(scope: string): Logger {
-  const tag = `[color-rush:${scope}]`;
+  const tag = `[super-taki:${scope}]`;
   return {
     debug(message, ...details) {
       if (enabled) {

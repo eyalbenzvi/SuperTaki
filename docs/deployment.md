@@ -78,7 +78,7 @@ loads but the JavaScript and CSS 404 — the classic "blank page after deploying
 
 | Where the site is served                                                           | Correct `base` |
 | ---------------------------------------------------------------------------------- | -------------- |
-| `https://user.github.io/color-rush/` (project page)                                | `/color-rush/` |
+| `https://user.github.io/super-taki/` (project page)                                | `/super-taki/` |
 | `https://user.github.io/` (user or organisation page, repo named `user.github.io`) | `/`            |
 | `https://cards.example.com/` (custom domain)                                       | `/`            |
 
@@ -95,8 +95,8 @@ maps an empty value to `/`.
 Building locally for a project page:
 
 ```bash
-VITE_BASE_PATH=/color-rush/ npm run build
-VITE_BASE_PATH=/color-rush/ npm run preview   # serves at http://localhost:4173/color-rush/
+VITE_BASE_PATH=/super-taki/ npm run build
+VITE_BASE_PATH=/super-taki/ npm run preview   # serves at http://localhost:4173/super-taki/
 ```
 
 Pass the variable to `preview` as well: `vite.config.ts` reads it when the config loads, so
@@ -111,7 +111,7 @@ GitHub Pages cannot rewrite unknown paths to `index.html`, so this app uses **ha
 invite links look like
 
 ```
-https://user.github.io/color-rush/#/join?room=TIGER-MANGO-42
+https://user.github.io/super-taki/#/join?room=TIGER-MANGO-42
 ```
 
 Everything after `#` never reaches the server, so Pages always serves `index.html` and the app

@@ -1,5 +1,12 @@
 # QA report
 
+> **Note.** This document records the review of the pre-rebrand version of this app, when
+> it was called Color Rush and shipped a 110-card deck and an in-app rules page. The rebrand
+> to Super Taki added the +2, King, +3 and +3 Breaker cards, dropped the rules page, and
+> changed Super Taki to take the leading colour instead of choosing one. Findings about the
+> parts that did not change still stand; anything below that mentions the old name, the old
+> deck size or the rules page describes the version that was reviewed, not the current one.
+
 **Status: ready to deploy.** All automated checks pass, and the issues found during testing
 and review were fixed rather than documented as quirks. Remaining limitations are inherent to
 the zero-cost architecture and are listed at the end.

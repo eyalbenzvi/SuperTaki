@@ -357,17 +357,102 @@
 
 .topbar__brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
-  font-weight: 800;
 }
 
-/* The landing hero already carries the subtitle; below this width it is noise. */
-@media (max-width: 519px) {
-  .topbar__subtitle {
-    display: none;
-  }
+/* Wordmark ----------------------------------------------------------------- */
 
+/*
+ * SUPER over TAKI, the four letters set two-by-two as extruded blocks in the
+ * suit colours. Everything scales from one size token, so the same markup
+ * serves the landing hero and the bar.
+ */
+.brand {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--brand-size) * 0.14);
+  line-height: 1;
+}
+
+.brand--md {
+  --brand-size: clamp(3rem, 16vw, 4.4rem);
+}
+
+/*
+ * In the bar there is no room for a stacked mark: it lies on its side, and the
+ * four letters run in one line rather than two by two.
+ */
+.brand--sm {
+  --brand-size: 1.6rem;
+
+  flex-direction: row;
+  align-items: center;
+  gap: calc(var(--brand-size) * 0.36);
+}
+
+.brand--sm .brand__word {
+  grid-template-columns: repeat(4, auto);
+}
+
+.brand__super {
+  font-size: max(0.6rem, calc(var(--brand-size) * 0.26));
+  font-weight: 900;
+  letter-spacing: 0.26em;
+  /* The tracking pushes the last letter out; pad it back to look centred. */
+  padding: 0.3em 0.65em 0.3em 0.91em;
+  border-radius: var(--radius-pill);
+  background: var(--card-outline);
+  color: var(--card-face);
+}
+
+.brand__word {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: calc(var(--brand-size) * 0.06);
+  /* The mark reads left-to-right in either document direction. */
+  direction: ltr;
+}
+
+/*
+ * The block letters: a solid fill, a dark outline behind it via `paint-order`,
+ * and a hard offset shadow for the extruded side — the same recipe the card
+ * symbols use, expressed in text instead of SVG.
+ */
+.brand__tile {
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--brand-size) * 0.66);
+  block-size: calc(var(--brand-size) * 0.7);
+  font-size: calc(var(--brand-size) * 0.72);
+  font-weight: 900;
+  color: var(--tile);
+  -webkit-text-stroke: calc(var(--brand-size) * 0.045) var(--card-outline);
+  paint-order: stroke fill;
+  text-shadow:
+    calc(var(--brand-size) * 0.035) calc(var(--brand-size) * 0.04) 0 var(--tile-deep),
+    calc(var(--brand-size) * 0.055) calc(var(--brand-size) * 0.06) 0 var(--card-outline);
+}
+
+.brand__tile[data-slot='0'] {
+  --tile: var(--card-red);
+  --tile-deep: var(--card-red-deep);
+}
+.brand__tile[data-slot='1'] {
+  --tile: var(--card-yellow);
+  --tile-deep: var(--card-yellow-deep);
+}
+.brand__tile[data-slot='2'] {
+  --tile: var(--card-green);
+  --tile-deep: var(--card-green-deep);
+}
+.brand__tile[data-slot='3'] {
+  --tile: var(--card-blue);
+  --tile-deep: var(--card-blue-deep);
+}
+
+@media (max-width: 519px) {
   .segmented__option {
     padding-inline: var(--space-2);
     font-size: 0.825rem;

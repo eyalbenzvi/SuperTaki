@@ -1,92 +1,215 @@
 /*
- * Card visuals — original CSS/SVG shapes only, no external assets.
- * Information is never conveyed by colour alone: every card also shows a
- * symbol and a text label, and carries an explicit accessible name.
+ * Card visuals — CSS and inline SVG only, no external assets.
+ *
+ * A card is white stock with its symbol drawn on it as a chunky coloured
+ * block, the way the printed deck looks: outlined, extruded, and repeated
+ * small in two opposite corners. Information is never conveyed by colour
+ * alone — every card also shows a distinct shape and, for action cards, a
+ * word, and carries an explicit accessible name.
  */
 
 .card {
   --card-width: 4.5rem;
-  --card-bg: var(--surface-raised);
-  --card-ink: var(--text);
+  /* Suit colours, overridden per card below. */
+  --glyph: var(--card-outline);
+  --glyph-deep: var(--card-label);
 
   position: relative;
   inline-size: var(--card-width);
   aspect-ratio: 2 / 3;
-  border-radius: var(--radius-md);
-  border: 2px solid rgb(0 0 0 / 0.18);
-  background: var(--card-bg);
-  color: var(--card-ink);
-  box-shadow: var(--shadow-sm);
+  border-radius: calc(var(--card-width) * 0.11);
+  background: var(--card-face);
+  color: var(--card-label);
+  /* A hairline keeps white stock visible against a light table. */
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.3),
+    var(--shadow-sm);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: var(--space-1);
+  gap: calc(var(--card-width) * 0.02);
+  padding: calc(var(--card-width) * 0.09);
   flex: none;
   overflow: hidden;
 }
 
 .card--red {
-  --card-bg: var(--card-red);
-  --card-ink: var(--card-red-ink);
+  --glyph: var(--card-red);
+  --glyph-deep: var(--card-red-deep);
 }
 .card--blue {
-  --card-bg: var(--card-blue);
-  --card-ink: var(--card-blue-ink);
+  --glyph: var(--card-blue);
+  --glyph-deep: var(--card-blue-deep);
 }
 .card--green {
-  --card-bg: var(--card-green);
-  --card-ink: var(--card-green-ink);
+  --glyph: var(--card-green);
+  --glyph-deep: var(--card-green-deep);
 }
 .card--yellow {
-  --card-bg: var(--card-yellow);
-  --card-ink: var(--card-yellow-ink);
-}
-.card--wild {
-  --card-ink: var(--card-wild-ink);
-  background: linear-gradient(140deg, var(--card-wild-a) 0%, var(--card-wild-b) 100%);
+  --glyph: var(--card-yellow);
+  --glyph-deep: var(--card-yellow-deep);
 }
 
+/*
+ * Colourless cards carry all four suit colours, which is what marks them out
+ * in the printed deck as "any colour": a band top and bottom, and — where the
+ * symbol is built from four parts — one colour per part.
+ */
+.card--wild {
+  --glyph: var(--card-red);
+  --glyph-deep: var(--card-red-deep);
+}
+
+/* A crown is gold wherever else it appears; no reason for it not to be here. */
+.card[data-kind='king'] {
+  --glyph: var(--card-yellow);
+  --glyph-deep: var(--card-yellow-deep);
+}
+
+.card--wild::before,
+.card--wild::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  block-size: max(3px, calc(var(--card-width) * 0.055));
+  background: linear-gradient(
+    to right,
+    var(--card-red) 0 25%,
+    var(--card-yellow) 25% 50%,
+    var(--card-green) 50% 75%,
+    var(--card-blue) 75% 100%
+  );
+}
+
+.card--wild::before {
+  inset-block-start: 0;
+}
+
+.card--wild::after {
+  inset-block-end: 0;
+  transform: scaleX(-1);
+}
+
+/* The back: a dense two-colour weave on the same white stock. */
 .card--back {
-  --card-ink: #ffffff;
+  color: var(--card-blue-deep);
   background:
-    repeating-linear-gradient(45deg, transparent 0 6px, rgb(255 255 255 / 0.08) 6px 12px),
-    linear-gradient(140deg, var(--card-back-a) 0%, var(--card-back-b) 100%);
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 3px,
+      color-mix(in srgb, var(--card-red) 55%, transparent) 3px 6px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0 3px,
+      color-mix(in srgb, var(--card-blue) 55%, transparent) 3px 6px
+    ),
+    var(--card-face);
+}
+
+/* Symbols ------------------------------------------------------------------ */
+
+.glyph {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+}
+
+/*
+ * `paint-order: stroke` puts the outline behind the fill, so a thick outline
+ * thickens the shape instead of eating into it. That is what gives the symbol
+ * its printed, moulded weight.
+ */
+.glyph__depth,
+.glyph__face {
+  stroke: var(--card-outline);
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+.glyph__depth {
+  fill: var(--glyph-deep);
+  stroke-width: 2.6;
+}
+
+.glyph__face {
+  fill: var(--glyph);
+  stroke-width: 2.2;
+}
+
+/* Parts of a symbol that take a suit colour each, on colourless cards. */
+.glyph__slot--0 {
+  fill: var(--card-red);
+}
+.glyph__slot--1 {
+  fill: var(--card-yellow);
+}
+.glyph__slot--2 {
+  fill: var(--card-green);
+}
+.glyph__slot--3 {
+  fill: var(--card-blue);
+}
+
+.glyph__depth .glyph__slot--0 {
+  fill: var(--card-red-deep);
+}
+.glyph__depth .glyph__slot--1 {
+  fill: var(--card-yellow-deep);
+}
+.glyph__depth .glyph__slot--2 {
+  fill: var(--card-green-deep);
+}
+.glyph__depth .glyph__slot--3 {
+  fill: var(--card-blue-deep);
 }
 
 .card__glyph {
-  font-size: calc(var(--card-width) * 0.42);
-  font-weight: 800;
-  line-height: 1;
+  inline-size: calc(var(--card-width) * 0.56);
+  block-size: calc(var(--card-width) * 0.56);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.card__glyph svg {
-  width: calc(var(--card-width) * 0.46);
-  height: calc(var(--card-width) * 0.46);
-  display: block;
-}
-
 .card__label {
-  /* Never smaller than ~11px, whatever the card size. */
-  font-size: max(0.7rem, calc(var(--card-width) * 0.15));
-  font-weight: 700;
+  /* Never smaller than ~10px, whatever the card size. */
+  font-size: max(0.625rem, calc(var(--card-width) * 0.135));
+  font-weight: 800;
   text-align: center;
-  line-height: 1.1;
+  line-height: 1.05;
   max-inline-size: 100%;
   overflow-wrap: anywhere;
+  color: var(--card-label);
 }
 
+/* The corner index, repeated upside down in the far corner. */
 .card__corner {
   position: absolute;
-  inset-block-start: 3px;
-  inset-inline-start: 5px;
-  font-size: max(0.7rem, calc(var(--card-width) * 0.16));
-  font-weight: 800;
-  opacity: 0.85;
+  inline-size: calc(var(--card-width) * 0.2);
+  block-size: calc(var(--card-width) * 0.2);
+}
+
+.card__corner--start {
+  inset-block-start: calc(var(--card-width) * 0.055);
+  inset-inline-start: calc(var(--card-width) * 0.06);
+}
+
+.card__corner--end {
+  inset-block-end: calc(var(--card-width) * 0.055);
+  inset-inline-end: calc(var(--card-width) * 0.06);
+  transform: rotate(180deg);
+}
+
+/* A corner is too small for the extrusion to read; flatten it. */
+.card__corner .glyph__depth {
+  display: none;
+}
+
+.card__corner .glyph__face {
+  stroke-width: 3;
 }
 
 /* Sizes -------------------------------------------------------------------- */
@@ -115,26 +238,26 @@ button.card:disabled {
 }
 
 /*
- * "Playable" uses an inset two-tone ring: light inside, dark outside. A single
- * themed colour is invisible on some card faces — a dark ring disappears on the
- * navy card back in light mode, a light one washes out on yellow. The pair reads
- * on every card colour in both themes, and stays distinct from the focus
- * outline, which is drawn outside the box. A card can be both at once.
+ * "Playable" uses an inset ring drawn just inside the card edge: dark against
+ * the white stock, with a white line inboard of it so the ring stays visible
+ * where a symbol runs close to the border. It is drawn inside deliberately —
+ * the focus outline is drawn outside, so a card can carry both at once.
  */
 .card--playable {
   box-shadow:
-    inset 0 0 0 3px rgb(255 255 255 / 0.95),
-    inset 0 0 0 5px rgb(0 0 0 / 0.5),
+    inset 0 0 0 3px var(--card-outline),
+    inset 0 0 0 5px rgb(255 255 255 / 0.95),
+    0 0 0 1px rgb(0 0 0 / 0.3),
     var(--shadow-md);
 }
 
 /*
  * An unplayable card is dimmed only slightly: the legal-card ring and the real
- * `disabled` state carry the meaning, and heavier dimming would push the text
- * on a coloured card below the 4.5:1 contrast floor in dark mode.
+ * `disabled` state carry the meaning, and heavier dimming would wash the
+ * symbols out on a light table.
  */
 .card--dimmed {
-  opacity: 0.82;
+  opacity: 0.8;
 }
 
 button.card--playable:hover,

@@ -68,7 +68,7 @@ describe('logger', () => {
 
     setLoggingEnabled(true);
     log.debug('shown');
-    expect(debug).toHaveBeenCalledWith('[color-rush:test]', 'shown');
+    expect(debug).toHaveBeenCalledWith('[super-taki:test]', 'shown');
     setLoggingEnabled(previous);
   });
 

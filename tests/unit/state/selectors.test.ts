@@ -54,6 +54,9 @@ const publicState: PublicGameState = {
   currentPlayerId: 'b',
   takiMode: null,
   pendingPlus: false,
+  pendingDraw: 0,
+  freePlay: false,
+  plusThree: null,
   winnerId: null,
 };
 
@@ -63,7 +66,6 @@ function state(patch: Partial<AppState> = {}): AppState {
     theme: 'system',
     displayName: 'Ben',
     screen: 'game',
-    screenBeforeRules: 'home',
     role: 'client',
     phase: 'connected',
     busy: false,

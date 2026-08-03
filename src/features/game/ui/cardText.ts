@@ -12,10 +12,14 @@ const COLOR_KEYS = {
 const KIND_KEYS = {
   stop: 'card.stop',
   plus: 'card.plus',
+  plusTwo: 'card.plusTwo',
   direction: 'card.direction',
   taki: 'card.taki',
   superTaki: 'card.superTaki',
   colorChange: 'card.colorChange',
+  king: 'card.king',
+  plusThree: 'card.plusThree',
+  breakPlusThree: 'card.breakPlusThree',
 } as const;
 
 export function colorName(t: Translator, color: CardColor): string {

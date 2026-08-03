@@ -1,5 +1,5 @@
 import type { Card, CardColor } from '../engine/cards.ts';
-import { isWildCard } from '../engine/cards.ts';
+import { requiresColorChoice } from '../engine/cards.ts';
 import { getPlayableCardIds } from '../engine/rules.ts';
 import { computeStandings, playContextFromPublic, type StandingRow } from '../engine/views.ts';
 import type { LobbyPlayer } from '../network/protocol.ts';
@@ -32,16 +32,39 @@ export function isMyTurn(state: AppState): boolean {
   );
 }
 
+/**
+ * Whether the local player holds a +3 Breaker while a +3 is waiting to be
+ * answered. Worked out from the player's own hand, because who holds a breaker
+ * is deliberately never published to the table.
+ */
+export function canBreakPlusThree(state: AppState): boolean {
+  const plusThree = state.publicState?.plusThree;
+  if (!plusThree || plusThree.playerId === state.localPlayerId) {
+    return false;
+  }
+  return state.hand.some((card) => card.kind === 'breakPlusThree');
+}
+
 /** Ids of the cards the local player may legally play right now. */
 export function playableCardIds(state: AppState): readonly string[] {
-  if (!state.publicState || !isMyTurn(state)) {
+  if (!state.publicState) {
+    return [];
+  }
+  // An open +3 suspends the turn order: the only legal card at the table is a
+  // breaker, from whoever holds one.
+  if (state.publicState.plusThree) {
+    return canBreakPlusThree(state)
+      ? state.hand.filter((card) => card.kind === 'breakPlusThree').map((card) => card.id)
+      : [];
+  }
+  if (!isMyTurn(state)) {
     return [];
   }
   return getPlayableCardIds(state.hand, playContextFromPublic(state.publicState));
 }
 
 export function needsColorChoice(card: Card): boolean {
-  return isWildCard(card);
+  return requiresColorChoice(card);
 }
 
 export function activeColor(state: AppState): CardColor | null {

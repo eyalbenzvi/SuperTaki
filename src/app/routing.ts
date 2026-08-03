@@ -5,18 +5,12 @@ import type { Screen } from '../features/game/state/store.ts';
  * Minimal hash-based routing.
  *
  * GitHub Pages cannot rewrite unknown paths to `index.html`, so deep links must
- * live in the fragment. Only two routes need to be addressable: the join flow
- * (invite links) and the rules page.
+ * live in the fragment. Only one route needs to be addressable: the join flow
+ * behind an invite link.
  */
 export function screenFromHash(hash: string): Screen | null {
   const path = hash.replace(/^#\/?/, '').split('?')[0] ?? '';
-  if (path === 'join') {
-    return 'join';
-  }
-  if (path === 'rules') {
-    return 'rules';
-  }
-  return null;
+  return path === 'join' ? 'join' : null;
 }
 
 export function inviteFromHash(hash: string): InviteDetails | null {

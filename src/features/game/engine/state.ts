@@ -23,6 +23,22 @@ export interface TakiModeState {
   readonly openedWithSuperTaki: boolean;
 }
 
+/**
+ * A +3 waiting to be answered.
+ *
+ * Anyone holding a +3 Breaker may play it out of turn to send the three cards
+ * back at whoever played the +3. `awaiting` lists exactly those players, so a
+ * table where nobody holds a breaker resolves the +3 without pausing. It never
+ * leaves the host: the public state only says that a +3 is open, and a client
+ * works out whether it may answer from its own hand.
+ */
+export interface PlusThreeState {
+  /** Player who played the +3. */
+  readonly playerId: PlayerId;
+  /** Players who hold a +3 Breaker and have not answered yet. */
+  readonly awaiting: readonly PlayerId[];
+}
+
 export type GamePhase = 'playing' | 'finished';
 
 /**
@@ -50,6 +66,18 @@ export interface GameState {
    * (or a draw, if they hold nothing legal).
    */
   readonly pendingPlus: boolean;
+  /**
+   * Cards the player to move must draw unless they answer with another +2 or a
+   * King. Grows by two for every +2 added to the run.
+   */
+  readonly pendingDraw: number;
+  /**
+   * Set by a King: the same player plays again and may play anything, whatever
+   * the leading colour or symbol is.
+   */
+  readonly freePlay: boolean;
+  /** Open +3 waiting for the breaker window to close, or `null`. */
+  readonly plusThree: PlusThreeState | null;
   readonly rng: RngState;
   readonly winnerId: PlayerId | null;
   /** Seed the game was created with, kept for reproducibility/debugging. */
@@ -65,7 +93,9 @@ export type GameCommand =
       readonly chosenColor?: CardColor;
     }
   | { readonly type: 'drawCard'; readonly playerId: PlayerId }
-  | { readonly type: 'closeTaki'; readonly playerId: PlayerId };
+  | { readonly type: 'closeTaki'; readonly playerId: PlayerId }
+  /** Declines to answer an open +3 with a +3 Breaker. */
+  | { readonly type: 'passBreak'; readonly playerId: PlayerId };
 
 export type GameCommandType = GameCommand['type'];
 
@@ -87,6 +117,14 @@ export type GameEvent =
   | { readonly type: 'takiClosed'; readonly playerId: PlayerId; readonly cardsPlayed: number }
   | { readonly type: 'colorChosen'; readonly playerId: PlayerId; readonly color: CardColor }
   | { readonly type: 'playerSkipped'; readonly playerId: PlayerId }
+  /** A +2 was added to the run; `total` is what the next player now owes. */
+  | { readonly type: 'drawStacked'; readonly playerId: PlayerId; readonly total: number }
+  /** A King wiped the pending penalty and/or obligation off the table. */
+  | { readonly type: 'effectsCancelled'; readonly playerId: PlayerId }
+  /** A +3 was played and is waiting for a possible breaker. */
+  | { readonly type: 'plusThreePlayed'; readonly playerId: PlayerId }
+  /** A +3 Breaker sent the penalty back at `targetId`. */
+  | { readonly type: 'plusThreeBroken'; readonly playerId: PlayerId; readonly targetId: PlayerId }
   | { readonly type: 'directionChanged'; readonly direction: TurnDirection }
   | { readonly type: 'extraTurn'; readonly playerId: PlayerId }
   | { readonly type: 'turnChanged'; readonly playerId: PlayerId }
@@ -106,6 +144,9 @@ export const REJECTION_CODES = [
   'colorRequired',
   'colorNotAllowed',
   'mustPlayAfterPlus',
+  'mustAnswerDraw',
+  'awaitingBreak',
+  'noPlusThreeOpen',
   'cannotDrawDuringTaki',
   'noTakiOpen',
   'wildNotAllowedInTaki',

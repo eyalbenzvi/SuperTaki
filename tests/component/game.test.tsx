@@ -15,6 +15,9 @@ function situation(options: {
   myTurn?: boolean;
   takiMode?: { color: 'red' | 'blue' | 'green' | 'yellow'; openedWithSuperTaki?: boolean } | null;
   pendingPlus?: boolean;
+  pendingDraw?: number;
+  freePlay?: boolean;
+  plusThree?: { playerId: string } | null;
 }): void {
   const fixture = enterGame({ myTurn: options.myTurn ?? true });
   setState({
@@ -25,6 +28,9 @@ function situation(options: {
       discardTop: options.discardTop,
       activeColor: options.activeColor,
       pendingPlus: options.pendingPlus ?? false,
+      pendingDraw: options.pendingDraw ?? 0,
+      freePlay: options.freePlay ?? false,
+      plusThree: options.plusThree ?? null,
       takiMode: options.takiMode
         ? {
             color: options.takiMode.color,
@@ -49,6 +55,9 @@ const superTaki: Card = { id: 'c5', kind: 'superTaki' };
 const colorChange: Card = { id: 'c6', kind: 'colorChange' };
 const redTaki: Card = { id: 'c7', kind: 'taki', color: 'red' };
 const red9: Card = { id: 'c8', kind: 'number', color: 'red', value: 9 };
+const redPlusTwo: Card = { id: 'c9', kind: 'plusTwo', color: 'red' };
+const king: Card = { id: 'c10', kind: 'king' };
+const breakPlusThree: Card = { id: 'c11', kind: 'breakPlusThree' };
 
 describe('table layout', () => {
   it('shows the opponent face down with a card count, never their cards', () => {
@@ -204,16 +213,26 @@ describe('wild cards and the colour picker', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('asks for a colour for Super Taki too', async () => {
+  it('plays Super Taki without asking, because it keeps the leading colour', async () => {
     const playCard = vi.fn();
     situation({ hand: [superTaki], discardTop: red9, activeColor: 'red' });
     setState({ playCard });
     const { user } = renderApp();
 
     await user.click(screen.getByRole('button', { name: 'הנחת סופר טאקי' }));
-    const dialog = screen.getByRole('dialog');
-    await user.click(within(dialog).getByRole('button', { name: 'אדום' }));
-    expect(playCard).toHaveBeenCalledWith(superTaki.id, 'red');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(playCard).toHaveBeenCalledWith(superTaki.id);
+  });
+
+  it('plays the King without asking either', async () => {
+    const playCard = vi.fn();
+    situation({ hand: [king], discardTop: red9, activeColor: 'red' });
+    setState({ playCard });
+    const { user } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'הנחת מלך' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(playCard).toHaveBeenCalledWith(king.id);
   });
 
   it('can be cancelled without playing anything', async () => {
@@ -360,19 +379,72 @@ describe('rejected moves', () => {
   });
 });
 
-describe('in-game help and leaving', () => {
-  it('opens a compact rules drawer', async () => {
-    enterGame();
+describe('the +2 run, the King and the +3', () => {
+  it('spells out what an outstanding +2 run costs, and offers to pay it', async () => {
+    const drawCard = vi.fn();
+    situation({ hand: [redPlusTwo, blue5], discardTop: red9, activeColor: 'red', pendingDraw: 4 });
+    setState({ drawCard });
     const { user } = renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'חוקים בקצרה' }));
-    const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveAccessibleName('חוקים בקצרה');
-    expect(within(dialog).getByRole('heading', { name: 'רצפי טאקי' })).toBeInTheDocument();
-    // The compact drawer omits the reference sections.
-    expect(within(dialog).queryByRole('heading', { name: 'החבילה (110 קלפים)' })).not.toBeInTheDocument();
+    expect(screen.getByText('מחכים לך 4 קלפים. אפשר לענות בקח 2 או במלך, או לקחת אותם.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'לקיחת 4 קלפים' }));
+    expect(drawCard).toHaveBeenCalled();
   });
 
+  it('offers only the +2 and the King against a pending run', () => {
+    situation({ hand: [redPlusTwo, king, blue5], discardTop: red9, activeColor: 'red', pendingDraw: 2 });
+    renderApp();
+
+    expect(screen.getByRole('button', { name: 'הנחת אדום קח 2' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'הנחת מלך' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'הנחת כחול 5' })).toBeDisabled();
+  });
+
+  it('announces the free turn a King buys', () => {
+    situation({ hand: [blue5], discardTop: red9, activeColor: 'red', freePlay: true, pendingPlus: true });
+    renderApp();
+
+    expect(screen.getByText('המלך ביטל הכול — משחקים שוב, וכל קלף מותר.')).toBeInTheDocument();
+    expect(screen.queryByText('הונח פלוס — חייבים להניח עוד קלף.')).not.toBeInTheDocument();
+  });
+
+  it('lets a holder break an opponent +3, or wave it through', async () => {
+    const playCard = vi.fn();
+    const passBreak = vi.fn();
+    situation({
+      hand: [breakPlusThree, blue5],
+      discardTop: red9,
+      activeColor: 'red',
+      myTurn: false,
+      plusThree: { playerId: GUEST_ID },
+    });
+    setState({ playCard, passBreak });
+    const { user } = renderApp();
+
+    expect(screen.getByText('אלי הניח/ה פלוס 3. שבירה תעביר את שלושת הקלפים אליו/ה.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'שבירת הפלוס 3' }));
+    expect(playCard).toHaveBeenCalledWith(breakPlusThree.id);
+
+    await user.click(screen.getByRole('button', { name: 'לוותר על השבירה' }));
+    expect(passBreak).toHaveBeenCalled();
+  });
+
+  it('just tells everyone else to wait', () => {
+    situation({
+      hand: [blue5],
+      discardTop: red9,
+      activeColor: 'red',
+      myTurn: false,
+      plusThree: { playerId: GUEST_ID },
+    });
+    renderApp();
+
+    expect(screen.getByText('ממתינים לראות אם מישהו שובר את הפלוס 3 של אלי…')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'שבירת הפלוס 3' })).not.toBeInTheDocument();
+  });
+});
+
+describe('leaving a game', () => {
   it('confirms before leaving a game', async () => {
     const leaveRoom = vi.fn();
     enterGame();

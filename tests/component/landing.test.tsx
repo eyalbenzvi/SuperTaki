@@ -6,19 +6,16 @@ import { useAppStore } from '../../src/features/game/state/store.ts';
 beforeEach(resetStore);
 
 describe('landing screen', () => {
-  it('renders the Hebrew title and the three entry points', () => {
+  it('renders the wordmark and the two entry points', () => {
     renderApp();
-    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('קולור ראש');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveAccessibleName('סופר טאקי');
     expect(screen.getByRole('button', { name: 'פתיחת משחק' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'הצטרפות למשחק' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'איך משחקים' })).toBeInTheDocument();
   });
 
-  it('states the connectivity limitation and privacy position up front', () => {
+  it('shows nothing beyond what is needed to start playing', () => {
     renderApp();
-    expect(screen.getByText(/השחקנים מתחברים ישירות/)).toBeInTheDocument();
-    expect(screen.getByText(/אין חשבונות, אין שרתים/)).toBeInTheDocument();
-    expect(screen.getByText(/פרויקט חובבים פרטי ולא רשמי/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
   });
 
   it('switches language and document direction', async () => {
@@ -60,16 +57,6 @@ describe('landing screen', () => {
     const { user } = renderApp();
     await user.click(screen.getByRole('button', { name: 'הצטרפות למשחק' }));
     expect(screen.getByRole('heading', { name: 'הצטרפות למשחק' })).toBeInTheDocument();
-  });
-
-  it('opens the rules page and comes back to where it started', async () => {
-    const { user } = renderApp();
-    await user.click(screen.getByRole('button', { name: 'איך משחקים' }));
-    expect(screen.getByRole('heading', { name: 'איך משחקים קולור ראש' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'רצפי טאקי' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'חזרה' }));
-    expect(screen.getByRole('button', { name: 'פתיחת משחק' })).toBeInTheDocument();
   });
 
   it('offers to rejoin a stored room', async () => {

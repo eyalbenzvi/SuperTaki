@@ -155,6 +155,8 @@ describe('helpers', () => {
       activeColor: 'blue',
       topCard: state.discardPile[0],
       openTakiColor: null,
+      pendingDraw: 0,
+      freePlay: false,
     });
   });
 });

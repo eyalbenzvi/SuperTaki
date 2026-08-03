@@ -3,8 +3,11 @@
  * `he.ts` is typed against it, so a missing translation is a compile error.
  */
 export const en = {
-  'app.title': 'Color Rush',
-  'app.subtitle': 'a private color-card game',
+  'app.title': 'Super Taki',
+  // The two halves of the wordmark; Hebrew keeps these Latin too.
+  'app.titleSuper': 'SUPER',
+  'app.titleMain': 'TAKI',
+  'app.subtitle': 'play with friends, on any device',
   'app.skipToContent': 'Skip to main content',
 
   'common.cancel': 'Cancel',
@@ -19,18 +22,9 @@ export const en = {
   'common.host': 'Host',
   'common.leave': 'Leave',
   'common.loading': 'Working…',
-  'common.rules': 'Rules',
 
   'home.create': 'Create game',
   'home.join': 'Join game',
-  'home.rules': 'How to play',
-  'home.connectionNote':
-    'Players connect directly to each other. An internet connection is required, and some networks block direct connections.',
-  'home.privacyTitle': 'Privacy',
-  'home.privacyNote':
-    'No accounts, no servers, no analytics. Your name and cards travel only between the players in your room. Only display preferences and a reconnection code are stored on this device.',
-  'home.disclaimer':
-    'A private, unofficial hobby project. Original design, not affiliated with or endorsed by any card-game brand owner.',
 
   'theme.label': 'Theme',
   'theme.system': 'System',
@@ -102,14 +96,21 @@ export const en = {
   'game.takiOpenBody': 'Keep playing {color} cards, or close the sequence.',
   'game.closeTaki': 'Close Taki',
   'game.pendingPlus': 'Plus played — you must play one more card.',
+  'game.freePlay': 'The King cancelled everything — play again, any card you like.',
+  'game.pendingDraw': 'You owe {count} cards. Answer with a +2 or a King, or take them.',
+  'game.takeCards': 'Take {count} cards',
   'game.mustDraw': 'No legal card. Draw one from the pile.',
+  'game.plusThreeTitle': '+3 played',
+  'game.plusThreeWaiting': 'Waiting to see whether anyone breaks {name}’s +3…',
+  'game.plusThreeYouWait': 'Everyone else draws 3 unless someone breaks it.',
+  'game.plusThreeBreakBody': '{name} played a +3. Break it and they draw 3 instead.',
+  'game.plusThreeBreak': 'Break the +3',
+  'game.plusThreePass': 'Let it through',
   'game.chooseColorTitle': 'Choose a colour',
   'game.chooseColorBody': 'The next player must match this colour.',
   'game.chooseColorFor': 'Choose a colour for {card}',
   'game.feedTitle': 'Game log',
   'game.feedEmpty': 'Nothing has happened yet.',
-  'game.helpTitle': 'Quick rules',
-  'game.helpOpen': 'Quick rules',
   'game.leaveTitle': 'Leave the game?',
   'game.leaveBodyHost': 'You are the host. Leaving ends the game for everyone.',
   'game.leaveBodyGuest': 'You can rejoin from this device while the game is running.',
@@ -137,10 +138,14 @@ export const en = {
   'card.number': 'Number',
   'card.stop': 'Stop',
   'card.plus': 'Plus',
+  'card.plusTwo': '+2',
   'card.direction': 'Change direction',
   'card.taki': 'Taki',
   'card.superTaki': 'Super Taki',
   'card.colorChange': 'Colour change',
+  'card.king': 'King',
+  'card.plusThree': '+3',
+  'card.breakPlusThree': 'Break +3',
   'card.wild': 'Any colour',
   'card.faceDown': 'Face-down card',
   'card.ariaNumber': '{color} {value}',
@@ -205,6 +210,9 @@ export const en = {
   'reject.colorRequired': 'Choose a colour for this card.',
   'reject.colorNotAllowed': 'This card cannot change the colour.',
   'reject.mustPlayAfterPlus': 'After a Plus you must play another card.',
+  'reject.mustAnswerDraw': 'Answer the +2 with another +2 or a King, or take the cards.',
+  'reject.awaitingBreak': 'The table is waiting to see whether the +3 gets broken.',
+  'reject.noPlusThreeOpen': 'There is no +3 to break right now.',
   'reject.cannotDrawDuringTaki': 'Close the Taki sequence before drawing.',
   'reject.noTakiOpen': 'There is no open Taki sequence.',
   'reject.wildNotAllowedInTaki': 'Colourless cards cannot be played inside a Taki sequence.',
@@ -222,6 +230,10 @@ export const en = {
   'event.takiClosed': '{name} closed the sequence after {count} cards.',
   'event.colorChosen': '{name} chose {color}.',
   'event.playerSkipped': '{name} was skipped.',
+  'event.drawStacked': '{name} raised the penalty to {total} cards.',
+  'event.effectsCancelled': '{name} played the King and cancelled everything.',
+  'event.plusThreePlayed': '{name} played a +3.',
+  'event.plusThreeBroken': '{name} broke the +3 — {target} draws instead.',
   'event.directionChangedCw': 'The play order is now forwards.',
   'event.directionChangedCcw': 'The play order is now reversed.',
   'event.extraTurn': '{name} plays again.',
@@ -229,57 +241,6 @@ export const en = {
   'event.drawPileRecycled': 'The discard pile was shuffled back in ({count} cards).',
   'event.drawPileExhausted': 'There are no cards left to draw.',
   'event.playerWon': '{name} has no cards left and wins!',
-
-  'rules.title': 'How to play Color Rush',
-  'rules.intro':
-    'Color Rush is an original colour-matching shedding game for 2–6 players. The first player with no cards left wins the round. These are the exact rules this app implements.',
-  'rules.deckTitle': 'The deck (110 cards)',
-  'rules.deckNumbers': 'Numbers 1–9 in four colours, two of each: 72 cards.',
-  'rules.deckActions': 'Stop, Plus, Change Direction and Taki in four colours, two of each: 32 cards.',
-  'rules.deckWilds': 'Colour Change: 4 cards. Super Taki: 2 cards.',
-  'rules.deckNote': 'There are no King or Plus-3 cards in this ruleset.',
-  'rules.setupTitle': 'Setup',
-  'rules.setupDeal': 'Every player gets 8 cards.',
-  'rules.setupOpening':
-    'The opening card is the first number card from the shuffled deck; any special card met on the way goes to the bottom of the draw pile.',
-  'rules.turnTitle': 'A turn',
-  'rules.turnPlay':
-    'Play one card that matches the current colour, or matches the symbol or number of the top card.',
-  'rules.turnDraw':
-    'If you cannot or do not want to play, draw one card. Drawing ends your turn — a drawn card cannot be played immediately.',
-  'rules.turnWin': 'Playing your last card wins the round immediately.',
-  'rules.specialTitle': 'Special cards',
-  'rules.specialStop':
-    'Stop: the next player loses their turn. With two players the turn comes straight back to you.',
-  'rules.specialPlus':
-    'Plus: you must play one more card. If you hold nothing legal, you draw one card and your turn ends. A second Plus repeats the obligation.',
-  'rules.specialDirection':
-    'Change Direction: the play order reverses. With two players the turn still passes to your opponent.',
-  'rules.specialColorChange':
-    'Colour Change: playable on anything. You choose the next colour and your turn ends.',
-  'rules.takiTitle': 'Taki sequences',
-  'rules.takiOpen': 'Playing a Taki card opens a sequence in that card’s colour.',
-  'rules.takiContinue':
-    'While the sequence is open you may play any number of further cards of that colour, including other special cards.',
-  'rules.takiNoWild': 'Colourless cards (Colour Change, Super Taki) cannot be played inside a sequence.',
-  'rules.takiClose':
-    'Close the sequence with the Close Taki button. You cannot draw while a sequence is open.',
-  'rules.takiEffect': 'When the sequence closes, only the effect of the last card played applies.',
-  'rules.superTakiTitle': 'Super Taki',
-  'rules.superTaki':
-    'Super Taki is a colourless Taki: you choose a colour and a sequence opens in that colour.',
-  'rules.pileTitle': 'Running out of cards',
-  'rules.pileRecycle':
-    'When the draw pile is empty, every discard except the visible top card is shuffled back into the draw pile.',
-  'rules.pileEmpty': 'If there is genuinely nothing left to draw, the turn simply passes.',
-  'rules.choicesTitle': 'Choices we made',
-  'rules.choicesNoStacking': 'No stacking: a card’s effect resolves immediately and cannot be passed on.',
-  'rules.choicesNoDeclaration': 'There is no "last card" declaration, and no penalty for staying silent.',
-  'rules.choicesWinOnSpecial':
-    'Winning on a Plus or a Taki card still wins: the outstanding obligation is void.',
-  'rules.choicesTwoPlayers': 'With two players, Stop returns the turn to you and Change Direction does not.',
-  'rules.scoringTitle': 'Scoring',
-  'rules.scoring': 'Each game is a single round. The final table shows how many cards everyone had left.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

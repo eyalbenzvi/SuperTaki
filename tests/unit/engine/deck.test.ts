@@ -9,14 +9,15 @@ import {
   isColoredCard,
   isNumberCard,
   isWildCard,
+  requiresColorChoice,
 } from '../../../src/features/game/engine/cards.ts';
 
 describe('deck composition', () => {
   const deck = buildDeck();
 
   it('contains the documented number of cards', () => {
-    expect(deck).toHaveLength(110);
-    expect(DECK_SIZE).toBe(110);
+    expect(deck).toHaveLength(124);
+    expect(DECK_SIZE).toBe(124);
   });
 
   it('uses unique card ids', () => {
@@ -37,18 +38,27 @@ describe('deck composition', () => {
 
   it('has two of every coloured action card per colour', () => {
     for (const color of CARD_COLORS) {
-      for (const kind of ['stop', 'plus', 'direction', 'taki'] as const) {
+      for (const kind of ['stop', 'plus', 'plusTwo', 'direction', 'taki'] as const) {
         const matches = deck.filter((card) => card.kind === kind && cardColor(card) === color);
         expect(matches).toHaveLength(2);
       }
     }
   });
 
-  it('has four colour-change and two super taki wild cards', () => {
+  it('has the documented colourless cards', () => {
     expect(deck.filter((card) => card.kind === 'colorChange')).toHaveLength(4);
     expect(deck.filter((card) => card.kind === 'superTaki')).toHaveLength(2);
-    expect(deck.filter(isWildCard)).toHaveLength(6);
-    expect(deck.filter(isColoredCard)).toHaveLength(104);
+    expect(deck.filter((card) => card.kind === 'king')).toHaveLength(2);
+    expect(deck.filter((card) => card.kind === 'plusThree')).toHaveLength(2);
+    expect(deck.filter((card) => card.kind === 'breakPlusThree')).toHaveLength(2);
+    expect(deck.filter(isWildCard)).toHaveLength(12);
+    expect(deck.filter(isColoredCard)).toHaveLength(112);
+  });
+
+  it('asks for a colour only on colour change', () => {
+    for (const card of deck) {
+      expect(requiresColorChoice(card)).toBe(card.kind === 'colorChange');
+    }
   });
 
   it('reports colour as null for wild cards only', () => {

@@ -94,7 +94,7 @@ describe('resumable room metadata', () => {
 
   it('never stores anything beyond the documented fields', () => {
     saveResumableRoom(validRoom, NOW);
-    const raw = localStorage.getItem('colorRush:resumableRoom') ?? '{}';
+    const raw = localStorage.getItem('superTaki:resumableRoom') ?? '{}';
     expect(Object.keys(JSON.parse(raw) as object).sort()).toEqual([
       'displayName',
       'hostPeerId',

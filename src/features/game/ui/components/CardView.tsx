@@ -18,6 +18,11 @@ function colorClass(card: Card): string {
   return color ? `card--${color}` : 'card--wild';
 }
 
+/** Lets the stylesheet give an individual card kind its own colour, e.g. a gold King. */
+function kindAttrs(card: Card): { readonly 'data-kind': string } {
+  return { 'data-kind': card.kind };
+}
+
 export interface CardFaceProps {
   readonly card: Card;
   readonly t: Translator;
@@ -29,6 +34,7 @@ export function CardFace({ card, t, size = 'md' }: CardFaceProps): ReactNode {
   return (
     <div
       className={`card ${colorClass(card)} ${SIZE_CLASS[size]}`.trim()}
+      {...kindAttrs(card)}
       role="img"
       aria-label={describeCard(t, card)}
     >
@@ -38,25 +44,27 @@ export function CardFace({ card, t, size = 'md' }: CardFaceProps): ReactNode {
 }
 
 function CardBody({ card, t }: { readonly card: Card; readonly t: Translator }): ReactNode {
-  const number = isNumberCard(card);
   return (
     <>
-      {/* A small corner index, as on a real card, so a fanned hand stays readable. */}
-      {number ? (
-        <span className="card__corner" aria-hidden="true">
-          {card.value}
-        </span>
-      ) : null}
+      {/* The same symbol in two opposite corners, as on a printed card, so a
+          fanned hand stays readable. The second one is upside down. */}
+      <span className="card__corner card__corner--start" aria-hidden="true">
+        <CardGlyph card={card} />
+      </span>
       <span className="card__glyph">
         <CardGlyph card={card} />
       </span>
-      {/* Action cards need a word as well as a symbol; a number card's glyph is
+      {/* Action cards need a word as well as a symbol: colour and shape alone
+          would not separate +2 from +3 at a glance. A number card's glyph is
           already the value, so repeating it would only add clutter. */}
-      {number ? null : (
+      {isNumberCard(card) ? null : (
         <span className="card__label" aria-hidden="true">
           {cardFaceLabel(t, card)}
         </span>
       )}
+      <span className="card__corner card__corner--end" aria-hidden="true">
+        <CardGlyph card={card} />
+      </span>
     </>
   );
 }
@@ -91,6 +99,7 @@ export function PlayableCard({
       className={`card ${colorClass(card)} ${SIZE_CLASS[size]} ${
         playable ? 'card--playable' : 'card--dimmed'
       }`.trim()}
+      {...kindAttrs(card)}
       aria-label={t('card.playAria', { card: description })}
       aria-disabled={!playable}
       disabled={!playable}
@@ -109,15 +118,16 @@ export interface FaceDownCardProps {
   readonly size?: CardSize;
 }
 
+/**
+ * A card seen from behind. The back is all pattern, as a printed one is: the
+ * weave is drawn by the stylesheet, so there is nothing to render inside.
+ */
 export function FaceDownCard({ t, size = 'md' }: FaceDownCardProps): ReactNode {
   return (
-    <div className={`card card--back ${SIZE_CLASS[size]}`.trim()} role="img" aria-label={t('card.faceDown')}>
-      <span className="card__glyph" aria-hidden="true">
-        <svg viewBox="0 0 24 24" focusable="false">
-          <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
-          <circle cx="12" cy="12" r="2.4" fill="currentColor" />
-        </svg>
-      </span>
-    </div>
+    <div
+      className={`card card--back ${SIZE_CLASS[size]}`.trim()}
+      role="img"
+      aria-label={t('card.faceDown')}
+    />
   );
 }

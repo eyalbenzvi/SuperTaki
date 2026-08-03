@@ -35,6 +35,17 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
       });
     case 'playerSkipped':
       return t('event.playerSkipped', { name: nameOf(event.playerId) });
+    case 'drawStacked':
+      return t('event.drawStacked', { name: nameOf(event.playerId), total: event.total });
+    case 'effectsCancelled':
+      return t('event.effectsCancelled', { name: nameOf(event.playerId) });
+    case 'plusThreePlayed':
+      return t('event.plusThreePlayed', { name: nameOf(event.playerId) });
+    case 'plusThreeBroken':
+      return t('event.plusThreeBroken', {
+        name: nameOf(event.playerId),
+        target: nameOf(event.targetId),
+      });
     case 'directionChanged':
       return t(event.direction === 1 ? 'event.directionChangedCw' : 'event.directionChangedCcw');
     case 'extraTurn':

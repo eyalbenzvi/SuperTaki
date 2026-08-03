@@ -1,14 +1,18 @@
-# Color Rush
+# Super Taki
 
-**A private color-card game — peer-to-peer, in the browser, at exactly zero cost.**
+**A private game of Taki — peer-to-peer, in the browser, at exactly zero cost.**
 
-Color Rush is a mobile-first multiplayer card game for 2–6 players. One person opens a
+Super Taki is a mobile-first multiplayer card game for 2–6 players. One person opens a
 room, shares a link or a room code, and everyone else joins from their own phone, tablet
 or laptop. There is no server, no account, no database and no paid service anywhere in the
 stack: the site is static files on GitHub Pages, and the players' browsers talk directly
 to each other over WebRTC data channels.
 
-The interface is Hebrew by default (right-to-left) with an English toggle.
+The interface is Hebrew by default (right-to-left) with an English toggle. The deck is the
+full Super Taki deck — numbers, Stop, Plus, +2, Change Direction and Taki in four colours,
+plus Change Colour, Super Taki, King, +3 and the +3 Breaker. The exact rules the engine
+implements are in [docs/rules.md](docs/rules.md); the app has no rules page, so read that
+if a card's behaviour is not what you expected.
 
 ---
 
@@ -161,7 +165,7 @@ all work without editing anything.**
 To build locally for a project page:
 
 ```bash
-VITE_BASE_PATH=/color-rush/ npm run build
+VITE_BASE_PATH=/super-taki/ npm run build
 ```
 
 Routing uses the URL hash (`#/join?room=...`), which GitHub Pages serves correctly without
@@ -283,7 +287,7 @@ no UI imports, and the UI holds no game rules.
 
 - [docs/architecture.md](docs/architecture.md) — static hosting constraints, host authority, data flow, reconnection, limitations
 - [docs/protocol.md](docs/protocol.md) — message envelope, every message type, validation, versioning, examples
-- [docs/rules.md](docs/rules.md) — exact deck, exact rules, Taki and Super Taki semantics, ambiguity decisions (bilingual)
+- [docs/rules.md](docs/rules.md) — exact deck, exact rules, +2 runs, the King, the +3 breaker window, decisions where editions disagree (bilingual)
 - [docs/threat-model.md](docs/threat-model.md) — what a malicious peer can and cannot do
 - [docs/deployment.md](docs/deployment.md) — GitHub Pages step by step
 - [docs/qa-report.md](docs/qa-report.md) — what was tested, coverage, manual checklist, known limitations
@@ -291,15 +295,14 @@ no UI imports, and the UI holds no game rules.
 
 ## Disclaimer
 
-This is a **private, unofficial, independently designed** hobby project. It is **not
-affiliated with, endorsed by, or connected to any card-game brand owner or publisher.**
+This is a **private, unofficial** hobby project. It is **not affiliated with, endorsed by,
+or connected to Shafir Games or any other publisher of Taki.** Taki is their trademark.
 
-The name "Color Rush", the card design, the icons, the wording and all other assets are
-original work created for this repository. No copyrighted artwork, logos, brand assets,
-fonts or packaging designs are used or reproduced. The game belongs to the long-established
-family of colour-matching shedding card games; only the general mechanics of that genre are
-shared, and the exact ruleset implemented here is documented in
-[docs/rules.md](docs/rules.md).
+Every asset in this repository — the card symbols, the wordmark, the icons and the
+wording — is drawn from scratch in CSS and inline SVG for this project. No artwork, logo,
+brand asset, font or packaging design from the published game is used or reproduced. What
+is shared with the published game is the ruleset, which is not itself copyrightable and is
+documented in full in [docs/rules.md](docs/rules.md).
 
 ## Licence
 
