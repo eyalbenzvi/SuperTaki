@@ -271,6 +271,12 @@ requirements, and repository readiness.
   `Resource not accessible by integration`: the default `GITHUB_TOKEN` may deploy to an existing
   Pages site but may not create one. The setting was reverted, since it trades an actionable
   error message for a confusing permissions one. Documented as a required first step instead.
+- **fixed — The deploy workflow keyed off a hard-coded `main`.** GitHub's `github-pages`
+  environment only permits deployments from the repository's _default_ branch, so a repository
+  whose default is not `main` could never publish: the build would succeed and the deploy would be
+  refused by the environment. The trigger now runs on every branch and both jobs are guarded by
+  `github.ref_name == github.event.repository.default_branch`, which matches the environment rule
+  exactly and survives a rename. Found on a real repository whose default branch was not `main`.
 - **verified — Base path resolution.** `actions/configure-pages` reports the real serving path, and
   the workflow normalises it to a Vite `base`. Project pages, user pages and custom domains all work
   with no edit, and renaming the repository needs no change.

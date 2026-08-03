@@ -270,7 +270,10 @@ Each of these was found by testing, not by inspection, and each is now covered b
     default `GITHUB_TOKEN` may deploy to an existing Pages site but not create one. The setting
     was reverted, because it replaces an actionable message with a confusing permissions error.
     The README and deployment guide state the manual step plainly.
-13. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
+13. **The deploy workflow could not publish from a non-`main` default branch.** It triggered only
+    on `main`, but the `github-pages` environment permits deployments only from the repository
+    default branch. Both jobs are now guarded on the default branch, whatever it is called.
+14. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
     named "Play Red 5", so it failed whenever the hand held a red card. Now scoped to the dialog
     with an exact match; verified stable over repeated runs.
 

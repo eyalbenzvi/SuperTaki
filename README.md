@@ -138,8 +138,13 @@ runtime environment variables.
 1. **Enable Pages once, by hand.** Repository → **Settings** → **Pages** → **Build and
    deployment** → **Source** → **GitHub Actions**. This step cannot be automated: the workflow's
    `GITHUB_TOKEN` is allowed to _deploy_ to Pages but not to _create_ the Pages site.
-2. **Push to `main`.** The `Deploy to GitHub Pages` workflow builds and publishes on every push
-   to `main`, and on manual dispatch from the Actions tab.
+2. **Push to the default branch.** The `Deploy to GitHub Pages` workflow builds and publishes on
+   every push to whichever branch is the repository default, and on manual dispatch.
+
+The workflow keys off the **default branch** rather than a hard-coded `main`, because GitHub's
+`github-pages` environment refuses deployments from any other branch. Whatever your default
+branch is called, pushing to it publishes, and renaming it needs no change here. Pushes to other
+branches appear as skipped runs.
 
 The finished URL appears in the run summary and under Settings → Pages —
 `https://<user>.github.io/<repo>/` for a project page. Until step 1 is done the workflow fails

@@ -34,9 +34,16 @@ artifact, publish. The repository already contains a workflow that does all of i
    `actions/deploy-pages` prove the deployment came from this workflow run (OIDC). Granting
    them in the workflow rather than repository-wide keeps every other workflow read-only.
 
-4. **Push to `main`.** The `Deploy to GitHub Pages` workflow runs, and the finished URL appears
-   in the run summary and under Settings → Pages. It is
+4. **Push to the default branch.** The `Deploy to GitHub Pages` workflow runs, and the finished
+   URL appears in the run summary and under Settings → Pages. It is
    `https://<user>.github.io/<repo>/` for a project page.
+
+   The workflow keys off `github.event.repository.default_branch` rather than a hard-coded
+   `main`, because GitHub's `github-pages` environment only permits deployments from the default
+   branch — anything else is refused with
+   `Branch … is not allowed to deploy to github-pages due to environment protection rules`.
+   Keying off the default branch matches that rule exactly and survives a rename. Pushes to other
+   branches trigger the workflow but skip both jobs, which is intentional.
 
 That is the whole setup. There is nothing to configure per environment, no secret to add and no
 service to sign up for.
@@ -47,8 +54,8 @@ service to sign up for.
 
 ## What the workflow does
 
-`.github/workflows/deploy-pages.yml`, triggered by pushes to `main` and by manual dispatch
-(Actions → Deploy to GitHub Pages → Run workflow):
+`.github/workflows/deploy-pages.yml`, triggered by pushes to the default branch and by manual
+dispatch (Actions → Deploy to GitHub Pages → Run workflow):
 
 1. `actions/checkout@v4`
 2. `actions/setup-node@v4` with Node 22 and npm cache
@@ -167,15 +174,17 @@ tabs.
 
 ## Troubleshooting
 
-| Symptom                                  | Cause and fix                                                                                                                 |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Blank page, 404s for `/assets/*.js`      | Wrong `base`. Confirm the workflow ran (not a branch deploy) and check the resolved base in the "Resolve base path" step log. |
-| "Get Pages site failed" in the workflow  | Pages source is not set to **GitHub Actions**. Fix it in Settings → Pages.                                                    |
-| "Resource not accessible by integration" | The workflow's `permissions` block was edited. It needs `pages: write` and `id-token: write`.                                 |
-| Deployment succeeds, old content served  | Pages CDN caching. Hard-reload; give it a minute.                                                                             |
-| Site works, rooms never connect          | Signalling or NAT, not deployment. Try `?debug=1` and read the console; see the README's limitations section.                 |
-| Invite links 404                         | Only happens if routing was changed away from hash-based. Keep the `#/join?...` form.                                         |
-| Assets load over HTTP and features fail  | Enable **Enforce HTTPS**. WebRTC and the Clipboard API need a secure context.                                                 |
+| Symptom                                             | Cause and fix                                                                                                                       |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Blank page, 404s for `/assets/*.js`                 | Wrong `base`. Confirm the workflow ran (not a branch deploy) and check the resolved base in the "Resolve base path" step log.       |
+| "Get Pages site failed" in the workflow             | Pages source is not set to **GitHub Actions**. Fix it in Settings → Pages.                                                          |
+| "Resource not accessible by integration"            | The workflow's `permissions` block was edited. It needs `pages: write` and `id-token: write`.                                       |
+| Deployment succeeds, old content served             | Pages CDN caching. Hard-reload; give it a minute.                                                                                   |
+| "Branch … is not allowed to deploy to github-pages" | You pushed to a branch that is not the repository default. Push to the default branch, or change the default in Settings → General. |
+| Workflow ran but both jobs were skipped             | Same cause: the push was not to the default branch. The skip is intentional.                                                        |
+| Site works, rooms never connect                     | Signalling or NAT, not deployment. Try `?debug=1` and read the console; see the README's limitations section.                       |
+| Invite links 404                                    | Only happens if routing was changed away from hash-based. Keep the `#/join?...` form.                                               |
+| Assets load over HTTP and features fail             | Enable **Enforce HTTPS**. WebRTC and the Clipboard API need a secure context.                                                       |
 
 ## Deploying somewhere else
 

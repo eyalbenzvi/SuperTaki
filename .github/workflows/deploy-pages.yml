@@ -1,8 +1,13 @@
 name: Deploy to GitHub Pages
 
+# Triggered on every branch, but the jobs below only run for the repository's
+# *default* branch. GitHub's `github-pages` environment refuses deployments from
+# any other branch, so keying off the default branch is what actually matches the
+# rule — and it keeps working if the default branch is renamed, without editing
+# this file. Pushes to other branches show up as skipped runs.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   workflow_dispatch:
 
 # The Pages deployment needs these permissions. They are granted here, per
@@ -22,6 +27,7 @@ jobs:
   build:
     name: Build static site
     runs-on: ubuntu-latest
+    if: github.ref_name == github.event.repository.default_branch
     steps:
       - uses: actions/checkout@v4
 
