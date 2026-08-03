@@ -51,6 +51,29 @@ interface ConnectionRecord {
   unsubscribe: () => void;
 }
 
+/**
+ * Turns a requested action into an engine command.
+ *
+ * The player id comes from the connection, never from the message: that is the
+ * whole of the authorisation model. Every field an action carries beyond its type
+ * is copied out explicitly, so a new action cannot reach the engine by accident.
+ */
+function buildCommand(playerId: string, action: GameAction): GameCommand {
+  switch (action.type) {
+    case 'playCard':
+      return {
+        type: 'playCard',
+        playerId,
+        cardId: action.cardId,
+        ...(action.chosenColor ? { chosenColor: action.chosenColor } : {}),
+      };
+    case 'catchLastCard':
+      return { type: 'catchLastCard', playerId, targetId: action.targetId };
+    default:
+      return { type: action.type, playerId };
+  }
+}
+
 export interface HostSessionOptions {
   readonly transport: Transport;
   readonly roomCode: string;
@@ -572,15 +595,7 @@ export class HostSession implements Session {
     if (!this.game || this.phase !== 'inGame') {
       return;
     }
-    const command: GameCommand =
-      action.type === 'playCard'
-        ? {
-            type: 'playCard',
-            playerId,
-            cardId: action.cardId,
-            ...(action.chosenColor ? { chosenColor: action.chosenColor } : {}),
-          }
-        : { type: action.type, playerId };
+    const command: GameCommand = buildCommand(playerId, action);
 
     const result = applyCommand(this.game, command);
     if (!result.ok) {

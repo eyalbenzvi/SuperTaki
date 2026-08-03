@@ -21,7 +21,7 @@ function context(overrides: Partial<PlayContext> = {}): PlayContext {
 
 describe('card matching', () => {
   it('accepts a card of the active colour', () => {
-    expect(isCardPlayable(card('red:2'), context())).toBe(true);
+    expect(isCardPlayable(card('red:3'), context())).toBe(true);
   });
 
   it('accepts a card with the same number value', () => {
@@ -29,7 +29,7 @@ describe('card matching', () => {
   });
 
   it('rejects a mismatching colour and value', () => {
-    expect(isCardPlayable(card('blue:2'), context())).toBe(false);
+    expect(isCardPlayable(card('blue:3'), context())).toBe(false);
   });
 
   it('accepts any wild card', () => {
@@ -85,11 +85,11 @@ describe('card matching', () => {
   });
 
   it('lists and detects playable cards in a hand', () => {
-    const hand = cards('red:1', 'blue:2', 'colorChange');
+    const hand = cards('red:1', 'blue:3', 'colorChange');
     const ids = getPlayableCardIds(hand, context());
     expect(ids).toHaveLength(2);
     expect(hasPlayableCard(hand, context())).toBe(true);
-    expect(hasPlayableCard(cards('blue:2'), context())).toBe(false);
+    expect(hasPlayableCard(cards('blue:3'), context())).toBe(false);
     expect(hasPlayableCard([], context())).toBe(false);
   });
 });

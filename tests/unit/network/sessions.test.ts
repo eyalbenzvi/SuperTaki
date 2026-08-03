@@ -353,7 +353,9 @@ function otherPlayerId(state: PublicGameState, hostPlayerId: string): string {
 /**
  * Drives a full round through the real host/client stack: whoever is on turn
  * plays its first legal card, closes an open Taki sequence when nothing else is
- * legal, and otherwise draws. Deterministic thanks to the fixed seed.
+ * legal, and otherwise draws. Whoever is down to a single card declares it, in or
+ * out of turn — without that the round cannot be won at all, which is exactly the
+ * rule. Deterministic thanks to the fixed seed.
  */
 async function playUntilFinished(
   harness: Harness,
@@ -369,12 +371,27 @@ async function playUntilFinished(
       return state;
     }
 
+    // A hand of one is declared before anything else happens, from either seat.
+    const seats = [
+      { id: harness.host.localPlayerId, recorder: harness.hostRecorder, host: true },
+      { id: otherPlayerId(state, harness.host.localPlayerId), recorder: client.recorder, host: false },
+    ];
+    const undeclared = seats.find(
+      (seat) => currentHand(seat.recorder).length === 1 && !state.declaredLastCard.includes(seat.id),
+    );
+    if (undeclared) {
+      if (undeclared.host) {
+        harness.host.submitLocalAction({ type: 'declareLastCard' });
+      } else {
+        client.session.submitAction({ type: 'declareLastCard' });
+      }
+      await flush(1);
+      continue;
+    }
+
     // An open +3 suspends the turn order: whoever holds a breaker answers first.
     if (state.plusThree) {
-      const responder = [
-        { id: harness.host.localPlayerId, recorder: harness.hostRecorder, host: true },
-        { id: otherPlayerId(state, harness.host.localPlayerId), recorder: client.recorder, host: false },
-      ].find(
+      const responder = seats.find(
         (candidate) =>
           candidate.id !== state.plusThree?.playerId &&
           currentHand(candidate.recorder).some((held) => held.kind === 'breakPlusThree'),

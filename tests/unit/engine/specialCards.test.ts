@@ -28,9 +28,9 @@ describe('stop card', () => {
     const state = makeState({
       players: players('Alice', 'Bob', 'Carol'),
       hands: {
-        'p-alice': cards('red:stop', 'blue:2'),
+        'p-alice': cards('red:stop', 'blue:3'),
         'p-bob': cards('red:1'),
-        'p-carol': cards('red:2'),
+        'p-carol': cards('red:3'),
       },
       discardPile: cards('red:9'),
     });
@@ -42,7 +42,7 @@ describe('stop card', () => {
 
   it('returns the turn to the same player in a two-player game', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:stop', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('red:stop', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     const { state: next } = expectOk(playFirst(state, 'p-alice'));
@@ -54,9 +54,9 @@ describe('stop card', () => {
       players: players('Alice', 'Bob', 'Carol'),
       direction: -1,
       hands: {
-        'p-alice': cards('red:stop', 'blue:2'),
+        'p-alice': cards('red:stop', 'blue:3'),
         'p-bob': cards('red:1'),
-        'p-carol': cards('red:2'),
+        'p-carol': cards('red:3'),
       },
       discardPile: cards('red:9'),
     });
@@ -131,9 +131,9 @@ describe('change direction card', () => {
     const state = makeState({
       players: players('Alice', 'Bob', 'Carol'),
       hands: {
-        'p-alice': cards('red:direction', 'blue:2'),
+        'p-alice': cards('red:direction', 'blue:3'),
         'p-bob': cards('red:1'),
-        'p-carol': cards('red:2'),
+        'p-carol': cards('red:3'),
       },
       discardPile: cards('red:9'),
     });
@@ -148,9 +148,9 @@ describe('change direction card', () => {
       players: players('Alice', 'Bob', 'Carol'),
       direction: -1,
       hands: {
-        'p-alice': cards('red:direction', 'blue:2'),
+        'p-alice': cards('red:direction', 'blue:3'),
         'p-bob': cards('red:1'),
-        'p-carol': cards('red:2'),
+        'p-carol': cards('red:3'),
       },
       discardPile: cards('red:9'),
     });
@@ -161,7 +161,7 @@ describe('change direction card', () => {
 
   it('passes the turn to the opponent in a two-player game', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:direction', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('red:direction', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     const { state: next } = expectOk(playFirst(state, 'p-alice'));
@@ -173,7 +173,7 @@ describe('change direction card', () => {
 describe('colour change wild card', () => {
   it('sets the active colour and passes the turn', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('colorChange', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('colorChange', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     const { state: next, events } = expectOk(playFirst(state, 'p-alice', 'green'));
@@ -185,7 +185,7 @@ describe('colour change wild card', () => {
 
   it('is playable on any top card', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('colorChange', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('colorChange', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('yellow:stop'),
       activeColor: 'yellow',
     });

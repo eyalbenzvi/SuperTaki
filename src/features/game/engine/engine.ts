@@ -1,5 +1,6 @@
 import {
   CARDS_DEALT_PER_PLAYER,
+  LAST_CARD_PENALTY,
   PLUS_THREE_PENALTY,
   PLUS_TWO_PENALTY,
   buildDeck,
@@ -46,6 +47,7 @@ interface Draft {
   pendingDraw: number;
   freePlay: boolean;
   plusThree: GameState['plusThree'];
+  declaredLastCard: PlayerId[];
   rng: RngState;
   winnerId: PlayerId | null;
   seed: number;
@@ -71,13 +73,29 @@ function toDraft(state: GameState): Draft {
     pendingDraw: state.pendingDraw,
     freePlay: state.freePlay,
     plusThree: state.plusThree,
+    declaredLastCard: state.declaredLastCard.slice(),
     rng: state.rng,
     winnerId: state.winnerId,
     seed: state.seed,
   };
 }
 
+/**
+ * Drops declarations that no longer describe a hand of one card.
+ *
+ * A declaration belongs to the single card a player is holding, not to the
+ * player: whoever draws back up owes a fresh declaration next time they come
+ * down to one. Applied at the end of every command, so no code path can leave a
+ * stale declaration behind for the win check to honour.
+ */
+function syncDeclarations(draft: Draft): void {
+  draft.declaredLastCard = draft.declaredLastCard.filter(
+    (playerId) => (draft.hands[playerId] ?? []).length === 1,
+  );
+}
+
 function freeze(draft: Draft): GameState {
+  syncDeclarations(draft);
   return {
     version: draft.version,
     phase: draft.phase,
@@ -93,6 +111,7 @@ function freeze(draft: Draft): GameState {
     pendingDraw: draft.pendingDraw,
     freePlay: draft.freePlay,
     plusThree: draft.plusThree,
+    declaredLastCard: draft.declaredLastCard,
     rng: draft.rng,
     winnerId: draft.winnerId,
     seed: draft.seed,
@@ -193,6 +212,7 @@ export function createGame(
     pendingDraw: 0,
     freePlay: false,
     plusThree: null,
+    declaredLastCard: [],
     rng,
     winnerId: null,
     seed,
@@ -365,16 +385,15 @@ function applyPlayCard(
     return reject('cardNotInHand');
   }
 
-  // A +3 Breaker is only ever an answer to an open +3, and while a +3 is open
-  // nothing else may be played — not even by the player whose turn it is.
+  // While a +3 is open nothing may be played but a breaker, and only by somebody
+  // being waited for — not even by the player whose turn it is.
   const answeringPlusThree = state.plusThree !== null && card.kind === 'breakPlusThree';
-  if (state.plusThree !== null) {
-    if (!answeringPlusThree || !state.plusThree.awaiting.includes(playerId)) {
-      return reject('awaitingBreak');
-    }
-  } else if (card.kind === 'breakPlusThree') {
-    return reject('noPlusThreeOpen');
+  if (state.plusThree !== null && (!answeringPlusThree || !state.plusThree.awaiting.includes(playerId))) {
+    return reject('awaitingBreak');
   }
+  // A breaker with no +3 to break is a legal card, and an expensive one — see
+  // the penalty below.
+  const spendingBreaker = state.plusThree === null && card.kind === 'breakPlusThree';
 
   if (requiresColorChoice(card)) {
     if (chosenColor === undefined) {
@@ -392,7 +411,9 @@ function applyPlayCard(
       if (isWildCard(card)) {
         return reject('wildNotAllowedInTaki');
       }
-      if (card.color !== state.takiMode.color) {
+      // Taki on Taki carries the sequence on in the new colour, so it is the one
+      // card inside a sequence that does not have to match its colour.
+      if (card.color !== state.takiMode.color && card.kind !== 'taki') {
         return reject('wrongTakiColor');
       }
     } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
@@ -419,6 +440,17 @@ function applyPlayCard(
     events.push({ type: 'colorChosen', playerId, color: resultingColor });
   }
 
+  /*
+   * A breaker with nothing to break costs its owner the three cards it would
+   * have sent back — charged here, before the win check, so it cannot be used as
+   * a free way out of a last card.
+   */
+  if (spendingBreaker) {
+    const penaltyEvents: GameEvent[] = [];
+    const penalty = drawCards(draft, playerId, PLUS_THREE_PENALTY, penaltyEvents);
+    events.push({ type: 'breakerSpent', playerId, penalty }, ...penaltyEvents);
+  }
+
   if ((draft.hands[playerId] ?? []).length === 0) {
     draft.phase = 'finished';
     draft.winnerId = playerId;
@@ -434,8 +466,19 @@ function applyPlayCard(
   if (answeringPlusThree) {
     resolvePlusThree(draft, playerId, events);
   } else if (draft.takiMode) {
-    // Inside a sequence: accumulate; effects are resolved when the Taki closes.
-    draft.takiMode = { ...draft.takiMode, cardsPlayed: draft.takiMode.cardsPlayed + 1 };
+    /*
+     * Inside a sequence: accumulate; effects are resolved when the Taki closes.
+     * A Taki played on a Taki re-locks the sequence to its own colour, so the
+     * cards that follow have to match the new one.
+     */
+    draft.takiMode = {
+      ...draft.takiMode,
+      cardsPlayed: draft.takiMode.cardsPlayed + 1,
+      ...(card.kind === 'taki' ? { color: resultingColor } : {}),
+    };
+    if (card.kind === 'taki' && resultingColor !== state.takiMode?.color) {
+      events.push({ type: 'takiColorChanged', playerId, color: resultingColor });
+    }
   } else if (card.kind === 'taki' || card.kind === 'superTaki') {
     draft.takiMode = {
       color: resultingColor,
@@ -472,6 +515,58 @@ function applyPassBreak(state: GameState, playerId: PlayerId): CommandResult {
   } else {
     draft.plusThree = { ...pending, awaiting };
   }
+
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events };
+}
+
+/**
+ * Declares "last card".
+ *
+ * Legal from any seat and at any moment, exactly as it is at a real table: the
+ * declaration goes with the card in your hand, not with your turn. It is only
+ * ever legal while the declaring player holds exactly one card, and only once
+ * per card.
+ */
+function applyDeclareLastCard(state: GameState, playerId: PlayerId): CommandResult {
+  if ((state.hands[playerId] ?? []).length !== 1) {
+    return reject('nothingToDeclare');
+  }
+  if (state.declaredLastCard.includes(playerId)) {
+    return reject('alreadyDeclared');
+  }
+
+  const draft = toDraft(state);
+  draft.declaredLastCard.push(playerId);
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events: [{ type: 'lastCardDeclared', playerId }] };
+}
+
+/**
+ * Catches a player sitting silently on a single card.
+ *
+ * The declaration is not what wins the round — putting the last card down is.
+ * What silence costs is being caught: any other player may call it, in or out of
+ * turn, for as long as the hand stays at one undeclared card. Drawing the penalty
+ * ends the exposure by itself, since the hand is no longer a single card.
+ */
+function applyCatchLastCard(state: GameState, playerId: PlayerId, targetId: PlayerId): CommandResult {
+  const target = state.players.find((player) => player.id === targetId);
+  if (!target || targetId === playerId) {
+    return reject('nothingToCatch');
+  }
+  if ((state.hands[targetId] ?? []).length !== 1 || state.declaredLastCard.includes(targetId)) {
+    return reject('nothingToCatch');
+  }
+
+  const draft = toDraft(state);
+  const events: GameEvent[] = [];
+  const penaltyEvents: GameEvent[] = [];
+  const penalty = drawCards(draft, targetId, LAST_CARD_PENALTY, penaltyEvents);
+  events.push(
+    { type: 'lastCardCaught', playerId: targetId, caughtById: playerId, penalty },
+    ...penaltyEvents,
+  );
 
   draft.version += 1;
   return { ok: true, state: freeze(draft), events };
@@ -535,6 +630,16 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   const actor = state.players.find((player) => player.id === command.playerId);
   if (!actor) {
     return reject('unknownPlayer');
+  }
+
+  // Declaring, and calling out somebody who did not, are shouts rather than
+  // moves: they belong to the cards in hand and are legal from any seat, whatever
+  // else the table happens to be waiting for.
+  if (command.type === 'declareLastCard') {
+    return applyDeclareLastCard(state, command.playerId);
+  }
+  if (command.type === 'catchLastCard') {
+    return applyCatchLastCard(state, command.playerId, command.targetId);
   }
 
   // While a +3 is waiting for an answer the table is frozen for everyone, and

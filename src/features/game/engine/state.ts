@@ -78,6 +78,12 @@ export interface GameState {
   readonly freePlay: boolean;
   /** Open +3 waiting for the breaker window to close, or `null`. */
   readonly plusThree: PlusThreeState | null;
+  /**
+   * Players who have declared "last card" for the single card they are holding
+   * now. A player leaves this list the moment their hand stops being exactly one
+   * card, so coming back down to one card needs a fresh declaration.
+   */
+  readonly declaredLastCard: readonly PlayerId[];
   readonly rng: RngState;
   readonly winnerId: PlayerId | null;
   /** Seed the game was created with, kept for reproducibility/debugging. */
@@ -95,7 +101,17 @@ export type GameCommand =
   | { readonly type: 'drawCard'; readonly playerId: PlayerId }
   | { readonly type: 'closeTaki'; readonly playerId: PlayerId }
   /** Declines to answer an open +3 with a +3 Breaker. */
-  | { readonly type: 'passBreak'; readonly playerId: PlayerId };
+  | { readonly type: 'passBreak'; readonly playerId: PlayerId }
+  /**
+   * Declares "last card". Legal from any seat, in or out of turn, and only while
+   * the declaring player holds exactly one card.
+   */
+  | { readonly type: 'declareLastCard'; readonly playerId: PlayerId }
+  /**
+   * Catches `targetId` holding a single card they never declared. Legal from any
+   * seat but their own, in or out of turn, for as long as they stay silent.
+   */
+  | { readonly type: 'catchLastCard'; readonly playerId: PlayerId; readonly targetId: PlayerId };
 
 export type GameCommandType = GameCommand['type'];
 
@@ -115,6 +131,8 @@ export type GameEvent =
       readonly superTaki: boolean;
     }
   | { readonly type: 'takiClosed'; readonly playerId: PlayerId; readonly cardsPlayed: number }
+  /** A Taki played on a Taki carried the open sequence into a new colour. */
+  | { readonly type: 'takiColorChanged'; readonly playerId: PlayerId; readonly color: CardColor }
   | { readonly type: 'colorChosen'; readonly playerId: PlayerId; readonly color: CardColor }
   | { readonly type: 'playerSkipped'; readonly playerId: PlayerId }
   /** A +2 was added to the run; `total` is what the next player now owes. */
@@ -125,6 +143,23 @@ export type GameEvent =
   | { readonly type: 'plusThreePlayed'; readonly playerId: PlayerId }
   /** A +3 Breaker sent the penalty back at `targetId`. */
   | { readonly type: 'plusThreeBroken'; readonly playerId: PlayerId; readonly targetId: PlayerId }
+  /** A player declared "last card" while holding their final card. */
+  | { readonly type: 'lastCardDeclared'; readonly playerId: PlayerId }
+  /**
+   * `caughtById` caught `playerId` sitting silently on a single card. `penalty`
+   * is how many cards they actually drew.
+   */
+  | {
+      readonly type: 'lastCardCaught';
+      readonly playerId: PlayerId;
+      readonly caughtById: PlayerId;
+      readonly penalty: number;
+    }
+  /**
+   * A +3 Breaker was played with no +3 to break, so it cost its owner the three
+   * cards instead. `penalty` is how many they actually drew.
+   */
+  | { readonly type: 'breakerSpent'; readonly playerId: PlayerId; readonly penalty: number }
   | { readonly type: 'directionChanged'; readonly direction: TurnDirection }
   | { readonly type: 'extraTurn'; readonly playerId: PlayerId }
   | { readonly type: 'turnChanged'; readonly playerId: PlayerId }
@@ -151,6 +186,9 @@ export const REJECTION_CODES = [
   'noTakiOpen',
   'wildNotAllowedInTaki',
   'wrongTakiColor',
+  'nothingToDeclare',
+  'alreadyDeclared',
+  'nothingToCatch',
   'notEnoughPlayers',
   'tooManyPlayers',
   'duplicatePlayerId',

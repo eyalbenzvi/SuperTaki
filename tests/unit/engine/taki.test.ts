@@ -28,7 +28,7 @@ function play(state: GameState, playerId: string, spec: string, chosenColor?: Ca
 describe('opening a taki sequence', () => {
   it('opens taki mode in the card colour and keeps the turn', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:taki', 'red:3', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('red:taki', 'red:3', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     const { state: next, events } = expectOk(play(state, 'p-alice', 'red:taki'));
@@ -46,7 +46,7 @@ describe('opening a taki sequence', () => {
   it('only offers cards of the sequence colour afterwards', () => {
     const state = makeState({
       hands: {
-        'p-alice': cards('red:taki', 'red:3', 'red:stop', 'blue:2', 'colorChange'),
+        'p-alice': cards('red:taki', 'red:3', 'red:stop', 'blue:3', 'colorChange'),
         'p-bob': cards('red:1'),
       },
       discardPile: cards('red:9'),
@@ -67,7 +67,7 @@ describe('playing inside a taki sequence', () => {
   const base = () =>
     makeState({
       hands: {
-        'p-alice': cards('red:taki', 'red:3', 'red:4', 'red:stop', 'blue:2', 'colorChange'),
+        'p-alice': cards('red:taki', 'red:3', 'red:4', 'red:stop', 'blue:3', 'colorChange'),
         'p-bob': cards('red:1'),
       },
       discardPile: cards('red:9'),
@@ -85,7 +85,7 @@ describe('playing inside a taki sequence', () => {
 
   it('rejects a different colour', () => {
     const state = expectOk(play(base(), 'p-alice', 'red:taki')).state;
-    expectRejected(play(state, 'p-alice', 'blue:2'), 'wrongTakiColor');
+    expectRejected(play(state, 'p-alice', 'blue:3'), 'wrongTakiColor');
   });
 
   it('rejects wild cards', () => {
@@ -119,6 +119,38 @@ describe('playing inside a taki sequence', () => {
     expect(eventTypes(result.events)).toEqual(['cardPlayed']);
     expect(currentPlayer(next)?.id).toBe('p-alice');
   });
+
+  it('carries the sequence into a new colour when the taki is a different colour', () => {
+    const state = makeState({
+      hands: {
+        'p-alice': cards('red:taki', 'blue:taki', 'blue:3', 'red:3'),
+        'p-bob': cards('red:1'),
+      },
+      discardPile: cards('red:9'),
+    });
+    let next = expectOk(play(state, 'p-alice', 'red:taki')).state;
+    // Taki on Taki is the one card inside a sequence that need not match colour.
+    const result = expectOk(play(next, 'p-alice', 'blue:taki'));
+    next = result.state;
+
+    expect(next.takiMode?.color).toBe('blue');
+    expect(next.activeColor).toBe('blue');
+    expect(next.takiMode?.cardsPlayed).toBe(2);
+    expect(currentPlayer(next)?.id).toBe('p-alice');
+    expect(eventTypes(result.events)).toEqual(['cardPlayed', 'takiColorChanged']);
+
+    // From here it is a blue sequence: blue continues it, red does not.
+    expect(
+      getPlayableCardIds(next.hands['p-alice'] ?? [], {
+        activeColor: 'blue',
+        topCard: topCard(next),
+        openTakiColor: 'blue',
+        pendingDraw: 0,
+        freePlay: false,
+      }),
+    ).toEqual([(next.hands['p-alice'] ?? []).find((card) => card.id.startsWith('blue:3#'))?.id]);
+    expectRejected(play(next, 'p-alice', 'red:3'), 'wrongTakiColor');
+  });
 });
 
 describe('closing a taki sequence', () => {
@@ -138,7 +170,7 @@ describe('closing a taki sequence', () => {
     let state = expectOk(
       play(
         makeState({
-          hands: { 'p-alice': cards('red:taki', 'red:3', 'blue:2'), 'p-bob': cards('red:1') },
+          hands: { 'p-alice': cards('red:taki', 'red:3', 'blue:3'), 'p-bob': cards('red:1') },
           discardPile: cards('red:9'),
         }),
         'p-alice',
@@ -156,7 +188,7 @@ describe('closing a taki sequence', () => {
     const state = expectOk(
       play(
         makeState({
-          hands: { 'p-alice': cards('red:taki', 'blue:2'), 'p-bob': cards('red:1') },
+          hands: { 'p-alice': cards('red:taki', 'blue:3'), 'p-bob': cards('red:1') },
           discardPile: cards('red:9'),
         }),
         'p-alice',
@@ -174,9 +206,9 @@ describe('closing a taki sequence', () => {
         makeState({
           players: table,
           hands: {
-            'p-alice': cards('red:taki', 'red:stop', 'blue:2'),
+            'p-alice': cards('red:taki', 'red:stop', 'blue:3'),
             'p-bob': cards('red:1'),
-            'p-carol': cards('red:2'),
+            'p-carol': cards('red:3'),
           },
           discardPile: cards('red:9'),
         }),
@@ -217,9 +249,9 @@ describe('closing a taki sequence', () => {
         makeState({
           players: table,
           hands: {
-            'p-alice': cards('red:taki', 'red:direction', 'blue:2'),
+            'p-alice': cards('red:taki', 'red:direction', 'blue:3'),
             'p-bob': cards('red:1'),
-            'p-carol': cards('red:2'),
+            'p-carol': cards('red:3'),
           },
           discardPile: cards('red:9'),
         }),
@@ -247,7 +279,7 @@ describe('closing a taki sequence', () => {
 describe('super taki', () => {
   it('takes the leading colour and opens a sequence in it', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('superTaki', 'red:3', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('superTaki', 'red:3', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     // Since the King joined the deck, Super Taki no longer repaints the table.
@@ -267,12 +299,12 @@ describe('super taki', () => {
 
   it('lets the player continue in the leading colour', () => {
     let state = makeState({
-      hands: { 'p-alice': cards('superTaki', 'green:3', 'green:stop', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('superTaki', 'green:3', 'green:stop', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('green:9'),
     });
     state = expectOk(play(state, 'p-alice', 'superTaki')).state;
     state = expectOk(play(state, 'p-alice', 'green:3')).state;
-    expectRejected(play(state, 'p-alice', 'blue:2'), 'wrongTakiColor');
+    expectRejected(play(state, 'p-alice', 'blue:3'), 'wrongTakiColor');
     state = expectOk(play(state, 'p-alice', 'green:stop')).state;
     expect(state.takiMode?.cardsPlayed).toBe(3);
   });
@@ -281,7 +313,7 @@ describe('super taki', () => {
     const state = expectOk(
       play(
         makeState({
-          hands: { 'p-alice': cards('superTaki', 'blue:2'), 'p-bob': cards('red:1') },
+          hands: { 'p-alice': cards('superTaki', 'blue:3'), 'p-bob': cards('red:1') },
           discardPile: cards('yellow:9'),
         }),
         'p-alice',

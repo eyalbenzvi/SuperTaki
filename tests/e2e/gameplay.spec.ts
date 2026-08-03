@@ -10,7 +10,7 @@ import { BROADCAST, awaitSettled, createRoom, joinRoom, onTurn, openApp } from '
  * sequences and draw-pile recycling — and ends on the game-over screen.
  *
  * Bounded by the clock rather than by a step count. How many steps a round
- * takes varies enormously — the 124-card deck deals big hands and every +2 run
+ * takes varies enormously — the 116-card deck deals big hands and every +2 run
  * makes them bigger — and a step count that fits the average round fails the
  * long ones for no reason. Time is what the test actually has to stay inside.
  */
@@ -31,6 +31,17 @@ async function clickInForeground(page: Page, locator: Locator): Promise<void> {
 async function takeOneAction(page: Page): Promise<boolean> {
   await page.bringToFront();
   await awaitSettled(page);
+
+  /*
+   * A hand of one is declared first, and out of turn if need be: without the
+   * declaration the last card cannot win, so a bot that skipped it would draw a
+   * two-card penalty every time it got close and the round would never end.
+   */
+  const declare = page.getByRole('button', { name: /Last card!/ });
+  if (await declare.isVisible().catch(() => false)) {
+    await clickInForeground(page, declare);
+    return true;
+  }
 
   // An open +3 suspends the turn order, so this comes before the turn check.
   const breakPrompt = page.getByRole('button', { name: 'Let it through' });

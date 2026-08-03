@@ -134,6 +134,8 @@ export interface AppActions {
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
   readonly passBreak: () => void;
+  readonly declareLastCard: () => void;
+  readonly catchLastCard: (targetId: string) => void;
   readonly votePlayAgain: (agree: boolean) => void;
   readonly requestLeave: () => void;
   readonly cancelLeave: () => void;
@@ -506,6 +508,14 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     passBreak: () => {
       submit({ type: 'passBreak' });
+    },
+
+    declareLastCard: () => {
+      submit({ type: 'declareLastCard' });
+    },
+
+    catchLastCard: (targetId) => {
+      submit({ type: 'catchLastCard', targetId });
     },
 
     votePlayAgain: (agree) => {

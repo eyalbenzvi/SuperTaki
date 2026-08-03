@@ -14,6 +14,11 @@ const QUIET_PHASES = new Set(['connected', 'idle']);
  * re-established says the seat is being held, and a connection that has
  * genuinely failed gets the honest peer-to-peer explanation plus a way out.
  * Nothing is said at all while everything works.
+ *
+ * "Nothing at all" includes a connection that recovered while an old error was
+ * still on the store. That case used to render a panel headed "Connected" over
+ * the text of the failure it had already survived — a contradiction, in the
+ * scarcest space on the table. A live link is the whole of the news.
  */
 export function ConnectionPhaseNotice(): ReactNode {
   const t = useT();
@@ -32,7 +37,7 @@ export function ConnectionPhaseNotice(): ReactNode {
     );
   }
 
-  if (QUIET_PHASES.has(phase) && !error) {
+  if (QUIET_PHASES.has(phase)) {
     return null;
   }
 

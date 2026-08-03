@@ -2,14 +2,17 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '../../../../components/Button.tsx';
 import { Callout } from '../../../../components/Callout.tsx';
+import { Icon } from '../../../../components/Icon.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { countLabel, type Translator } from '../../../../i18n/index.ts';
-import { requiresColorChoice, type Card, type CardColor } from '../../engine/cards.ts';
+import { LAST_CARD_PENALTY, requiresColorChoice, type Card, type CardColor } from '../../engine/cards.ts';
 import {
   canBreakPlusThree,
   currentPlayerName,
+  hasDeclaredLastCard,
   isMyTurn,
   isTakiOpenForMe,
+  mustDeclareLastCard,
   opponents,
   playableCardIds,
   playerName,
@@ -64,6 +67,8 @@ export function GameScreen(): ReactNode {
   const drawCard = useAppStore((state) => state.drawCard);
   const closeTaki = useAppStore((state) => state.closeTaki);
   const passBreak = useAppStore((state) => state.passBreak);
+  const declareLastCard = useAppStore((state) => state.declareLastCard);
+  const catchLastCard = useAppStore((state) => state.catchLastCard);
   const announce = useAppStore((state) => state.announce);
 
   const [pendingWild, setPendingWild] = useState<Card | null>(null);
@@ -74,6 +79,11 @@ export function GameScreen(): ReactNode {
   const myTurn = isMyTurn(table);
   const playable = playableCardIds(table);
   const takiOpen = isTakiOpenForMe(table);
+  const mustDeclare = mustDeclareLastCard(table);
+  const declared =
+    table.hand.length === 1 &&
+    table.localPlayerId !== null &&
+    hasDeclaredLastCard(table, table.localPlayerId);
   const cards = useMemo(() => sortHandForDisplay(table.hand), [table.hand]);
   const seats = useMemo(() => opponents(table), [table]);
   const turnName = currentPlayerName(table);
@@ -168,15 +178,58 @@ export function GameScreen(): ReactNode {
         <ConnectionPhaseNotice />
       </div>
 
-      <OpponentList opponents={seats} t={t} />
+      {/*
+       * Everything that is not the table or the hand, in one group. Upright the
+       * group is transparent — `display: contents` — and its children are rows of
+       * the page exactly as before. In landscape it becomes the column beside the
+       * table, which is what lets the hand keep the full width and stops a tall
+       * stack of notices from pushing it off the bottom of the screen.
+       */}
+      <div className="game__info">
+        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} />
 
-      {/* Outside the scrollable region below: on a short screen, whose turn it is
-          is the last thing that should ever scroll out of sight. */}
-      <div className="turn-row">
-        <p className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
-          {myTurn ? t('game.yourTurn') : t('game.turnOf', { name: turnName ?? '—' })}
-        </p>
-        <DirectionIndicator direction={publicState.direction} t={t} />
+        {/* Outside the scrollable region below: on a short screen, whose turn it is
+            is the last thing that should ever scroll out of sight. */}
+        <div className="turn-row">
+          <p className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
+            {myTurn ? t('game.yourTurn') : t('game.turnOf', { name: turnName ?? '—' })}
+          </p>
+          <DirectionIndicator direction={publicState.direction} t={t} />
+        </div>
+
+        <GameLog
+          feed={feed}
+          t={t}
+          describe={(entry) => describeEvent(t, entry.event, (id) => playerName(table, id))}
+        />
+
+        <div className="game__action">
+          {refusal ? (
+            <Callout tone="warning" role="alert">
+              {refusal}
+            </Callout>
+          ) : (
+            <ActionPrompt
+              t={t}
+              myTurn={myTurn}
+              turnName={turnName}
+              actionPending={actionPending}
+              takiOpen={takiOpen}
+              takiColor={publicState.takiMode?.color ?? null}
+              plusThreeOpen={plusThree !== null}
+              plusThreeName={plusThreeName}
+              myBreak={myBreak}
+              pendingDraw={publicState.pendingDraw}
+              pendingPlus={publicState.pendingPlus}
+              freePlay={publicState.freePlay}
+              playableCount={playable.length}
+              onCloseTaki={closeTaki}
+              onTakeCards={drawCard}
+              onBreak={onBreakPlusThree}
+              onPassBreak={passBreak}
+            />
+          )}
+        </div>
       </div>
 
       <div className="game__table">
@@ -193,39 +246,36 @@ export function GameScreen(): ReactNode {
         />
       </div>
 
-      <GameLog
-        feed={feed}
-        t={t}
-        describe={(entry) => describeEvent(t, entry.event, (id) => playerName(table, id))}
-      />
-
-      <div className="game__action">
-        {refusal ? (
-          <Callout tone="warning" role="alert">
-            {refusal}
-          </Callout>
-        ) : (
-          <ActionPrompt
-            t={t}
-            myTurn={myTurn}
-            turnName={turnName}
-            actionPending={actionPending}
-            takiOpen={takiOpen}
-            takiColor={publicState.takiMode?.color ?? null}
-            plusThreeOpen={plusThree !== null}
-            plusThreeName={plusThreeName}
-            myBreak={myBreak}
-            pendingDraw={publicState.pendingDraw}
-            pendingPlus={publicState.pendingPlus}
-            freePlay={publicState.freePlay}
-            playableCount={playable.length}
-            onCloseTaki={closeTaki}
-            onTakeCards={drawCard}
-            onBreak={onBreakPlusThree}
-            onPassBreak={passBreak}
-          />
-        )}
-      </div>
+      {/*
+       * Its own row, immediately above the hand, rather than one more case in the
+       * prompt below. The declaration is legal at any moment and from any seat, so
+       * it must not have to wait its turn behind a prompt about somebody else's
+       * move — and it is the one control on this screen with a penalty attached to
+       * missing it.
+       */}
+      {mustDeclare || declared ? (
+        <div className="game__declare">
+          {mustDeclare ? (
+            <Button
+              variant="primary"
+              extraClass="declare-btn"
+              block
+              onClick={declareLastCard}
+              disabled={actionPending}
+            >
+              <span className="declare-btn__shout">{t('game.declareLastCard')}</span>
+              <span className="declare-btn__why">
+                {t('game.declareLastCardBody', { count: LAST_CARD_PENALTY })}
+              </span>
+            </Button>
+          ) : (
+            <p className="declared-note" role="status">
+              <Icon name="check" size={1} />
+              {t('game.declaredLastCardMine')}
+            </p>
+          )}
+        </div>
+      ) : null}
 
       <div className="game__hand">
         <Hand

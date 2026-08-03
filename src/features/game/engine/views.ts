@@ -34,6 +34,12 @@ export interface PublicGameState {
    * whether it can answer by looking at its own hand.
    */
   readonly plusThree: { readonly playerId: PlayerId } | null;
+  /**
+   * Who has declared "last card". Public on purpose: at a real table the
+   * declaration is a shout everybody hears, and it is what tells the others
+   * whether the player on one card is safe or exposed.
+   */
+  readonly declaredLastCard: readonly PlayerId[];
   readonly winnerId: PlayerId | null;
 }
 
@@ -64,6 +70,7 @@ export function toPublicGameState(state: GameState): PublicGameState {
     pendingDraw: state.pendingDraw,
     freePlay: state.freePlay,
     plusThree: state.plusThree ? { playerId: state.plusThree.playerId } : null,
+    declaredLastCard: state.declaredLastCard.slice(),
     winnerId: state.winnerId,
   };
 }

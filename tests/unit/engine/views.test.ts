@@ -11,12 +11,12 @@ describe('public game state', () => {
   const state = makeState({
     players: players('Alice', 'Bob', 'Carol'),
     hands: {
-      'p-alice': cards('red:1', 'red:2'),
+      'p-alice': cards('red:1', 'red:3'),
       'p-bob': cards('blue:1'),
-      'p-carol': cards('green:1', 'green:2', 'green:3'),
+      'p-carol': cards('green:1', 'green:3', 'green:3'),
     },
     discardPile: cards('red:8', 'red:9'),
-    drawPile: cards('yellow:1', 'yellow:2'),
+    drawPile: cards('yellow:1', 'yellow:3'),
     activeColor: 'red',
   });
 
@@ -79,7 +79,7 @@ describe('public game state', () => {
 describe('private hand view', () => {
   it('returns only the requested hand', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:1', 'blue:2') },
+      hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:1', 'blue:3') },
     });
     const view = toPrivateHandView(state, 'p-bob');
     expect(view.playerId).toBe('p-bob');
@@ -98,9 +98,9 @@ describe('standings', () => {
       makeState({
         players: players('Alice', 'Bob', 'Carol'),
         hands: {
-          'p-alice': cards('red:1', 'red:2'),
+          'p-alice': cards('red:1', 'red:3'),
           'p-bob': [],
-          'p-carol': cards('green:1', 'green:2', 'green:3'),
+          'p-carol': cards('green:1', 'green:3', 'green:3'),
         },
       }),
     );
