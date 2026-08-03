@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryNetwork } from '../../../src/features/game/network/memoryTransport.ts';
+import { createHostSession, type HostSession } from '../../../src/features/game/network/hostSession.ts';
+import { TransportError } from '../../../src/features/game/network/transport.ts';
+import { hostPeerIdForRoom } from '../../../src/features/game/network/roomCode.ts';
+import { useAppStore } from '../../../src/features/game/state/store.ts';
+import { TEST_ROOM, createRecorder, flush } from '../helpers/net.ts';
 
 /**
  * Drives the real store against the in-memory transport, so the mapping from
@@ -24,17 +30,10 @@ vi.mock('../../../src/features/game/network/transportFactory.ts', () => ({
   },
 }));
 
-const { MemoryNetwork } = await import('../../../src/features/game/network/memoryTransport.ts');
-const { HostSession, createHostSession } = await import('../../../src/features/game/network/hostSession.ts');
-const { TransportError } = await import('../../../src/features/game/network/transport.ts');
-const { hostPeerIdForRoom } = await import('../../../src/features/game/network/roomCode.ts');
-const { useAppStore } = await import('../../../src/features/game/state/store.ts');
-const { flush, createRecorder, TEST_ROOM } = await import('../helpers/net.ts');
-
 type Store = ReturnType<typeof useAppStore.getState>;
 
 const PRISTINE: Store = { ...useAppStore.getState() };
-let network: InstanceType<typeof MemoryNetwork>;
+let network: MemoryNetwork;
 
 beforeEach(() => {
   network = new MemoryNetwork();
@@ -53,7 +52,7 @@ function store(): Store {
 }
 
 async function startHost(): Promise<{
-  host: InstanceType<typeof HostSession>;
+  host: HostSession;
   recorder: ReturnType<typeof createRecorder>;
 }> {
   const recorder = createRecorder();
