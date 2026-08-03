@@ -220,17 +220,24 @@
  *
  * `--pile-chrome` is everything on it that is not the card: its own padding, the
  * colour rail around the discard, the labels under the piles. Subtracting that
- * before dividing by the 2:3 card ratio is what makes "the cards fit" exact
- * rather than a guess — the panel comes out at card height plus the chrome, and
- * nothing is ever cut.
+ * before dividing by the 2:3 card ratio is what makes the cards fit the region
+ * rather than spill out of it — the panel comes out at card height plus the
+ * chrome, and nothing is cut.
+ *
+ * Each figure is the measured chrome for that tier **plus about 6 px of slack**,
+ * and the slack is the point. Calibrated to the pixel it was portable right up
+ * until CI, where different font metrics made a label two pixels taller and the
+ * panel two pixels too big for its region. Six pixels of slack costs four pixels
+ * of card width and buys a layout that does not depend on how a platform renders
+ * a caption.
  *
  * Declared here rather than on the region because a container query cannot
  * restyle its own container, and the tiers below need to change this value.
  */
 .piles {
-  --pile-chrome: 6rem;
+  --pile-chrome: 6.375rem;
   --pile-max: 5.5rem;
-  --card-w-lg: clamp(1.75rem, min(calc((100cqh - var(--pile-chrome)) / 1.5), 30cqi), var(--pile-max));
+  --card-w-lg: clamp(1.5rem, min(calc((100cqh - var(--pile-chrome)) / 1.5), 30cqi), var(--pile-max));
 }
 
 /*
@@ -245,7 +252,7 @@
   }
 
   .piles {
-    --pile-chrome: 3.875rem;
+    --pile-chrome: 4.25rem;
     padding: var(--space-2);
   }
 }
@@ -253,7 +260,7 @@
 /* Shorter still — a small phone holding a big hand. The colour keeps its name. */
 @container (max-height: 7.5rem) {
   .piles {
-    --pile-chrome: 2.25rem;
+    --pile-chrome: 2.625rem;
     padding: 3px;
     gap: var(--space-3);
   }
@@ -271,6 +278,30 @@
   .piles .color-swatch__dot {
     width: 8px;
     height: 8px;
+  }
+}
+
+/*
+ * The floor. A hand of one, a +2 run to answer and a declaration on screen at
+ * once can leave this region with barely a thumb of height, and there is no card
+ * size at which a colour rail *under* the discard still fits in it.
+ *
+ * So it moves: the colour goes beside the piles instead of below them, and stops
+ * costing height at all. It keeps its name — the swatch is never a bare dot —
+ * and the cards get the whole region, which is the only thing that stops them
+ * being cut. Below this there is nothing left to take: `overflow` on the region
+ * is the last resort.
+ */
+@container (max-height: 5.75rem) {
+  .piles {
+    --pile-chrome: 1.5rem;
+    padding: 4px;
+    gap: var(--space-2);
+  }
+
+  .pile--discard {
+    flex-direction: row;
+    align-items: center;
   }
 }
 
