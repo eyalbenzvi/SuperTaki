@@ -259,6 +259,16 @@ requirements, and repository readiness.
   `VITE_BASE_PATH=/color-rush/`, served from that path, and played a two-player game: no 4xx for
   any asset, no page errors, correct invite URL. This is the classic "blank page after deploying"
   failure, so it is checked rather than assumed.
+- **fixed — The end-to-end job could never start its web server on a GitHub runner.**
+  `vite preview` listens on `localhost`, which resolves to `::1` there, while Playwright's health
+  check probed `127.0.0.1`; every CI run failed with
+  `Timed out waiting 120000ms from config.webServer`. Now bound explicitly with
+  `--host 127.0.0.1`. This one only surfaced by reading the first real CI run: locally
+  `localhost` resolves to IPv4, so the suite had always passed.
+- **fixed — The Pages deploy needed a manual repository setting.**
+  `actions/configure-pages` now runs with `enablement: true`, so the first deploy turns Pages on
+  using the `pages: write` permission it already has, instead of failing with
+  `Get Pages site failed`.
 - **verified — Base path resolution.** `actions/configure-pages` reports the real serving path, and
   the workflow normalises it to a Vite `base`. Project pages, user pages and custom domains all work
   with no edit, and renaming the repository needs no change.
@@ -295,6 +305,10 @@ requirements, and repository readiness.
 | Accessibility                | 4      | 1                   |
 | DevOps / Pages               | 2      | 2                   |
 | **Total**                    | **18** | **13**              |
+
+Two of the fixes came from watching the first real CI and Pages runs rather than from local
+testing, which is a reminder that "passes on my machine" and "passes in the pipeline" are
+different claims.
 
 Three of the fixes were bugs a user would have hit immediately — a second round that never dealt, a
 15-second wait for a wrong room code, and a silent failure when a room could not be opened. All

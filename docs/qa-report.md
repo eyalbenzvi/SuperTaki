@@ -259,7 +259,15 @@ Each of these was found by testing, not by inspection, and each is now covered b
     stripped the parameter, so opening it in a second tab tried real WebRTC and could not reach
     the host. The link now carries a `transport=broadcast` override across, and nothing else.
     Found by driving a sub-path deployment end to end.
-11. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
+11. **The end-to-end job could never start its web server in CI.** `vite preview` binds to
+    `localhost`, which resolves to `::1` on GitHub's runners, while Playwright probed
+    `127.0.0.1`; the run died with `Timed out waiting 120000ms from config.webServer`. The
+    server is now bound explicitly with `--host 127.0.0.1`. Found by reading the first real CI
+    run — the suite had only ever been run locally, where `localhost` resolves to IPv4.
+12. **The Pages deploy required a manual setting.** The first run failed with
+    `Get Pages site failed`. `actions/configure-pages` now runs with `enablement: true`, so the
+    workflow turns Pages on itself.
+13. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
     named "Play Red 5", so it failed whenever the hand held a red card. Now scoped to the dialog
     with an exact match; verified stable over repeated runs.
 

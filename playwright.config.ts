@@ -36,7 +36,11 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Pixel 5'], launchOptions } },
   ],
   webServer: {
-    command: `npx vite preview --port ${PORT} --strictPort`,
+    // Bind explicitly to 127.0.0.1. `vite preview` otherwise listens on
+    // `localhost`, which resolves to ::1 on GitHub's runners while Playwright
+    // probes 127.0.0.1 — the health check then never succeeds and the run dies
+    // with "Timed out waiting from config.webServer".
+    command: `npx vite preview --port ${PORT} --strictPort --host 127.0.0.1`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

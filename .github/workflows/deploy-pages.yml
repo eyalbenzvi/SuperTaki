@@ -36,6 +36,11 @@ jobs:
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
+        with:
+          # Turn Pages on (with GitHub Actions as the source) the first time this
+          # runs, so no manual repository setting is needed. Requires the
+          # `pages: write` permission granted above.
+          enablement: true
 
       - name: Resolve base path
         id: base
