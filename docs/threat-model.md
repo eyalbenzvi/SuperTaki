@@ -2,7 +2,7 @@
 
 ## What this is, and what it is not
 
-Color Rush is a **private game between people who know each other**, running as a static site
+Super Taki is a **private game between people who know each other**, running as a static site
 with no server and no accounts. That context sets the security bar honestly:
 
 - It **is** a goal that a buggy or hostile _client_ cannot corrupt the game, read another

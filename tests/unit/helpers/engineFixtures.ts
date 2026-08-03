@@ -1,10 +1,12 @@
 import { cardColor } from '../../../src/features/game/engine/cards.ts';
 import { createRng } from '../../../src/features/game/engine/prng.ts';
+import { WILD_KINDS } from '../../../src/features/game/engine/cards.ts';
 import type {
   Card,
   CardColor,
   ColoredActionKind,
   NumberValue,
+  WildKind,
 } from '../../../src/features/game/engine/cards.ts';
 import type {
   CommandResult,
@@ -24,11 +26,11 @@ function nextId(prefix: string): string {
 
 /**
  * Compact card factory for tests.
- * `'red:5'` -> red 5, `'blue:stop'` -> blue Stop, `'colorChange'` / `'superTaki'` -> wild.
+ * `'red:5'` -> red 5, `'blue:stop'` -> blue Stop, `'king'` / `'superTaki'` -> colourless.
  */
 export function card(spec: string): Card {
-  if (spec === 'colorChange' || spec === 'superTaki') {
-    return { id: nextId(spec), kind: spec };
+  if ((WILD_KINDS as readonly string[]).includes(spec)) {
+    return { id: nextId(spec), kind: spec as WildKind };
   }
   const [color, rest] = spec.split(':');
   if (!color || !rest) {
@@ -64,6 +66,9 @@ export interface StateOverrides {
   currentPlayerIndex?: number;
   takiMode?: GameState['takiMode'];
   pendingPlus?: boolean;
+  pendingDraw?: number;
+  freePlay?: boolean;
+  plusThree?: GameState['plusThree'];
   phase?: GameState['phase'];
   winnerId?: PlayerId | null;
   version?: number;
@@ -92,6 +97,9 @@ export function makeState(overrides: StateOverrides = {}): GameState {
     currentPlayerIndex: overrides.currentPlayerIndex ?? 0,
     takiMode: overrides.takiMode ?? null,
     pendingPlus: overrides.pendingPlus ?? false,
+    pendingDraw: overrides.pendingDraw ?? 0,
+    freePlay: overrides.freePlay ?? false,
+    plusThree: overrides.plusThree ?? null,
     rng: createRng(12345),
     winnerId: overrides.winnerId ?? null,
     seed: 12345,

@@ -38,30 +38,10 @@ test.describe('landing screen', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   });
 
-  test('shows the honest connectivity and privacy notes', async ({ page }) => {
+  test('shows the wordmark and nothing but the way in', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('radio', { name: 'English' }).click();
-    await expect(page.getByText('Players connect directly to each other')).toBeVisible();
-    await expect(page.getByText('No accounts, no servers, no analytics')).toBeVisible();
-    await expect(page.getByText('not affiliated with or endorsed by')).toBeVisible();
-  });
-
-  test('opens the rules page and returns', async ({ page }) => {
-    await page.goto('/');
-    await page.getByRole('radio', { name: 'English' }).click();
-    await page.getByRole('button', { name: 'How to play' }).click();
-
-    await expect(page.getByRole('heading', { name: 'How to play Color Rush' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Taki sequences' })).toBeVisible();
-    await expect(page.getByText('Colourless cards (Colour Change, Super Taki) cannot')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Back' }).click();
-    await expect(page.getByRole('button', { name: 'Create game' })).toBeVisible();
-  });
-
-  test('reaches the rules page from a deep link', async ({ page }) => {
-    await page.goto('/#/rules');
-    await expect(page.getByRole('heading', { name: 'איך משחקים קולור ראש' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveAccessibleName('סופר טאקי');
+    await expect(page.getByRole('button')).toHaveCount(2);
   });
 
   test('is reachable by keyboard only', async ({ page }) => {

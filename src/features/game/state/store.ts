@@ -36,7 +36,7 @@ import {
 
 const log = createLogger('store');
 
-export type Screen = 'home' | 'create' | 'join' | 'lobby' | 'game' | 'over' | 'rules';
+export type Screen = 'home' | 'create' | 'join' | 'lobby' | 'game' | 'over';
 
 export interface FeedEntry {
   readonly id: number;
@@ -58,7 +58,6 @@ export interface AppState {
   displayName: string;
 
   screen: Screen;
-  screenBeforeRules: Screen;
 
   role: 'host' | 'client' | null;
   phase: ConnectionPhase;
@@ -86,8 +85,6 @@ export interface AppActions {
   readonly setDisplayName: (name: string) => void;
 
   readonly goTo: (screen: Screen) => void;
-  readonly openRules: () => void;
-  readonly closeRules: () => void;
   readonly dismissError: () => void;
   readonly dismissRejection: () => void;
   readonly dismissClosed: () => void;
@@ -112,6 +109,7 @@ export interface AppActions {
   readonly playCard: (cardId: string, chosenColor?: 'red' | 'blue' | 'green' | 'yellow') => void;
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
+  readonly passBreak: () => void;
   readonly votePlayAgain: (agree: boolean) => void;
   readonly leaveRoom: () => void;
 }
@@ -139,7 +137,6 @@ function initialState(): AppState {
     theme,
     displayName: loadDisplayName(),
     screen: 'home',
-    screenBeforeRules: 'home',
     role: null,
     phase: 'idle',
     busy: false,
@@ -193,14 +190,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ phase: update.phase });
         return;
       case 'lobby': {
-        const current = get();
-        const nextScreen = screenForLobbyPhase(update.lobby.phase);
-        set({
-          lobby: update.lobby,
-          // Never navigate away from the rules page behind the player's back.
-          screen: current.screen === 'rules' ? current.screen : nextScreen,
-          screenBeforeRules: current.screen === 'rules' ? nextScreen : current.screenBeforeRules,
-        });
+        set({ lobby: update.lobby, screen: screenForLobbyPhase(update.lobby.phase) });
         return;
       }
       case 'publicState':
@@ -293,15 +283,6 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     goTo: (screen) => {
       set({ screen });
-    },
-
-    openRules: () => {
-      const current = get().screen;
-      set({ screen: 'rules', screenBeforeRules: current === 'rules' ? get().screenBeforeRules : current });
-    },
-
-    closeRules: () => {
-      set({ screen: get().screenBeforeRules });
     },
 
     dismissError: () => {
@@ -456,6 +437,10 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     closeTaki: () => {
       submit({ type: 'closeTaki' });
+    },
+
+    passBreak: () => {
+      submit({ type: 'passBreak' });
     },
 
     votePlayAgain: (agree) => {

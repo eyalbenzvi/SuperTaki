@@ -1,6 +1,6 @@
 # Wire protocol
 
-Version: **1** (`PROTOCOL_VERSION` in `src/features/game/network/protocol.ts`)
+Version: **2** (`PROTOCOL_VERSION` in `src/features/game/network/protocol.ts`)
 
 Every message is JSON, travels over a WebRTC data channel with `serialization: 'json'`, and
 is validated with Zod **before it can influence any state**. Schemas are the single source of
@@ -87,10 +87,17 @@ loudly, allocate memory or tear down the room.
 | { type: 'playCard'; cardId: string; chosenColor?: 'red'|'blue'|'green'|'yellow' }
 | { type: 'drawCard' }
 | { type: 'closeTaki' }
+| { type: 'passBreak' }
 ```
 
-`chosenColor` is required for wild cards and forbidden otherwise; the engine rejects both
-mistakes (`colorRequired`, `colorNotAllowed`).
+`chosenColor` is required for Change Colour and forbidden on every other card, including
+the other colourless ones; the engine rejects both mistakes (`colorRequired`,
+`colorNotAllowed`).
+
+`passBreak` declines to answer an open +3. It, and a `playCard` naming a +3 Breaker, are
+the only actions the host accepts **from a player whose turn it is not** — and only while a
++3 is open. Everything else from another seat is `notYourTurn`, and everything at all while
+a +3 is open is `awaitingBreak`.
 
 ## Host → client messages
 
@@ -132,6 +139,9 @@ deal does not restart at 1.
 
 - `publicGameStateSchema` has no field that can hold a hand: players carry `cardCount`, not
   cards. The only `Card` in it is `discardTop`, which is face up on the table.
+- `plusThree` names only the player who played the +3, never the players holding a breaker.
+  Publishing who can answer would leak a card from a hand; each client decides whether to
+  offer the choice by looking at the hand it already has.
 - `privateHand` is only ever sent with `connection.send` to one connection, never broadcast.
 - A client additionally checks `hand.playerId === myPlayerId` and ignores a hand that is not
   its own, so even a buggy host cannot make a client render someone else's cards.
@@ -192,7 +202,7 @@ An action (client → host) — note there is no player id anywhere:
   "senderPeerId": "abc123def456",
   "timestamp": 1758000042000,
   "type": "action",
-  "payload": { "action": { "type": "playCard", "cardId": "w-superTaki-0", "chosenColor": "green" } }
+  "payload": { "action": { "type": "playCard", "cardId": "w-colorChange-0", "chosenColor": "green" } }
 }
 ```
 
@@ -227,6 +237,9 @@ Public state (host → all) — card counts only:
         "openedWithSuperTaki": true
       },
       "pendingPlus": false,
+      "pendingDraw": 0,
+      "freePlay": false,
+      "plusThree": null,
       "winnerId": null
     }
   }
@@ -275,7 +288,6 @@ Events (host → all):
         "card": { "id": "w-superTaki-0", "kind": "superTaki" },
         "resultingColor": "green"
       },
-      { "type": "colorChosen", "playerId": "pl_4f8fc9480f6e569d", "color": "green" },
       { "type": "takiOpened", "playerId": "pl_4f8fc9480f6e569d", "color": "green", "superTaki": true }
     ]
   }
@@ -305,9 +317,9 @@ secret.
 Produced by the engine and mapped to localised strings by key `reject.<code>`:
 
 `gameFinished`, `unknownPlayer`, `notYourTurn`, `cardNotInHand`, `illegalCard`,
-`colorRequired`, `colorNotAllowed`, `mustPlayAfterPlus`, `cannotDrawDuringTaki`,
-`noTakiOpen`, `wildNotAllowedInTaki`, `wrongTakiColor`, `notEnoughPlayers`,
-`tooManyPlayers`, `duplicatePlayerId`.
+`colorRequired`, `colorNotAllowed`, `mustPlayAfterPlus`, `mustAnswerDraw`, `awaitingBreak`,
+`noPlusThreeOpen`, `cannotDrawDuringTaki`, `noTakiOpen`, `wildNotAllowedInTaki`,
+`wrongTakiColor`, `notEnoughPlayers`, `tooManyPlayers`, `duplicatePlayerId`.
 
 A test asserts every code has a Hebrew and an English message, so an unlocalised rejection
 cannot reach a player.

@@ -35,9 +35,11 @@ describe('client message validation', () => {
   it('accepts every action shape', () => {
     for (const action of [
       { type: 'playCard', cardId: 'n-red-5-0' },
-      { type: 'playCard', cardId: 'w-superTaki-0', chosenColor: 'green' },
+      { type: 'playCard', cardId: 'w-colorChange-0', chosenColor: 'green' },
+      { type: 'playCard', cardId: 'w-breakPlusThree-0' },
       { type: 'drawCard' },
       { type: 'closeTaki' },
+      { type: 'passBreak' },
     ]) {
       expect(parseClientMessage(envelope('action', { action })).ok).toBe(true);
     }
@@ -156,6 +158,10 @@ describe('host message validation', () => {
       { type: 'takiClosed', playerId: 'p-alice', cardsPlayed: 3 },
       { type: 'colorChosen', playerId: 'p-alice', color: 'blue' },
       { type: 'playerSkipped', playerId: 'p-bob' },
+      { type: 'drawStacked', playerId: 'p-alice', total: 4 },
+      { type: 'effectsCancelled', playerId: 'p-alice' },
+      { type: 'plusThreePlayed', playerId: 'p-alice' },
+      { type: 'plusThreeBroken', playerId: 'p-bob', targetId: 'p-alice' },
       { type: 'directionChanged', direction: -1 },
       { type: 'extraTurn', playerId: 'p-alice' },
       { type: 'turnChanged', playerId: 'p-bob' },

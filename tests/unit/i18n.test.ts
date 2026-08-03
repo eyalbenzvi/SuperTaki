@@ -97,9 +97,12 @@ describe('dictionaries', () => {
     }
   });
 
-  it('does not use "Super Taki" as the product name', () => {
-    expect(en['app.title']).toBe('Color Rush');
-    expect(en['app.title'].toLowerCase()).not.toContain('taki');
+  it('carries the product name, and the same Latin wordmark in both languages', () => {
+    expect(en['app.title']).toBe('Super Taki');
+    expect(he['app.title']).toBe('סופר טאקי');
+    for (const dictionary of [en, he]) {
+      expect(`${dictionary['app.titleSuper']} ${dictionary['app.titleMain']}`).toBe('SUPER TAKI');
+    }
   });
 });
 

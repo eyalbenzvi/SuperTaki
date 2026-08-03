@@ -13,14 +13,14 @@ import type { Card } from '../engine/cards.ts';
 import { REJECTION_CODES } from '../engine/state.ts';
 
 /**
- * Wire protocol for Color Rush.
+ * Wire protocol for Super Taki.
  *
  * Every message is validated at runtime before it can influence any state.
  * See `docs/protocol.md` for the human-readable specification.
  */
 
 /** Bumped on any breaking change to message shapes or semantics. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Hard cap on a single decoded message, to bound memory from a hostile peer. */
 export const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -43,10 +43,14 @@ export const cardSchema = z.discriminatedUnion('kind', [
   z.object({ id: cardIdSchema, kind: z.literal('number'), color: colorSchema, value: numberValueSchema }),
   z.object({ id: cardIdSchema, kind: z.literal('stop'), color: colorSchema }),
   z.object({ id: cardIdSchema, kind: z.literal('plus'), color: colorSchema }),
+  z.object({ id: cardIdSchema, kind: z.literal('plusTwo'), color: colorSchema }),
   z.object({ id: cardIdSchema, kind: z.literal('direction'), color: colorSchema }),
   z.object({ id: cardIdSchema, kind: z.literal('taki'), color: colorSchema }),
   z.object({ id: cardIdSchema, kind: z.literal('colorChange') }),
   z.object({ id: cardIdSchema, kind: z.literal('superTaki') }),
+  z.object({ id: cardIdSchema, kind: z.literal('king') }),
+  z.object({ id: cardIdSchema, kind: z.literal('plusThree') }),
+  z.object({ id: cardIdSchema, kind: z.literal('breakPlusThree') }),
 ]);
 
 // Compile-time proof that the schema and the engine model cannot drift apart.
@@ -88,6 +92,9 @@ export const publicGameStateSchema = z.object({
   currentPlayerId: playerIdSchema.nullable(),
   takiMode: takiModeSchema.nullable(),
   pendingPlus: z.boolean(),
+  pendingDraw: z.number().int().min(0).max(200),
+  freePlay: z.boolean(),
+  plusThree: z.object({ playerId: playerIdSchema }).nullable(),
   winnerId: playerIdSchema.nullable(),
 });
 
@@ -108,7 +115,7 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('cardDrawn'),
     playerId: playerIdSchema,
-    count: z.number().int().min(1).max(10),
+    count: z.number().int().min(1).max(200),
   }),
   z.object({
     type: z.literal('takiOpened'),
@@ -123,6 +130,18 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('colorChosen'), playerId: playerIdSchema, color: colorSchema }),
   z.object({ type: z.literal('playerSkipped'), playerId: playerIdSchema }),
+  z.object({
+    type: z.literal('drawStacked'),
+    playerId: playerIdSchema,
+    total: z.number().int().min(2).max(200),
+  }),
+  z.object({ type: z.literal('effectsCancelled'), playerId: playerIdSchema }),
+  z.object({ type: z.literal('plusThreePlayed'), playerId: playerIdSchema }),
+  z.object({
+    type: z.literal('plusThreeBroken'),
+    playerId: playerIdSchema,
+    targetId: playerIdSchema,
+  }),
   z.object({ type: z.literal('directionChanged'), direction: directionSchema }),
   z.object({ type: z.literal('extraTurn'), playerId: playerIdSchema }),
   z.object({ type: z.literal('turnChanged'), playerId: playerIdSchema }),
@@ -162,6 +181,7 @@ export const gameActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('playCard'), cardId: cardIdSchema, chosenColor: colorSchema.optional() }),
   z.object({ type: z.literal('drawCard') }),
   z.object({ type: z.literal('closeTaki') }),
+  z.object({ type: z.literal('passBreak') }),
 ]);
 export type GameAction = z.infer<typeof gameActionSchema>;
 

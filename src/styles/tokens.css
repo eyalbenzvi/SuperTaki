@@ -7,18 +7,59 @@
  */
 
 :root {
-  /* Card colours: the same hues in both themes so cards stay recognisable. */
-  --card-red: #d92b3f;
+  /*
+   * The four suit colours, identical in both themes so cards stay
+   * recognisable. Cards are printed objects: the face is white in either
+   * theme, and the colour is carried by the symbol drawn on it.
+   *
+   * `-ink` is the readable text colour when the suit is used as a solid
+   * background (chips, the colour picker) rather than as a drawing colour.
+   */
+  --card-red: #e4002b;
   --card-red-ink: #ffffff;
-  --card-blue: #1f5fd0;
+  --card-blue: #0057b8;
   --card-blue-ink: #ffffff;
-  --card-green: #17794a;
+  --card-green: #00983f;
   --card-green-ink: #ffffff;
-  --card-yellow: #e3a008;
+  --card-yellow: #ffc400;
   --card-yellow-ink: #1a1206;
-  --card-wild-a: #4b3f9e;
-  --card-wild-b: #8e3fa0;
-  --card-wild-ink: #ffffff;
+
+  /*
+   * Artwork shades. Every symbol is a solid block, and a block shows three
+   * tones of one hue at once: the front face turned towards the light, the
+   * walls turned sideways, and the walls turned down, which catch least of it.
+   * Printing inks, so a little softer and warmer than the flat suit colours
+   * above — those still have to carry white text on the colour picker.
+   */
+  --card-red-face: #e23a2b;
+  --card-red-mid: #ab2417;
+  --card-red-deep: #79170f;
+  --card-blue-face: #2b8fd4;
+  --card-blue-mid: #19669e;
+  --card-blue-deep: #0f4269;
+  --card-green-face: #4cad38;
+  --card-green-mid: #337f25;
+  --card-green-deep: #1e5518;
+  --card-yellow-face: #fbc22b;
+  --card-yellow-mid: #db8d12;
+  --card-yellow-deep: #a4610b;
+
+  /*
+   * Two more inks, as vivid as the suits but not among them. The King, the +3
+   * and the +3 Breaker belong to no suit, and violet and orange say that
+   * without anyone mistaking one for a red or a yellow card.
+   */
+  --card-violet-face: #9b45d6;
+  --card-violet-mid: #6d24a3;
+  --card-violet-deep: #481570;
+  --card-orange-face: #f5871f;
+  --card-orange-mid: #bd5c05;
+  --card-orange-deep: #833d03;
+
+  /* Card stock, and the outline every symbol is drawn with. */
+  --card-face: #ffffff;
+  --card-outline: #1b1b21;
+  --card-label: #35353d;
 
   --radius-sm: 6px;
   --radius-md: 12px;
@@ -63,9 +104,9 @@
   --text-muted: #4c556b;
   --text-inverse: #ffffff;
 
-  --accent: #2b4bd8;
+  --accent: #c40025;
   --accent-ink: #ffffff;
-  --accent-soft: #dfe5ff;
+  --accent-soft: #ffe1e6;
 
   --danger: #b3261e;
   --danger-ink: #ffffff;
@@ -77,8 +118,6 @@
   --warning-soft: #fdefd4;
 
   --focus-color: #10265f;
-  --card-back-a: #3a4a72;
-  --card-back-b: #23304d;
   --table-felt: linear-gradient(160deg, #dfe5f1 0%, #cdd6e8 100%);
 }
 
@@ -98,9 +137,10 @@
   --text-muted: #b3bdd2;
   --text-inverse: #0e1118;
 
-  --accent: #8ba4ff;
-  --accent-ink: #101632;
-  --accent-soft: #26315a;
+  /* The brand red carries over unchanged; white on it clears 4.5:1 either way. */
+  --accent: #e4002b;
+  --accent-ink: #ffffff;
+  --accent-soft: #4d1620;
 
   --danger: #ff8f85;
   --danger-ink: #2a0d0a;
@@ -112,7 +152,5 @@
   --warning-soft: #3d2f10;
 
   --focus-color: #bcd0ff;
-  --card-back-a: #2c3550;
-  --card-back-b: #1a2136;
   --table-felt: linear-gradient(160deg, #1c2333 0%, #141a28 100%);
 }

@@ -6,7 +6,6 @@ import { GameScreen } from '../features/game/ui/screens/GameScreen.tsx';
 import { HomeScreen } from '../features/game/ui/screens/HomeScreen.tsx';
 import { JoinRoomScreen } from '../features/game/ui/screens/JoinRoomScreen.tsx';
 import { LobbyScreen } from '../features/game/ui/screens/LobbyScreen.tsx';
-import { RulesScreen } from '../features/game/ui/screens/RulesScreen.tsx';
 import { useAppStore } from '../features/game/state/store.ts';
 import { screenFromHash } from './routing.ts';
 import { TopBar } from './TopBar.tsx';
@@ -28,8 +27,6 @@ function CurrentScreen(): ReactNode {
       return <GameScreen />;
     case 'over':
       return <GameOverScreen />;
-    case 'rules':
-      return <RulesScreen />;
   }
 }
 
@@ -75,17 +72,13 @@ function ClosedRoomDialog(): ReactNode {
 export function App(): ReactNode {
   const t = useT();
   const goTo = useAppStore((state) => state.goTo);
-  const openRules = useAppStore((state) => state.openRules);
 
-  // Deep links: invite URLs and the rules page.
+  // Deep links: invite URLs.
   useEffect(() => {
-    const target = screenFromHash(window.location.hash);
-    if (target === 'join') {
+    if (screenFromHash(window.location.hash) === 'join') {
       goTo('join');
-    } else if (target === 'rules') {
-      openRules();
     }
-  }, [goTo, openRules]);
+  }, [goTo]);
 
   return (
     <div className="app-shell">

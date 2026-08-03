@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Translator } from '../../../../i18n/index.ts';
-import { cardColor, isNumberCard, type Card } from '../../engine/cards.ts';
-import { cardFaceLabel, describeCard } from '../cardText.ts';
+import { cardColor, type Card } from '../../engine/cards.ts';
+import { describeCard } from '../cardText.ts';
 import { CardGlyph } from './CardGlyph.tsx';
 
 export type CardSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -18,6 +18,11 @@ function colorClass(card: Card): string {
   return color ? `card--${color}` : 'card--wild';
 }
 
+/** Lets the stylesheet give an individual card kind its own colour, e.g. a gold King. */
+function kindAttrs(card: Card): { readonly 'data-kind': string } {
+  return { 'data-kind': card.kind };
+}
+
 export interface CardFaceProps {
   readonly card: Card;
   readonly t: Translator;
@@ -29,34 +34,33 @@ export function CardFace({ card, t, size = 'md' }: CardFaceProps): ReactNode {
   return (
     <div
       className={`card ${colorClass(card)} ${SIZE_CLASS[size]}`.trim()}
+      {...kindAttrs(card)}
       role="img"
       aria-label={describeCard(t, card)}
     >
-      <CardBody card={card} t={t} />
+      <CardBody card={card} />
     </div>
   );
 }
 
-function CardBody({ card, t }: { readonly card: Card; readonly t: Translator }): ReactNode {
-  const number = isNumberCard(card);
+const CORNERS = ['tl', 'tr', 'bl', 'br'] as const;
+
+function CardBody({ card }: { readonly card: Card }): ReactNode {
   return (
     <>
-      {/* A small corner index, as on a real card, so a fanned hand stays readable. */}
-      {number ? (
-        <span className="card__corner" aria-hidden="true">
-          {card.value}
+      {/* The symbol repeated small in all four corners, as it is printed: the
+          bottom pair upside down, so the card reads either way up and a fanned
+          hand stays legible. No word is printed on a real card, and none is
+          needed here — every symbol is a distinct shape, and the full name is
+          on the card's accessible label. */}
+      {CORNERS.map((corner) => (
+        <span key={corner} className={`card__corner card__corner--${corner}`} aria-hidden="true">
+          <CardGlyph card={card} flat />
         </span>
-      ) : null}
+      ))}
       <span className="card__glyph">
         <CardGlyph card={card} />
       </span>
-      {/* Action cards need a word as well as a symbol; a number card's glyph is
-          already the value, so repeating it would only add clutter. */}
-      {number ? null : (
-        <span className="card__label" aria-hidden="true">
-          {cardFaceLabel(t, card)}
-        </span>
-      )}
     </>
   );
 }
@@ -91,6 +95,7 @@ export function PlayableCard({
       className={`card ${colorClass(card)} ${SIZE_CLASS[size]} ${
         playable ? 'card--playable' : 'card--dimmed'
       }`.trim()}
+      {...kindAttrs(card)}
       aria-label={t('card.playAria', { card: description })}
       aria-disabled={!playable}
       disabled={!playable}
@@ -99,7 +104,7 @@ export function PlayableCard({
         onPlay(card);
       }}
     >
-      <CardBody card={card} t={t} />
+      <CardBody card={card} />
     </button>
   );
 }
@@ -109,15 +114,16 @@ export interface FaceDownCardProps {
   readonly size?: CardSize;
 }
 
+/**
+ * A card seen from behind. The back is all pattern, as a printed one is: the
+ * weave is drawn by the stylesheet, so there is nothing to render inside.
+ */
 export function FaceDownCard({ t, size = 'md' }: FaceDownCardProps): ReactNode {
   return (
-    <div className={`card card--back ${SIZE_CLASS[size]}`.trim()} role="img" aria-label={t('card.faceDown')}>
-      <span className="card__glyph" aria-hidden="true">
-        <svg viewBox="0 0 24 24" focusable="false">
-          <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
-          <circle cx="12" cy="12" r="2.4" fill="currentColor" />
-        </svg>
-      </span>
-    </div>
+    <div
+      className={`card card--back ${SIZE_CLASS[size]}`.trim()}
+      role="img"
+      aria-label={t('card.faceDown')}
+    />
   );
 }

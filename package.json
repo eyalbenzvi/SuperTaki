@@ -1,7 +1,7 @@
 {
-  "name": "color-rush",
+  "name": "super-taki",
   "version": "1.0.0",
-  "description": "Color Rush - a private, zero-cost peer-to-peer color-card game for the browser",
+  "description": "Super Taki - a private, zero-cost peer-to-peer Taki game for the browser",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

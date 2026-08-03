@@ -102,11 +102,7 @@ export function Piles({
           aria-disabled={!canDraw}
           aria-label={t('game.drawPileAria', { count: drawPileCount })}
           title={canDraw ? t('game.drawPile') : drawBlockedReason}
-        >
-          <span className="card__glyph" aria-hidden="true">
-            +
-          </span>
-        </button>
+        />
         <span className="pile__count">{t('game.cardsLeft', { count: drawPileCount })}</span>
       </div>
 

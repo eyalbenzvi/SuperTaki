@@ -357,17 +357,89 @@
 
 .topbar__brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
-  font-weight: 800;
 }
 
-/* The landing hero already carries the subtitle; below this width it is noise. */
-@media (max-width: 519px) {
-  .topbar__subtitle {
-    display: none;
-  }
+/* Wordmark ----------------------------------------------------------------- */
 
+/*
+ * Drawn in `BrandMark.tsx`; this only sizes it and hands it its colours. The
+ * suits run T, A, K, I — green, red, yellow, blue — as they do on the box.
+ */
+.brand {
+  display: block;
+  block-size: auto;
+  /* Centred in the hero; the bar puts it at the start like any other block. */
+  margin-inline: auto;
+  /* A Latin wordmark: it must not flip its anchors on a right-to-left page. */
+  direction: ltr;
+  overflow: visible;
+}
+
+.brand--md {
+  inline-size: min(15rem, 70vw);
+}
+
+.brand--sm {
+  inline-size: 7.5rem;
+}
+
+.brand__super {
+  fill: var(--card-outline);
+  letter-spacing: 0.08em;
+}
+
+/*
+ * The same three tones and the same outlined-every-edge treatment the cards
+ * use, at the mark's own scale.
+ */
+.brand path {
+  stroke: var(--card-outline);
+  stroke-width: 4.2;
+  stroke-linejoin: round;
+}
+
+.brand__face {
+  fill: var(--glyph);
+}
+.brand__wall--mid {
+  fill: var(--glyph-mid);
+}
+.brand__wall--deep {
+  fill: var(--glyph-deep);
+}
+
+.brand__slot--0 {
+  --glyph: var(--card-red-face);
+  --glyph-mid: var(--card-red-mid);
+  --glyph-deep: var(--card-red-deep);
+}
+.brand__slot--1 {
+  --glyph: var(--card-yellow-face);
+  --glyph-mid: var(--card-yellow-mid);
+  --glyph-deep: var(--card-yellow-deep);
+}
+.brand__slot--2 {
+  --glyph: var(--card-green-face);
+  --glyph-mid: var(--card-green-mid);
+  --glyph-deep: var(--card-green-deep);
+}
+.brand__slot--3 {
+  --glyph: var(--card-blue-face);
+  --glyph-mid: var(--card-blue-mid);
+  --glyph-deep: var(--card-blue-deep);
+}
+
+/*
+ * The bar sits on a tinted surface, and the mark's SUPER is near-black; in the
+ * dark theme it would disappear, so it borrows the page's text colour there.
+ */
+:root[data-theme='dark'] .brand__super {
+  fill: var(--text);
+}
+
+@media (max-width: 519px) {
   .segmented__option {
     padding-inline: var(--space-2);
     font-size: 0.825rem;

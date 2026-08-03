@@ -9,7 +9,7 @@ describe('namespaced storage', () => {
   it('round trips raw values under a namespace', () => {
     writeRaw('theme', 'dark');
     expect(readRaw('theme')).toBe('dark');
-    expect(localStorage.getItem('colorRush:theme')).toBe('dark');
+    expect(localStorage.getItem('superTaki:theme')).toBe('dark');
   });
 
   it('returns null for missing keys', () => {

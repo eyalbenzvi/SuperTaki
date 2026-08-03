@@ -276,7 +276,7 @@ describe('starting and playing a game', () => {
       harness.host.submitLocalAction({ type: 'drawCard' });
     } else {
       harness.host.submitLocalAction(
-        card.kind === 'colorChange' || card.kind === 'superTaki'
+        card.kind === 'colorChange'
           ? { type: 'playCard', cardId: card.id, chosenColor: 'red' }
           : { type: 'playCard', cardId: card.id },
       );
@@ -345,6 +345,11 @@ describe('starting and playing a game', () => {
   });
 });
 
+/** The seat that is not the host's, in a two-player harness. */
+function otherPlayerId(state: PublicGameState, hostPlayerId: string): string {
+  return state.players.find((player) => player.id !== hostPlayerId)?.id ?? '';
+}
+
 /**
  * Drives a full round through the real host/client stack: whoever is on turn
  * plays its first legal card, closes an open Taki sequence when nothing else is
@@ -364,6 +369,28 @@ async function playUntilFinished(
       return state;
     }
 
+    // An open +3 suspends the turn order: whoever holds a breaker answers first.
+    if (state.plusThree) {
+      const responder = [
+        { id: harness.host.localPlayerId, recorder: harness.hostRecorder, host: true },
+        { id: otherPlayerId(state, harness.host.localPlayerId), recorder: client.recorder, host: false },
+      ].find(
+        (candidate) =>
+          candidate.id !== state.plusThree?.playerId &&
+          currentHand(candidate.recorder).some((held) => held.kind === 'breakPlusThree'),
+      );
+      if (!responder) {
+        throw new Error('a +3 is open with nobody able to answer it');
+      }
+      if (responder.host) {
+        harness.host.submitLocalAction({ type: 'passBreak' });
+      } else {
+        client.session.submitAction({ type: 'passBreak' });
+      }
+      await flush(1);
+      continue;
+    }
+
     const hostIsOnTurn = state.currentPlayerId === harness.host.localPlayerId;
     const recorder = hostIsOnTurn ? harness.hostRecorder : client.recorder;
     const hand = currentHand(recorder);
@@ -373,7 +400,7 @@ async function playUntilFinished(
     let action: GameAction;
     if (card) {
       action =
-        card.kind === 'colorChange' || card.kind === 'superTaki'
+        card.kind === 'colorChange'
           ? { type: 'playCard', cardId: card.id, chosenColor: 'green' }
           : { type: 'playCard', cardId: card.id };
     } else if (state.takiMode) {

@@ -26,6 +26,14 @@ export interface PublicGameState {
   readonly currentPlayerId: PlayerId | null;
   readonly takiMode: TakiModeState | null;
   readonly pendingPlus: boolean;
+  readonly pendingDraw: number;
+  readonly freePlay: boolean;
+  /**
+   * Set while a +3 waits to be answered. Only the player who played it is
+   * named: who holds a breaker stays private, and a client already knows
+   * whether it can answer by looking at its own hand.
+   */
+  readonly plusThree: { readonly playerId: PlayerId } | null;
   readonly winnerId: PlayerId | null;
 }
 
@@ -53,6 +61,9 @@ export function toPublicGameState(state: GameState): PublicGameState {
     currentPlayerId: state.players[state.currentPlayerIndex]?.id ?? null,
     takiMode: state.takiMode,
     pendingPlus: state.pendingPlus,
+    pendingDraw: state.pendingDraw,
+    freePlay: state.freePlay,
+    plusThree: state.plusThree ? { playerId: state.plusThree.playerId } : null,
     winnerId: state.winnerId,
   };
 }
@@ -71,6 +82,8 @@ export function playContextFromPublic(state: PublicGameState): PlayContext {
     activeColor: state.activeColor,
     topCard: state.discardTop,
     openTakiColor: state.takiMode?.color ?? null,
+    pendingDraw: state.pendingDraw,
+    freePlay: state.freePlay,
   };
 }
 

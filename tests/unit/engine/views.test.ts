@@ -61,6 +61,8 @@ describe('public game state', () => {
       activeColor: 'red',
       topCard: view.discardTop,
       openTakiColor: null,
+      pendingDraw: 0,
+      freePlay: false,
     });
   });
 

@@ -13,8 +13,8 @@ import { TransportError, createEmitter, type Transport, type TransportConnection
  * It is selected with `?transport=broadcast` and is never the default.
  */
 
-const CONTROL_CHANNEL = 'colorRush:bc:control';
-const DATA_CHANNEL_PREFIX = 'colorRush:bc:session:';
+const CONTROL_CHANNEL = 'superTaki:bc:control';
+const DATA_CHANNEL_PREFIX = 'superTaki:bc:session:';
 const HANDSHAKE_TIMEOUT_MS = 3_000;
 
 const log = createLogger('broadcast');

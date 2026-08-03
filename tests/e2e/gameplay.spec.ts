@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { BROADCAST, createRoom, joinRoom, openApp } from './helpers.ts';
 
 /**
@@ -8,10 +8,34 @@ import { BROADCAST, createRoom, joinRoom, openApp } from './helpers.ts';
  * Taki sequence when nothing else is legal, otherwise draw. This exercises long
  * chains of real host-validated commands — including special cards, Taki
  * sequences and draw-pile recycling — and ends on the game-over screen.
+ *
+ * Bounded by the clock rather than by a step count. How many steps a round
+ * takes varies enormously — the 124-card deck deals big hands and every +2 run
+ * makes them bigger — and a step count that fits the average round fails the
+ * long ones for no reason. Time is what the test actually has to stay inside.
  */
-const MAX_ACTIONS = 400;
+const ROUND_BUDGET_MS = 8 * 60 * 1000;
+
+/*
+ * Both players are tabs in one browser, so one of them is always in the
+ * background — and Chromium stops firing `requestAnimationFrame` there.
+ * Playwright's actionability check waits on two animation frames, so a click on
+ * a background tab would wait for ever even though the element is perfectly
+ * clickable. Reading the DOM is unaffected, so only the clicks need this.
+ */
+async function clickInForeground(page: Page, locator: Locator): Promise<void> {
+  await page.bringToFront();
+  await locator.click();
+}
 
 async function takeOneAction(page: Page): Promise<boolean> {
+  // An open +3 suspends the turn order, so this comes before the turn check.
+  const breakPrompt = page.getByRole('button', { name: 'Let it through' });
+  if (await breakPrompt.isVisible().catch(() => false)) {
+    await clickInForeground(page, breakPrompt);
+    return true;
+  }
+
   const onTurn = await page
     .getByText('Your turn')
     .isVisible()
@@ -22,7 +46,7 @@ async function takeOneAction(page: Page): Promise<boolean> {
 
   const playable = page.locator('.hand .card--playable').first();
   if (await playable.count()) {
-    await playable.click();
+    await clickInForeground(page, playable);
     const picker = page.getByRole('dialog');
     if (await picker.isVisible().catch(() => false)) {
       await picker.getByRole('button', { name: 'Green', exact: true }).click();
@@ -32,22 +56,29 @@ async function takeOneAction(page: Page): Promise<boolean> {
 
   const closeTaki = page.getByRole('button', { name: 'Close Taki' });
   if (await closeTaki.isVisible().catch(() => false)) {
-    await closeTaki.click();
+    await clickInForeground(page, closeTaki);
     return true;
   }
 
   const drawPile = page.getByRole('button', { name: /Draw pile, \d+ cards/ });
   if (await drawPile.isEnabled().catch(() => false)) {
-    await drawPile.click();
+    await clickInForeground(page, drawPile);
     return true;
   }
   return false;
 }
 
 test.describe('a complete round', () => {
-  test.setTimeout(180_000);
+  test.setTimeout(ROUND_BUDGET_MS + 120_000);
 
-  test('plays to a winner and offers another round', async ({ context }) => {
+  test('plays to a winner and offers another round', async ({ context }, testInfo) => {
+    /*
+     * Once is enough. Nothing in a round of play depends on the viewport — the
+     * layout tests cover that — and this is by far the longest test in the
+     * suite, so running it twice buys no signal and doubles the wait.
+     */
+    test.skip(testInfo.project.name !== 'desktop', 'a round of play is viewport-independent');
+
     const host = await context.newPage();
     const guest = await context.newPage();
 
@@ -60,8 +91,9 @@ test.describe('a complete round', () => {
     await host.getByRole('button', { name: 'Start game' }).click();
     await expect(host.locator('.hand .card')).toHaveCount(8);
 
+    const deadline = Date.now() + ROUND_BUDGET_MS;
     let finished = false;
-    for (let step = 0; step < MAX_ACTIONS && !finished; step += 1) {
+    while (!finished && Date.now() < deadline) {
       const acted = (await takeOneAction(host)) || (await takeOneAction(guest));
       if (!acted) {
         // Give the transport a moment; a snapshot may still be in flight.
@@ -73,7 +105,7 @@ test.describe('a complete round', () => {
         .catch(() => false);
     }
 
-    expect(finished).toBe(true);
+    expect(finished, 'the round did not reach a winner inside its time budget').toBe(true);
     await expect(host.getByRole('heading', { name: 'Final standings' })).toBeVisible();
     await expect(guest.getByRole('heading', { name: 'Round finished' })).toBeVisible();
 

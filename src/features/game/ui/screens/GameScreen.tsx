@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Modal } from '../../../../components/Modal.tsx';
 import { useT } from '../../../../app/useT.ts';
-import { isWildCard, type Card, type CardColor } from '../../engine/cards.ts';
+import { requiresColorChoice, type Card, type CardColor } from '../../engine/cards.ts';
 import {
+  canBreakPlusThree,
   currentPlayerName,
   isHost,
   isMyTurn,
@@ -17,14 +18,12 @@ import { describeEvent } from '../eventText.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 import { ColorIndicator, Hand, OpponentList, Piles } from '../components/TableParts.tsx';
-import { RulesBody } from './RulesScreen.tsx';
 
 export function GameScreen(): ReactNode {
   const t = useT();
   const state = useAppStore();
   const [pendingWild, setPendingWild] = useState<Card | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const feedRef = useRef<HTMLUListElement>(null);
 
   const publicState = state.publicState;
@@ -50,7 +49,7 @@ export function GameScreen(): ReactNode {
   }
 
   const onPlay = (card: Card): void => {
-    if (isWildCard(card)) {
+    if (requiresColorChoice(card)) {
       setPendingWild(card);
       return;
     }
@@ -64,9 +63,20 @@ export function GameScreen(): ReactNode {
     }
   };
 
+  const onBreakPlusThree = (): void => {
+    const breaker = state.hand.find((card) => card.kind === 'breakPlusThree');
+    if (breaker) {
+      state.playCard(breaker.id);
+    }
+  };
+
   const turnLabel = myTurn ? t('game.yourTurn') : t('game.turnOf', { name: currentPlayerName(state) ?? '—' });
 
-  const canDraw = myTurn && !publicState.takiMode;
+  const plusThree = publicState.plusThree;
+  const plusThreeName = plusThree ? playerName(state, plusThree.playerId) : null;
+  // A +3 freezes the table for everyone until the breaker window closes.
+  const myBreak = plusThree !== null && canBreakPlusThree(state);
+  const canDraw = myTurn && !publicState.takiMode && plusThree === null;
 
   return (
     <div className="game">
@@ -98,13 +108,57 @@ export function GameScreen(): ReactNode {
         </div>
       ) : null}
 
-      {myTurn && publicState.pendingPlus ? (
+      {plusThree ? (
+        <div className={`taki-banner ${myBreak ? '' : 'taki-banner--quiet'}`.trim()} role="status">
+          <div className="taki-banner__text">
+            <strong>{t('game.plusThreeTitle')}</strong>
+            <p className="text-small">
+              {myBreak
+                ? t('game.plusThreeBreakBody', { name: plusThreeName ?? '—' })
+                : t('game.plusThreeWaiting', { name: plusThreeName ?? '—' })}
+            </p>
+          </div>
+          {myBreak ? (
+            <div className="btn-group">
+              <button type="button" className="btn btn--primary" onClick={onBreakPlusThree}>
+                {t('game.plusThreeBreak')}
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={state.passBreak}>
+                {t('game.plusThreePass')}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {myTurn && plusThree === null && publicState.pendingDraw > 0 ? (
+        <div className="notice notice--info" role="status">
+          <span>{t('game.pendingDraw', { count: publicState.pendingDraw })}</span>
+          <div className="btn-group">
+            <button type="button" className="btn" onClick={state.drawCard}>
+              {t('game.takeCards', { count: publicState.pendingDraw })}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {myTurn && plusThree === null && publicState.freePlay ? (
+        <p className="notice notice--info" role="status">
+          {t('game.freePlay')}
+        </p>
+      ) : null}
+
+      {myTurn && plusThree === null && publicState.pendingPlus && !publicState.freePlay ? (
         <p className="notice notice--info" role="status">
           {t('game.pendingPlus')}
         </p>
       ) : null}
 
-      {myTurn && playable.length === 0 && !publicState.takiMode ? (
+      {myTurn &&
+      plusThree === null &&
+      playable.length === 0 &&
+      !publicState.takiMode &&
+      publicState.pendingDraw === 0 ? (
         <p className="notice" role="status">
           {t('game.mustDraw')}
         </p>
@@ -150,15 +204,6 @@ export function GameScreen(): ReactNode {
       <div className="game-footer">
         <button
           type="button"
-          className="btn btn--ghost"
-          onClick={() => {
-            setHelpOpen(true);
-          }}
-        >
-          {t('game.helpOpen')}
-        </button>
-        <button
-          type="button"
           className="btn btn--danger"
           onClick={() => {
             setConfirmLeave(true);
@@ -177,27 +222,6 @@ export function GameScreen(): ReactNode {
           setPendingWild(null);
         }}
       />
-
-      <Modal
-        open={helpOpen}
-        title={t('game.helpTitle')}
-        onClose={() => {
-          setHelpOpen(false);
-        }}
-        actions={
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setHelpOpen(false);
-            }}
-          >
-            {t('common.close')}
-          </button>
-        }
-      >
-        <RulesBody t={t} compact />
-      </Modal>
 
       <Modal
         open={confirmLeave}

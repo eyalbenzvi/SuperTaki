@@ -5,7 +5,7 @@
  * must keep working without it, so every operation degrades to a no-op.
  */
 
-const PREFIX = 'colorRush:';
+const PREFIX = 'superTaki:';
 
 export function readRaw(key: string): string | null {
   try {

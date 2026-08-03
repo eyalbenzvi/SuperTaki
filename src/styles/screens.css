@@ -6,32 +6,7 @@
 }
 
 .hero__title {
-  font-size: clamp(2.2rem, 11vw, 3.4rem);
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  margin-block-end: var(--space-1);
-}
-
-.hero__letters {
-  display: inline-flex;
-  gap: 0.08em;
-}
-
-.hero__letter {
-  display: inline-block;
-}
-
-.hero__letter:nth-child(4n + 1) {
-  color: var(--card-red);
-}
-.hero__letter:nth-child(4n + 2) {
-  color: var(--card-blue);
-}
-.hero__letter:nth-child(4n + 3) {
-  color: var(--card-green);
-}
-.hero__letter:nth-child(4n) {
-  color: var(--card-yellow);
+  margin-block-end: var(--space-3);
 }
 
 .hero__subtitle {
@@ -150,6 +125,12 @@
   border: 2px solid var(--accent);
   background: var(--accent-soft);
   flex-wrap: wrap;
+}
+
+/* A banner for something happening to somebody else: informative, not urgent. */
+.taki-banner--quiet {
+  border-color: var(--border-strong);
+  background: var(--surface-sunken);
 }
 
 .taki-banner__text {

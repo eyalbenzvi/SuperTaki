@@ -1,9 +1,13 @@
 import {
   CARDS_DEALT_PER_PLAYER,
+  PLUS_THREE_PENALTY,
+  PLUS_TWO_PENALTY,
   buildDeck,
+  cardColor,
   isCardColor,
   isNumberCard,
   isWildCard,
+  requiresColorChoice,
   type Card,
   type CardColor,
 } from './cards.ts';
@@ -39,6 +43,9 @@ interface Draft {
   currentPlayerIndex: number;
   takiMode: GameState['takiMode'];
   pendingPlus: boolean;
+  pendingDraw: number;
+  freePlay: boolean;
+  plusThree: GameState['plusThree'];
   rng: RngState;
   winnerId: PlayerId | null;
   seed: number;
@@ -61,6 +68,9 @@ function toDraft(state: GameState): Draft {
     currentPlayerIndex: state.currentPlayerIndex,
     takiMode: state.takiMode,
     pendingPlus: state.pendingPlus,
+    pendingDraw: state.pendingDraw,
+    freePlay: state.freePlay,
+    plusThree: state.plusThree,
     rng: state.rng,
     winnerId: state.winnerId,
     seed: state.seed,
@@ -80,6 +90,9 @@ function freeze(draft: Draft): GameState {
     currentPlayerIndex: draft.currentPlayerIndex,
     takiMode: draft.takiMode,
     pendingPlus: draft.pendingPlus,
+    pendingDraw: draft.pendingDraw,
+    freePlay: draft.freePlay,
+    plusThree: draft.plusThree,
     rng: draft.rng,
     winnerId: draft.winnerId,
     seed: draft.seed,
@@ -100,6 +113,8 @@ export function playContextFromState(state: GameState): PlayContext {
     activeColor: state.activeColor,
     topCard: topCard(state),
     openTakiColor: state.takiMode?.color ?? null,
+    pendingDraw: state.pendingDraw,
+    freePlay: state.freePlay,
   };
 }
 
@@ -175,6 +190,9 @@ export function createGame(
     currentPlayerIndex: 0,
     takiMode: null,
     pendingPlus: false,
+    pendingDraw: 0,
+    freePlay: false,
+    plusThree: null,
     rng,
     winnerId: null,
     seed,
@@ -230,6 +248,52 @@ function drawCards(draft: Draft, playerId: PlayerId, count: number, events: Game
 }
 
 /**
+ * Settles an open +3: either the breaker sends it back at whoever played it,
+ * or everybody else pays. Either way the turn then moves on from the +3
+ * player's seat, which is still the seat to move.
+ */
+function resolvePlusThree(draft: Draft, breakerId: PlayerId | null, events: GameEvent[]): void {
+  const sourceId = draft.plusThree?.playerId ?? (draft.players[draft.currentPlayerIndex] as EnginePlayer).id;
+  draft.plusThree = null;
+
+  if (breakerId !== null) {
+    events.push({ type: 'plusThreeBroken', playerId: breakerId, targetId: sourceId });
+    drawCards(draft, sourceId, PLUS_THREE_PENALTY, events);
+  } else {
+    for (const player of draft.players) {
+      if (player.id !== sourceId) {
+        drawCards(draft, player.id, PLUS_THREE_PENALTY, events);
+      }
+    }
+  }
+  advanceTurn(draft, events);
+}
+
+/**
+ * Opens the window in which a +3 Breaker may be played out of turn. Only
+ * players actually holding a breaker are waited for, so the common case — no
+ * breaker at the table — settles straight away and nobody is asked anything.
+ */
+function openPlusThree(draft: Draft, events: GameEvent[]): void {
+  const playerId = (draft.players[draft.currentPlayerIndex] as EnginePlayer).id;
+  events.push({ type: 'plusThreePlayed', playerId });
+
+  const awaiting = draft.players
+    .filter(
+      (player) =>
+        player.id !== playerId &&
+        (draft.hands[player.id] ?? []).some((card) => card.kind === 'breakPlusThree'),
+    )
+    .map((player) => player.id);
+
+  if (awaiting.length === 0) {
+    resolvePlusThree(draft, null, events);
+    return;
+  }
+  draft.plusThree = { playerId, awaiting };
+}
+
+/**
  * Applies the effect of the card that ended a player's action.
  * Called for a card played outside Taki mode, and for the final card of a
  * closed Taki sequence.
@@ -250,16 +314,39 @@ function resolveCardEffect(draft: Draft, card: Card, events: GameEvent[]): void 
       events.push({ type: 'extraTurn', playerId: player.id });
       return;
     }
+    case 'plusTwo': {
+      const player = draft.players[draft.currentPlayerIndex] as EnginePlayer;
+      draft.pendingDraw += PLUS_TWO_PENALTY;
+      events.push({ type: 'drawStacked', playerId: player.id, total: draft.pendingDraw });
+      advanceTurn(draft, events);
+      return;
+    }
     case 'direction': {
       draft.direction = draft.direction === 1 ? -1 : 1;
       events.push({ type: 'directionChanged', direction: draft.direction });
       advanceTurn(draft, events);
       return;
     }
+    case 'king': {
+      // The King answers anything: it wipes a pending +2 run and any leftover
+      // obligation, then hands the same player a turn with no restrictions.
+      const player = draft.players[draft.currentPlayerIndex] as EnginePlayer;
+      draft.pendingDraw = 0;
+      draft.pendingPlus = true;
+      draft.freePlay = true;
+      events.push({ type: 'effectsCancelled', playerId: player.id });
+      events.push({ type: 'extraTurn', playerId: player.id });
+      return;
+    }
+    case 'plusThree': {
+      openPlusThree(draft, events);
+      return;
+    }
     case 'number':
     case 'taki':
     case 'superTaki':
-    case 'colorChange': {
+    case 'colorChange':
+    case 'breakPlusThree': {
       advanceTurn(draft, events);
       return;
     }
@@ -278,8 +365,18 @@ function applyPlayCard(
     return reject('cardNotInHand');
   }
 
-  const wild = isWildCard(card);
-  if (wild) {
+  // A +3 Breaker is only ever an answer to an open +3, and while a +3 is open
+  // nothing else may be played — not even by the player whose turn it is.
+  const answeringPlusThree = state.plusThree !== null && card.kind === 'breakPlusThree';
+  if (state.plusThree !== null) {
+    if (!answeringPlusThree || !state.plusThree.awaiting.includes(playerId)) {
+      return reject('awaitingBreak');
+    }
+  } else if (card.kind === 'breakPlusThree') {
+    return reject('noPlusThreeOpen');
+  }
+
+  if (requiresColorChoice(card)) {
     if (chosenColor === undefined) {
       return reject('colorRequired');
     }
@@ -290,15 +387,19 @@ function applyPlayCard(
     return reject('colorNotAllowed');
   }
 
-  if (state.takiMode) {
-    if (wild) {
-      return reject('wildNotAllowedInTaki');
+  if (!answeringPlusThree) {
+    if (state.takiMode) {
+      if (isWildCard(card)) {
+        return reject('wildNotAllowedInTaki');
+      }
+      if (card.color !== state.takiMode.color) {
+        return reject('wrongTakiColor');
+      }
+    } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
+      return reject('mustAnswerDraw');
+    } else if (!isCardPlayable(card, playContextFromState(state))) {
+      return reject('illegalCard');
     }
-    if (card.color !== state.takiMode.color) {
-      return reject('wrongTakiColor');
-    }
-  } else if (!isCardPlayable(card, playContextFromState(state))) {
-    return reject('illegalCard');
   }
 
   const draft = toDraft(state);
@@ -307,11 +408,14 @@ function applyPlayCard(
   draft.hands[playerId] = (draft.hands[playerId] as Card[]).filter((candidate) => candidate.id !== cardId);
   draft.discardPile.push(card);
 
-  const resultingColor = wild ? (chosenColor as CardColor) : card.color;
+  // Only Change Colour repaints the table; every other colourless card leaves
+  // the leading colour exactly as it was.
+  const resultingColor = chosenColor ?? cardColor(card) ?? draft.activeColor;
   draft.activeColor = resultingColor;
   draft.pendingPlus = false;
+  draft.freePlay = false;
   events.push({ type: 'cardPlayed', playerId, card, resultingColor });
-  if (wild) {
+  if (chosenColor !== undefined) {
     events.push({ type: 'colorChosen', playerId, color: resultingColor });
   }
 
@@ -320,12 +424,16 @@ function applyPlayCard(
     draft.winnerId = playerId;
     draft.takiMode = null;
     draft.pendingPlus = false;
+    draft.pendingDraw = 0;
+    draft.plusThree = null;
     events.push({ type: 'playerWon', playerId });
     draft.version += 1;
     return { ok: true, state: freeze(draft), events };
   }
 
-  if (draft.takiMode) {
+  if (answeringPlusThree) {
+    resolvePlusThree(draft, playerId, events);
+  } else if (draft.takiMode) {
     // Inside a sequence: accumulate; effects are resolved when the Taki closes.
     draft.takiMode = { ...draft.takiMode, cardsPlayed: draft.takiMode.cardsPlayed + 1 };
   } else if (card.kind === 'taki' || card.kind === 'superTaki') {
@@ -343,6 +451,26 @@ function applyPlayCard(
     });
   } else {
     resolveCardEffect(draft, card, events);
+  }
+
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events };
+}
+
+/** Declines to answer an open +3; the last decline settles it. */
+function applyPassBreak(state: GameState, playerId: PlayerId): CommandResult {
+  const pending = state.plusThree;
+  if (!pending || !pending.awaiting.includes(playerId)) {
+    return reject('noPlusThreeOpen');
+  }
+
+  const draft = toDraft(state);
+  const events: GameEvent[] = [];
+  const awaiting = pending.awaiting.filter((candidate) => candidate !== playerId);
+  if (awaiting.length === 0) {
+    resolvePlusThree(draft, null, events);
+  } else {
+    draft.plusThree = { ...pending, awaiting };
   }
 
   draft.version += 1;
@@ -374,14 +502,23 @@ function applyDrawCard(state: GameState, playerId: PlayerId): CommandResult {
   if (state.takiMode) {
     return reject('cannotDrawDuringTaki');
   }
-  if (state.pendingPlus && hasPlayableCard(state.hands[playerId] ?? [], playContextFromState(state))) {
+  // A pending +2 run must be paid in full; otherwise the usual single card,
+  // which a Plus (or a King's free turn) only allows once nothing is playable.
+  const owed = state.pendingDraw;
+  if (
+    owed === 0 &&
+    state.pendingPlus &&
+    hasPlayableCard(state.hands[playerId] ?? [], playContextFromState(state))
+  ) {
     return reject('mustPlayAfterPlus');
   }
 
   const draft = toDraft(state);
   const events: GameEvent[] = [];
-  drawCards(draft, playerId, 1, events);
+  drawCards(draft, playerId, owed > 0 ? owed : 1, events);
+  draft.pendingDraw = 0;
   draft.pendingPlus = false;
+  draft.freePlay = false;
   advanceTurn(draft, events);
   draft.version += 1;
   return { ok: true, state: freeze(draft), events };
@@ -398,6 +535,23 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   const actor = state.players.find((player) => player.id === command.playerId);
   if (!actor) {
     return reject('unknownPlayer');
+  }
+
+  // While a +3 is waiting for an answer the table is frozen for everyone, and
+  // the only two moves are a breaker or a pass — from any seat, not just the
+  // one to move. That is the whole point of the card.
+  if (state.plusThree) {
+    switch (command.type) {
+      case 'playCard':
+        return applyPlayCard(state, command.playerId, command.cardId, command.chosenColor);
+      case 'passBreak':
+        return applyPassBreak(state, command.playerId);
+      default:
+        return reject('awaitingBreak');
+    }
+  }
+  if (command.type === 'passBreak') {
+    return reject('noPlusThreeOpen');
   }
   if (currentPlayer(state)?.id !== command.playerId) {
     return reject('notYourTurn');

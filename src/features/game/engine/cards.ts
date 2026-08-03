@@ -1,8 +1,10 @@
 /**
- * Card model for Color Rush.
+ * Card model for Super Taki.
  *
- * The deck is an original definition documented in `docs/rules.md`. Cards are
- * plain serialisable objects so they can travel over the network unchanged.
+ * The deck follows the Super Taki edition: numbers plus the five coloured
+ * action cards, and the five colourless cards (Change Colour, Super Taki,
+ * King, +3 and +3 Breaker). Cards are plain serialisable objects so they can
+ * travel over the network unchanged. See `docs/rules.md`.
  */
 
 export const CARD_COLORS = ['red', 'blue', 'green', 'yellow'] as const;
@@ -12,11 +14,14 @@ export const NUMBER_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 export type NumberValue = (typeof NUMBER_VALUES)[number];
 
 /** Action cards that carry a colour. */
-export const COLORED_ACTIONS = ['stop', 'plus', 'direction', 'taki'] as const;
+export const COLORED_ACTIONS = ['stop', 'plus', 'plusTwo', 'direction', 'taki'] as const;
 export type ColoredActionKind = (typeof COLORED_ACTIONS)[number];
 
-/** Cards without a colour of their own; the player picks the active colour. */
-export const WILD_KINDS = ['colorChange', 'superTaki'] as const;
+/**
+ * Cards without a colour of their own. Only Change Colour lets the player pick
+ * the next colour; the rest keep whatever colour is already leading.
+ */
+export const WILD_KINDS = ['colorChange', 'superTaki', 'king', 'plusThree', 'breakPlusThree'] as const;
 export type WildKind = (typeof WILD_KINDS)[number];
 
 export type CardKind = 'number' | ColoredActionKind | WildKind;
@@ -49,16 +54,28 @@ export const DECK_COMPOSITION = {
   numberCopiesPerColor: 2,
   /** Each coloured action card exists twice per colour. */
   actionCopiesPerColor: 2,
-  /** Colour-change wild cards in the whole deck. */
+  /** Colour-change cards in the whole deck. */
   colorChangeCount: 4,
-  /** Super Taki wild cards in the whole deck. */
+  /** Super Taki cards in the whole deck. */
   superTakiCount: 2,
+  /** King cards in the whole deck. */
+  kingCount: 2,
+  /** +3 cards in the whole deck. */
+  plusThreeCount: 2,
+  /** +3 Breaker cards in the whole deck. */
+  breakPlusThreeCount: 2,
 } as const;
 
 export const CARDS_DEALT_PER_PLAYER = 8;
 
+/** How many cards a +2 adds to the running penalty. */
+export const PLUS_TWO_PENALTY = 2;
+
+/** How many cards a +3 (or a broken +3) makes its victims draw. */
+export const PLUS_THREE_PENALTY = 3;
+
 export function isWildCard(card: Card): card is WildCard {
-  return card.kind === 'colorChange' || card.kind === 'superTaki';
+  return (WILD_KINDS as readonly string[]).includes(card.kind);
 }
 
 export function isColoredCard(card: Card): card is NumberCard | ColoredActionCard {
@@ -69,7 +86,18 @@ export function isNumberCard(card: Card): card is NumberCard {
   return card.kind === 'number';
 }
 
-/** Colour of a card, or `null` for wild cards. */
+/**
+ * Whether playing this card asks its owner to name the next colour.
+ *
+ * Only Change Colour does. Since the King joined the deck, the other
+ * colourless cards — Super Taki, King, +3 and +3 Breaker — keep the colour
+ * that is already leading.
+ */
+export function requiresColorChoice(card: Card): boolean {
+  return card.kind === 'colorChange';
+}
+
+/** Colour of a card, or `null` for colourless cards. */
 export function cardColor(card: Card): CardColor | null {
   return isWildCard(card) ? null : card.color;
 }
@@ -109,11 +137,17 @@ export function buildDeck(): Card[] {
     }
   }
 
-  for (let copy = 0; copy < DECK_COMPOSITION.colorChangeCount; copy += 1) {
-    push({ id: `w-colorChange-${copy}`, kind: 'colorChange' });
-  }
-  for (let copy = 0; copy < DECK_COMPOSITION.superTakiCount; copy += 1) {
-    push({ id: `w-superTaki-${copy}`, kind: 'superTaki' });
+  const wildCounts: Readonly<Record<WildKind, number>> = {
+    colorChange: DECK_COMPOSITION.colorChangeCount,
+    superTaki: DECK_COMPOSITION.superTakiCount,
+    king: DECK_COMPOSITION.kingCount,
+    plusThree: DECK_COMPOSITION.plusThreeCount,
+    breakPlusThree: DECK_COMPOSITION.breakPlusThreeCount,
+  };
+  for (const kind of WILD_KINDS) {
+    for (let copy = 0; copy < wildCounts[kind]; copy += 1) {
+      push({ id: `w-${kind}-${copy}`, kind });
+    }
   }
 
   return cards;
@@ -124,4 +158,7 @@ export const DECK_SIZE =
   CARD_COLORS.length * NUMBER_VALUES.length * DECK_COMPOSITION.numberCopiesPerColor +
   CARD_COLORS.length * COLORED_ACTIONS.length * DECK_COMPOSITION.actionCopiesPerColor +
   DECK_COMPOSITION.colorChangeCount +
-  DECK_COMPOSITION.superTakiCount;
+  DECK_COMPOSITION.superTakiCount +
+  DECK_COMPOSITION.kingCount +
+  DECK_COMPOSITION.plusThreeCount +
+  DECK_COMPOSITION.breakPlusThreeCount;
