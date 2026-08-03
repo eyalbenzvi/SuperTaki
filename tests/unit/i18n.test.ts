@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LANGUAGE,
   LANGUAGES,
+  countLabel,
   createTranslator,
   directionFor,
   en,
@@ -134,5 +135,32 @@ describe('translate', () => {
     expect(isLanguage('he')).toBe(true);
     expect(isLanguage('fr')).toBe(false);
     expect(isLanguage(null)).toBe(false);
+  });
+});
+
+describe('counted phrases', () => {
+  it('picks the singular at one and the plural everywhere else', () => {
+    const t = createTranslator('en');
+    expect(countLabel(t, 'game.cardsLeft', 1)).toBe('1 card');
+    expect(countLabel(t, 'game.cardsLeft', 0)).toBe('0 cards');
+    expect(countLabel(t, 'game.cardsLeft', 7)).toBe('7 cards');
+  });
+
+  it('lets a language spell the singular out', () => {
+    const t = createTranslator('he');
+    expect(countLabel(t, 'game.cardsLeft', 1)).toBe('קלף אחד');
+    expect(countLabel(t, 'game.cardsLeft', 3)).toBe('3 קלפים');
+  });
+
+  it('has both halves of every plural pair in both languages', () => {
+    const singulars = keys.filter((key) => key.endsWith('.one'));
+    expect(singulars.length).toBeGreaterThan(0);
+    for (const key of singulars) {
+      const plural = `${key.slice(0, -'.one'.length)}.other` as TranslationKey;
+      expect(keys, `missing plural for ${key}`).toContain(plural);
+      // The singular form must not interpolate the number: some languages spell it.
+      expect(en[key], `en:${key}`).not.toContain('{count}');
+      expect(he[key], `he:${key}`).not.toContain('{count}');
+    }
   });
 });

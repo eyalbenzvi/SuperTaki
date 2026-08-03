@@ -1,9 +1,12 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Badge } from '../../../../components/Badge.tsx';
+import { Button } from '../../../../components/Button.tsx';
 import { Modal } from '../../../../components/Modal.tsx';
 import { SegmentedControl } from '../../../../components/SegmentedControl.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { canShare, copyText, shareLink } from '../../../../lib/share.ts';
 import { MAX_PLAYERS, MIN_PLAYERS } from '../../engine/state.ts';
+import type { LobbyPlayer } from '../../network/protocol.ts';
 import { everyoneConnected, isHost, seatedPlayers } from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
@@ -14,6 +17,17 @@ const PLAYER_COUNTS = Array.from(
   (_, index) => MIN_PLAYERS + index,
 );
 
+/** How long "Copied" stays on the button before it offers to copy again. */
+const COPIED_MS = 2000;
+
+/**
+ * The waiting room.
+ *
+ * Its whole job is to get other people into the room, so the room code is the
+ * biggest thing on the screen and the invite link — three wrapped lines of URL
+ * that nobody types by hand — is folded away behind Copy and Share. Below that,
+ * who is in, and then the one action that matters.
+ */
 export function LobbyScreen(): ReactNode {
   const t = useT();
   const state = useAppStore();
@@ -21,23 +35,34 @@ export function LobbyScreen(): ReactNode {
   const host = isHost(state);
   const allConnected = everyoneConnected(state);
 
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [confirmStart, setConfirmStart] = useState(false);
-  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<LobbyPlayer | null>(null);
 
   const inviteUrl = state.inviteUrl;
+  const roomCode = state.roomCode;
   const canStart = host && players.length >= MIN_PLAYERS;
 
-  const doCopy = (): void => {
-    if (!inviteUrl) {
+  useEffect(() => {
+    if (!copied) {
       return;
     }
-    void copyText(inviteUrl).then((ok) => {
-      setCopied(ok);
-      if (!ok) {
-        setShareNote(t('lobby.shareUnavailable'));
-      }
+    const timer = setTimeout(() => {
+      setCopied(null);
+    }, COPIED_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [copied]);
+
+  const copy = (what: 'code' | 'link', value: string | null): void => {
+    if (!value) {
+      return;
+    }
+    void copyText(value).then((ok) => {
+      setCopied(ok ? what : null);
+      setShareNote(ok ? null : t('lobby.shareUnavailable'));
     });
   };
 
@@ -66,111 +91,141 @@ export function LobbyScreen(): ReactNode {
 
       <ConnectionPhaseNotice />
 
-      <section className="panel invite-panel">
-        <div className="data-row">
-          <span className="field__label">{t('lobby.roomCode')}</span>
-          <span className="code-value">{state.roomCode ?? '—'}</span>
+      <section className="panel invite" aria-labelledby="invite-title">
+        <h2 className="panel__title" id="invite-title">
+          {t('lobby.inviteTitle')}
+        </h2>
+        <p className="text-small muted">{t('lobby.inviteBody')}</p>
+
+        <p className="room-code">
+          <span className="room-code__label">{t('lobby.roomCode')}</span>
+          <span className="room-code__value code-value">{roomCode ?? '—'}</span>
+        </p>
+
+        <div className="btn-group btn-group--fill">
+          <Button
+            icon={copied === 'code' ? 'check' : 'copy'}
+            onClick={() => {
+              copy('code', roomCode);
+            }}
+          >
+            {copied === 'code' ? t('common.copied') : t('common.copyCode')}
+          </Button>
+          {inviteUrl ? (
+            <Button
+              icon={copied === 'link' ? 'check' : 'link'}
+              onClick={() => {
+                copy('link', inviteUrl);
+              }}
+            >
+              {copied === 'link' ? t('common.copied') : t('common.copy')}
+            </Button>
+          ) : null}
+          {inviteUrl && canShare() ? (
+            <Button variant="primary" icon="share" onClick={doShare}>
+              {t('common.share')}
+            </Button>
+          ) : null}
         </div>
 
+        {shareNote ? <span className="field__hint">{shareNote}</span> : null}
+
         {inviteUrl ? (
-          <div className="stack">
-            <span className="field__label">{t('lobby.inviteLink')}</span>
+          <details className="disclosure">
+            <summary>{t('lobby.inviteLink')}</summary>
             <span className="invite-url">{inviteUrl}</span>
-            <div className="btn-group">
-              <button type="button" className="btn" onClick={doCopy}>
-                {copied ? t('common.copied') : t('common.copy')}
-              </button>
-              {canShare() ? (
-                <button type="button" className="btn" onClick={doShare}>
-                  {t('common.share')}
-                </button>
-              ) : null}
-            </div>
-            {shareNote ? <span className="field__hint">{shareNote}</span> : null}
-          </div>
+          </details>
         ) : null}
       </section>
 
-      <section className="panel">
-        <div className="row row--between">
-          <h2 className="panel__title">
-            {t('lobby.playerCount', {
-              count: players.length,
-              max: state.lobby?.maxPlayers ?? MAX_PLAYERS,
-            })}
-          </h2>
-        </div>
+      <section className="panel" aria-labelledby="players-title">
+        <h2 className="panel__title" id="players-title">
+          {t('lobby.playerCount', {
+            count: players.length,
+            max: state.lobby?.maxPlayers ?? MAX_PLAYERS,
+          })}
+        </h2>
 
         <ul className="player-list">
-          {players.map((player) => (
+          {players.map((player, index) => (
             <li className="player-list__item" key={player.id}>
-              <span className="player-list__name">
+              <span className="player-list__seat" aria-hidden="true">
+                {index + 1}
+              </span>
+              <span className="player-list__name truncate" title={player.name}>
                 {player.name}
                 {player.id === state.localPlayerId ? (
                   <span className="text-small muted"> ({t('common.you')})</span>
                 ) : null}
               </span>
-              {player.isHost ? <span className="badge badge--host">{t('common.host')}</span> : null}
+              <span className="sr-only">{t('lobby.seatLabel', { seat: index + 1 })}</span>
+              {player.isHost ? (
+                <Badge tone="accent" icon="crown">
+                  {t('common.host')}
+                </Badge>
+              ) : null}
               <HealthBadge health={player.health} t={t} />
               {host && !player.isHost ? (
-                <button
-                  type="button"
-                  className="btn btn--danger btn--ghost"
+                <Button
+                  iconOnly
+                  icon="remove"
+                  variant="ghost"
+                  size="sm"
                   aria-label={t('lobby.remove', { name: player.name })}
                   onClick={() => {
-                    state.removePlayer(player.id);
+                    setPendingRemoval(player);
                   }}
-                >
-                  ✕
-                </button>
+                />
               ) : null}
             </li>
           ))}
         </ul>
+
+        {players.length < MIN_PLAYERS ? (
+          <p className="text-small muted">{t('lobby.alone')}</p>
+        ) : host ? (
+          <p className="text-small muted">{t('lobby.readyToStart')}</p>
+        ) : null}
       </section>
 
       {host ? (
-        <section className="panel stack">
-          <span className="field__label">{t('create.maxPlayers')}</span>
-          <SegmentedControl<number>
-            label={t('create.maxPlayers')}
-            value={state.lobby?.maxPlayers ?? MAX_PLAYERS}
-            onChange={state.setMaxPlayers}
-            options={PLAYER_COUNTS.map((count) => ({
-              value: count,
-              label: String(count),
-            }))}
-          />
-          <span className="field__hint">{t('lobby.maxPlayersLocked')}</span>
-        </section>
+        <details className="panel disclosure disclosure--panel">
+          <summary>{t('lobby.settings')}</summary>
+          <div className="stack">
+            <span className="field__label">{t('create.maxPlayers')}</span>
+            <SegmentedControl<number>
+              block
+              label={t('create.maxPlayers')}
+              value={state.lobby?.maxPlayers ?? MAX_PLAYERS}
+              onChange={state.setMaxPlayers}
+              options={PLAYER_COUNTS.map((count) => ({
+                value: count,
+                label: String(count),
+              }))}
+            />
+            <span className="field__hint">{t('lobby.maxPlayersLocked')}</span>
+          </div>
+        </details>
       ) : null}
 
-      <div className="btn-group">
+      {/*
+        The one action of the screen, pinned where a thumb reaches it however
+        long the roster gets.
+      */}
+      <div className="action-bar">
         {host ? (
-          <button
-            type="button"
-            className="btn btn--primary btn--large"
-            disabled={!canStart}
-            onClick={startGame}
-          >
-            {t('lobby.start')}
-          </button>
+          <>
+            <Button variant="primary" size="lg" block disabled={!canStart} onClick={startGame}>
+              {t('lobby.start')}
+            </Button>
+            {canStart ? null : <p className="action-bar__hint">{t('lobby.startHint')}</p>}
+          </>
         ) : (
-          <p className="muted" role="status">
+          <p className="action-bar__hint" role="status">
             {t('lobby.waitingForHost')}
           </p>
         )}
-        <button
-          type="button"
-          className="btn btn--danger"
-          onClick={() => {
-            setConfirmLeave(true);
-          }}
-        >
-          {t('common.leave')}
-        </button>
       </div>
-      {host && !canStart ? <p className="text-small muted">{t('lobby.startHint')}</p> : null}
 
       <Modal
         open={confirmStart}
@@ -180,55 +235,64 @@ export function LobbyScreen(): ReactNode {
         }}
         actions={
           <>
-            <button
-              type="button"
-              className="btn btn--ghost"
+            <Button
+              variant="ghost"
               onClick={() => {
                 setConfirmStart(false);
               }}
             >
               {t('common.cancel')}
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
+            </Button>
+            <Button
+              variant="primary"
               onClick={() => {
                 setConfirmStart(false);
                 state.startGame();
               }}
             >
               {t('lobby.confirmStartAction')}
-            </button>
+            </Button>
           </>
         }
       >
         <p>{t('lobby.confirmStartBody')}</p>
       </Modal>
 
+      {/*
+        Removing somebody is destructive and irreversible from their side, and the
+        control sits beside their name in a list — exactly the shape of a mis-tap.
+      */}
       <Modal
-        open={confirmLeave}
-        title={t('lobby.leaveTitle')}
+        open={pendingRemoval !== null}
+        title={t('lobby.removeTitle', { name: pendingRemoval?.name ?? '' })}
         onClose={() => {
-          setConfirmLeave(false);
+          setPendingRemoval(null);
         }}
         actions={
           <>
-            <button
-              type="button"
-              className="btn btn--ghost"
+            <Button
+              variant="ghost"
               onClick={() => {
-                setConfirmLeave(false);
+                setPendingRemoval(null);
               }}
             >
               {t('common.cancel')}
-            </button>
-            <button type="button" className="btn btn--danger" onClick={state.leaveRoom}>
-              {t('common.leave')}
-            </button>
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (pendingRemoval) {
+                  state.removePlayer(pendingRemoval.id);
+                }
+                setPendingRemoval(null);
+              }}
+            >
+              {t('lobby.removeAction')}
+            </Button>
           </>
         }
       >
-        <p>{host ? t('lobby.leaveBodyHost') : t('lobby.leaveBodyGuest')}</p>
+        <p>{t('lobby.removeBody')}</p>
       </Modal>
     </div>
   );

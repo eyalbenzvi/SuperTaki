@@ -9,3 +9,6 @@ blob-report/
 .env
 .env.local
 .vite/
+
+# Local QA driver scripts (screenshots, layout probes); not part of the build.
+.qa/

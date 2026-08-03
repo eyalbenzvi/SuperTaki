@@ -2,7 +2,7 @@
 
 .hero {
   text-align: center;
-  padding-block: var(--space-5) var(--space-4);
+  padding-block: var(--space-4) var(--space-2);
 }
 
 .hero__title {
@@ -11,7 +11,8 @@
 
 .hero__subtitle {
   color: var(--text-muted);
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
+  margin: 0;
 }
 
 .home-actions {
@@ -19,125 +20,345 @@
   gap: var(--space-3);
 }
 
+/* Three lines that tell a first-time player what kind of thing this is. */
+.steps {
+  margin-block-start: auto;
+  padding-block-start: var(--space-4);
+}
+
+.steps__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-block-end: var(--space-2);
+}
+
+.steps__list {
+  margin: 0;
+  padding-inline-start: 1.4rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 /* Lobby ------------------------------------------------------------------- */
 
-.invite-panel {
+.invite {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-.max-players {
+/*
+ * The room code is the reason this screen exists, so it is the largest thing on
+ * it. The invite link is three wrapped lines of URL that nobody types by hand; it
+ * lives behind a disclosure, and Copy and Share do the actual work.
+ */
+.room-code {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+
+.room-code__label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.room-code__value {
+  font-size: clamp(1.25rem, 7vw, 1.9rem);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The screen's one action, kept together at the bottom of the page rather than
+ * trailing after however long the roster has grown.
+ */
+.action-bar {
+  margin-block-start: auto;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  flex-wrap: wrap;
+  position: sticky;
+  inset-block-end: 0;
+  padding-block: var(--space-4);
+  padding-block-end: calc(var(--space-3) + var(--safe-bottom));
+  /*
+   * Content scrolls under the bar, so the fade has to reach opaque quickly:
+   * a half-covered line of text reads as a rendering fault rather than as depth.
+   */
+  background: linear-gradient(to bottom, transparent, var(--bg-base) 22%);
+}
+
+.action-bar__hint {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* End of round ------------------------------------------------------------- */
+
+.result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.result--mine {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+}
+
+.result__icon {
+  color: var(--text-muted);
+  display: flex;
+}
+
+.result--mine .result__icon {
+  color: var(--success);
+}
+
+.result__title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.result__winner {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-black);
+  margin: 0;
 }
 
 /* Game -------------------------------------------------------------------- */
 
+/*
+ * The table is a fixed-height layout, not a document.
+ *
+ * Rows, top to bottom: anything wrong with the connection, the other players,
+ * the table itself, what to do now, and the hand. Only the table row is allowed
+ * to give way when the viewport is short — the prompt and the hand are the two
+ * things a player is actually using, and they stay put.
+ */
 .game {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  padding-block-end: calc(var(--space-2) + var(--safe-bottom));
   width: 100%;
-  max-width: 60rem;
+  max-width: 42rem;
   margin-inline: auto;
   flex: 1;
+  min-height: 0;
+
+  /*
+   * The piles are sized from the height available rather than from a stack of
+   * breakpoints. The table is the one region that has to give way on a short
+   * screen, and its content is two cards: tying their width to the viewport's
+   * own height is what keeps them whole from a 568 px phone to a desktop,
+   * instead of clipping between one breakpoint and the next.
+   */
+  --card-w-lg: clamp(3.5rem, 11svh, 5.5rem);
 }
 
-.opponents {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  padding-block-end: var(--space-1);
-  list-style: none;
-  margin: 0;
-  padding-inline: 0;
+.game__notice:empty {
+  display: none;
 }
 
-.opponent {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  min-inline-size: 8.5rem;
-  flex: none;
-}
-
-.opponent--current {
-  border-color: var(--success);
-  background: var(--success-soft);
-}
-
-.opponent__info {
+/* The one row that gives way when the viewport is short. */
+.game__table {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.opponent__name {
-  font-weight: 700;
-  font-size: 0.9rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.opponent__cards {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.table-status {
-  display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.game__action,
+.game__hand,
+.turn-row,
+.ticker,
+.seats {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/*
+ * Whose turn it is, and which way play is going: one line, one hierarchy — and
+ * outside the scrollable region, because on a short screen this is the last thing
+ * that should ever be scrolled out of sight.
+ */
+.turn-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
+/* Seats ------------------------------------------------------------------- */
+
+.seats__list {
+  display: flex;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* Centred while the seats fit, and still scrollable from the start when they do
+   not — see the same pair of spacers on the hand. */
+.seats__list::before,
+.seats__list::after {
+  content: '';
+  flex: none;
+  margin: auto;
+}
+
+.seat {
+  position: relative;
+  flex: 0 1 auto;
+  min-inline-size: 4.5rem;
+  max-inline-size: 7rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  margin: 0;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition:
+    border-color var(--transition-medium),
+    background-color var(--transition-medium);
+}
+
+/*
+ * Whose turn it is, said three ways: a ring, a caret above the seat, and the
+ * turn banner naming them in words. None of the three is colour on its own.
+ */
+.seat--current {
+  border-color: var(--success);
+  background: var(--success-soft);
+  box-shadow: 0 0 0 2px var(--success-border);
+}
+
+.seat__marker {
+  position: absolute;
+  inset-block-start: -7px;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  inline-size: 0;
+  block-size: 0;
+  border-inline: 6px solid transparent;
+  border-block-end: 7px solid var(--success);
+}
+
+.seat__pile {
+  display: flex;
+  margin-block-end: 2px;
+}
+
+.seat__name {
+  font-weight: var(--weight-bold);
+  font-size: var(--text-xs);
+  max-inline-size: 100%;
+}
+
+.seat__count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* One card left is the loudest fact at the table, and it is not a colour. */
+.seat__count--low {
+  color: var(--danger);
+  font-weight: var(--weight-bold);
+}
+
+/* Turn banner ------------------------------------------------------------- */
+
 .turn-banner {
-  padding: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: var(--space-1) var(--space-4);
   border-radius: var(--radius-pill);
-  font-weight: 800;
+  font-weight: var(--weight-black);
+  font-size: var(--text-md);
   text-align: center;
   border: 1px solid var(--border);
   background: var(--surface-sunken);
+  color: var(--text-muted);
 }
 
 .turn-banner--mine {
   background: var(--success-soft);
   border-color: var(--success);
+  color: var(--text);
+  font-size: var(--text-lg);
 }
 
-.taki-banner {
+/* Log --------------------------------------------------------------------- */
+
+/*
+ * The newest line, always on screen; the history behind it in a dialog. A
+ * permanently open log was costing a phone a fifth of the table to show four
+ * lines nobody was reading.
+ */
+.ticker {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  border: 2px solid var(--accent);
-  background: var(--accent-soft);
-  flex-wrap: wrap;
-}
-
-/* A banner for something happening to somebody else: informative, not urgent. */
-.taki-banner--quiet {
-  border-color: var(--border-strong);
+  gap: var(--space-2);
+  inline-size: 100%;
+  max-inline-size: 26rem;
+  padding-inline-start: var(--space-2);
+  border-radius: var(--radius-pill);
   background: var(--surface-sunken);
+  border: 1px solid var(--border);
 }
 
-.taki-banner__text {
-  font-weight: 700;
-  min-width: 0;
+.ticker__text {
+  flex: 1;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
+/*
+ * The log's own list does not scroll: the sheet around it does. Two nested
+ * scrollers meant the newest line could sit half-clipped at the top of an inner
+ * viewport, which looks like a rendering fault.
+ */
 .feed {
   list-style: none;
   margin: 0;
@@ -145,48 +366,28 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  max-height: 8.5rem;
-  overflow-y: auto;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
 .feed__item {
   padding-block: 2px;
+  margin: 0;
 }
 
 .feed__item--latest {
   color: var(--text);
-  font-weight: 600;
-}
-
-.game-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-/* Rules ------------------------------------------------------------------- */
-
-.rules section {
-  margin-block-end: var(--space-4);
-}
-
-.rules h2 {
-  border-block-end: 2px solid var(--accent);
-  padding-block-end: var(--space-1);
-  margin-block-end: var(--space-2);
+  font-weight: var(--weight-semibold);
 }
 
 /* Responsive -------------------------------------------------------------- */
 
-@media (min-width: 640px) {
+@media (min-width: 30rem) {
   .home-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .home-actions .btn--block:first-child {
+  .home-actions > .btn:first-child {
     grid-column: 1 / -1;
   }
 
@@ -195,16 +396,149 @@
   }
 }
 
-@media (max-width: 359px) {
-  .card {
-    --card-width: 3.6rem;
+/* Roomier cards where there is room for them. */
+@media (min-width: 48rem) {
+  .game {
+    --card-w-md: 5rem;
+    --card-w-lg: clamp(4.5rem, 11.5svh, 6.25rem);
+    gap: var(--space-3);
   }
 
-  .card--xl {
-    --card-width: 5.5rem;
+  .turn-banner--mine {
+    font-size: var(--text-xl);
+  }
+}
+
+/* Very narrow phones: shrink the deck rather than clip it. */
+@media (max-width: 22.5rem) {
+  :root {
+    --card-w-md: 3.75rem;
+    --card-w-lg: 4.75rem;
   }
 
   .piles {
     gap: var(--space-3);
+  }
+}
+
+/*
+ * Short viewports — a small phone upright, or any phone in landscape. The same
+ * compaction serves both: the cards come down a size and the seats lose their
+ * card backs, so the table fits instead of scrolling inside its own region.
+ */
+@media (max-height: 40rem) {
+  .game {
+    --card-w-xs: 1.75rem;
+    gap: var(--space-1);
+  }
+
+  /* The seats keep the name, the count and the status; the card back is decoration. */
+  .seat__pile {
+    display: none;
+  }
+
+  /*
+   * The pile labels and the draw count go: a face-down stack and a face-up card
+   * are self-evident, and both already carry accessible names. What stays is the
+   * colour in force, which is the one thing on this panel a player cannot work
+   * out from the picture.
+   */
+  .pile__count,
+  .pile__label {
+    display: none;
+  }
+
+  .piles {
+    padding: var(--space-2);
+  }
+
+  .hand {
+    padding-block: 12px var(--space-1);
+  }
+}
+
+/*
+ * On a narrow screen the direction chip's label wraps the turn row onto a second
+ * line, which costs more than the words are worth. The arrow carries it, and the
+ * words stay in the accessible name.
+ */
+@media (max-width: 26rem) {
+  .direction-chip__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/*
+ * Landscape on a phone: about 350 px of height for everything, and 800 px of
+ * width doing nothing.
+ *
+ * Stacking the same rows shorter does not work — measured, the table was squeezed
+ * to zero and the hand still ran off the bottom — so landscape gets its own
+ * layout instead: the table beside the column of information, and the hand across
+ * the full width where a thumb from either side can reach it. Every element keeps
+ * its place in the reading order; only the grid changes.
+ */
+@media (orientation: landscape) and (max-height: 32rem) {
+  .game {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(13rem, 0.85fr);
+    grid-template-areas:
+      'notice notice'
+      'seats  table'
+      'turn   table'
+      'ticker table'
+      'action table'
+      'hand   hand';
+    align-content: start;
+    gap: var(--space-1) var(--space-3);
+    padding-block: var(--space-1);
+    /* Sized from the width here, since height is the scarce axis. */
+    --card-w-md: 3.25rem;
+    --card-w-lg: 4.5rem;
+    --card-w-xs: 1.75rem;
+  }
+
+  .game__notice {
+    grid-area: notice;
+  }
+  .seats {
+    grid-area: seats;
+  }
+  .turn-row {
+    grid-area: turn;
+  }
+  .ticker {
+    grid-area: ticker;
+  }
+  .game__action {
+    grid-area: action;
+  }
+  .game__table {
+    grid-area: table;
+    align-self: center;
+  }
+  .game__hand {
+    grid-area: hand;
+  }
+
+  /* The wordmark is the tallest thing in the bar, and the least needed mid-game. */
+  .topbar__brand {
+    display: none;
+  }
+
+  .hand {
+    padding-block: 10px var(--space-1);
+    min-height: 0;
+  }
+
+  .turn-banner {
+    padding-block: 0;
   }
 }

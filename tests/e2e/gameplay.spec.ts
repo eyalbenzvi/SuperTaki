@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { BROADCAST, createRoom, joinRoom, openApp } from './helpers.ts';
+import { BROADCAST, awaitSettled, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 /**
  * Plays a complete round through the UI.
@@ -29,6 +29,9 @@ async function clickInForeground(page: Page, locator: Locator): Promise<void> {
 }
 
 async function takeOneAction(page: Page): Promise<boolean> {
+  await page.bringToFront();
+  await awaitSettled(page);
+
   // An open +3 suspends the turn order, so this comes before the turn check.
   const breakPrompt = page.getByRole('button', { name: 'Let it through' });
   if (await breakPrompt.isVisible().catch(() => false)) {
@@ -36,11 +39,7 @@ async function takeOneAction(page: Page): Promise<boolean> {
     return true;
   }
 
-  const onTurn = await page
-    .getByText('Your turn')
-    .isVisible()
-    .catch(() => false);
-  if (!onTurn) {
+  if (!(await onTurn(page))) {
     return false;
   }
 
@@ -57,6 +56,13 @@ async function takeOneAction(page: Page): Promise<boolean> {
   const closeTaki = page.getByRole('button', { name: 'Close Taki' });
   if (await closeTaki.isVisible().catch(() => false)) {
     await clickInForeground(page, closeTaki);
+    return true;
+  }
+
+  // Paying an outstanding +2 run: the prompt's own button is the shortest path.
+  const takeCards = page.getByRole('button', { name: /^Take \d+ cards?$/ });
+  if (await takeCards.isVisible().catch(() => false)) {
+    await clickInForeground(page, takeCards);
     return true;
   }
 

@@ -8,7 +8,7 @@ or laptop. There is no server, no account, no database and no paid service anywh
 stack: the site is static files on GitHub Pages, and the players' browsers talk directly
 to each other over WebRTC data channels.
 
-The interface is Hebrew by default (right-to-left) with an English toggle. The deck is the
+The interface is Hebrew by default (right-to-left), with English one tap away in Settings. The deck is the
 full Super Taki deck — numbers, Stop, Plus, +2, Change Direction and Taki in four colours,
 plus Change Colour, Super Taki, King, +3 and the +3 Breaker. The exact rules the engine
 implements are in [docs/rules.md](docs/rules.md); the app has no rules page, so read that
@@ -109,9 +109,9 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 ## Running the tests
 
 ```bash
-npm test                # 456 unit + component tests
+npm test                # 510 unit + component tests
 npm run test:coverage   # same, with coverage thresholds enforced
-npm run test:e2e        # 20 scenarios x 2 viewports (needs a Chromium download once)
+npm run test:e2e        # 18 scenarios x 2 viewports (needs a Chromium download once)
 ```
 
 Playwright downloads Chromium on first use (`npx playwright install chromium`). If your
@@ -262,8 +262,8 @@ data channels, which has been standard since roughly 2018. iOS Safari 15+ is fin
 
 ```
 src/
-  app/                     app shell, top bar, hash routing, translator hook
-  components/              generic UI (accessible modal, segmented control)
+  app/                     app shell, top bar, settings, error boundary, live region, routing
+  components/              design system: button, icon set, callout, badge, field, modal, segmented
   features/game/
     engine/                pure rules: cards, deck, seeded PRNG, reducer, views
     network/               protocol schemas, transports, host and client sessions
@@ -272,7 +272,7 @@ src/
   i18n/                    Hebrew and English dictionaries
   lib/                     ids, sanitising, storage, clipboard, focus trap, logger
   styles/                  tokens, base, components, cards, screens
-docs/                      architecture, protocol, rules, QA, threat model, deployment
+docs/                      architecture, protocol, rules, QA, UI review, threat model, deployment
 tests/
   unit/                    engine, protocol, sessions, store, i18n, lib
   component/               React Testing Library screens
@@ -292,6 +292,7 @@ no UI imports, and the UI holds no game rules.
 - [docs/deployment.md](docs/deployment.md) — GitHub Pages step by step
 - [docs/qa-report.md](docs/qa-report.md) — what was tested, coverage, manual checklist, known limitations
 - [docs/review-notes.md](docs/review-notes.md) — findings from the expert review passes and the changes made
+- [docs/ui-review.md](docs/ui-review.md) — the interface pass: what was wrong with the UI/UX and what changed
 
 ## Disclaimer
 

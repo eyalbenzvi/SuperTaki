@@ -4,6 +4,8 @@ import {
   createRoom,
   joinRoom,
   openApp,
+  expectLogged,
+  onTurn,
   playAnyLegalCard,
   switchToEnglish,
   takeAnyTurn,
@@ -44,8 +46,8 @@ test.describe('two-player game over the deterministic transport', () => {
     await expect(guest.getByText('Current colour:')).toBeVisible();
 
     // The host plays first, so exactly one side is on turn.
-    await expect(host.getByText('Your turn')).toBeVisible();
-    await expect(guest.getByText("Dana's turn")).toBeVisible();
+    await expect(host.locator('.turn-banner--mine')).toBeVisible();
+    await expect(guest.locator('.turn-banner')).toHaveText("Dana's turn");
   });
 
   test('joins through an invite link', async ({ context }) => {
@@ -81,7 +83,7 @@ test.describe('two-player game over the deterministic transport', () => {
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label')));
 
     // The opponent's cards are only ever shown face down.
-    await expect(guest.locator('.opponent .card--back')).toHaveCount(1);
+    await expect(guest.locator('.seat .card--back')).toHaveCount(1);
     expect(hostLabels).toHaveLength(8);
     expect(guestLabels).toHaveLength(8);
     // Guest markup must not contain the host's card faces.
@@ -97,7 +99,7 @@ test.describe('two-player game over the deterministic transport', () => {
     const guest = await context.newPage();
     await seatTwoPlayers(host, guest);
     await host.getByRole('button', { name: 'Start game' }).click();
-    await expect(host.getByText('Your turn')).toBeVisible();
+    await expect(host.locator('.turn-banner--mine')).toBeVisible();
 
     /*
      * An opening hand with nothing legal in it is uncommon — roughly one deal
@@ -109,10 +111,7 @@ test.describe('two-player game over the deterministic transport', () => {
     let ready = false;
     for (let step = 0; step < 24 && !ready; step += 1) {
       await host.bringToFront();
-      const hostOnTurn = await host
-        .getByText('Your turn')
-        .isVisible()
-        .catch(() => false);
+      const hostOnTurn = await onTurn(host);
       if (!hostOnTurn) {
         await takeAnyTurn(guest);
         continue;
@@ -130,9 +129,9 @@ test.describe('two-player game over the deterministic transport', () => {
 
     // The host's hand shrinks (or the turn returns after a Stop/Plus);
     // in every case the log records the play on both sides.
-    await expect(host.locator('.feed__item', { hasText: 'Dana played' }).first()).toBeVisible();
-    await expect(guest.locator('.feed__item', { hasText: 'Dana played' }).first()).toBeVisible();
     await expect(host.locator('.hand .card')).toHaveCount(before - 1);
+    await expectLogged(host, 'Dana played');
+    await expectLogged(guest, 'Dana played');
   });
 
   test('lets a player draw when nothing is playable', async ({ context }) => {
@@ -140,13 +139,13 @@ test.describe('two-player game over the deterministic transport', () => {
     const guest = await context.newPage();
     await seatTwoPlayers(host, guest);
     await host.getByRole('button', { name: 'Start game' }).click();
-    await expect(host.getByText('Your turn')).toBeVisible();
+    await expect(host.locator('.turn-banner--mine')).toBeVisible();
 
     const drawPile = host.getByRole('button', { name: /Draw pile, \d+ cards/ });
     await expect(drawPile).toBeEnabled();
     await drawPile.click();
-    await expect(host.locator('.feed__item', { hasText: 'Dana drew a card' })).toBeVisible();
-    await expect(guest.getByText('Your turn')).toBeVisible();
+    await expect(guest.locator('.turn-banner--mine')).toBeVisible();
+    await expectLogged(host, 'Dana drew a card');
   });
 
   test('disables the draw pile and hand when it is not your turn', async ({ context }) => {
@@ -154,12 +153,25 @@ test.describe('two-player game over the deterministic transport', () => {
     const guest = await context.newPage();
     await seatTwoPlayers(host, guest);
     await host.getByRole('button', { name: 'Start game' }).click();
-    await expect(guest.getByText("Dana's turn")).toBeVisible();
+    await expect(guest.locator('.turn-banner')).toHaveText("Dana's turn");
 
     await expect(guest.getByRole('button', { name: /Draw pile, \d+ cards/ })).toBeDisabled();
     await expect(guest.locator('.hand .card--playable')).toHaveCount(0);
+    /*
+     * The cards stay focusable — see `PlayableCard` — so that a keyboard or
+     * screen-reader player can still read their own hand while they wait. Being
+     * unplayable is carried by `aria-disabled`, and a press explains itself.
+     */
     const firstCard = guest.locator('.hand .card').first();
-    await expect(firstCard).toBeDisabled();
+    await expect(firstCard).toHaveAttribute('aria-disabled', 'true');
+    // Chromium stops driving animation frames in a background tab, which hangs
+    // Playwright's stability check; the guest has to be the visible page. The
+    // click is forced because Playwright treats `aria-disabled` as un-clickable,
+    // while a real finger lands on the card regardless — which is the whole point
+    // of keeping it reachable and having it answer back.
+    await guest.bringToFront();
+    await firstCard.click({ force: true });
+    await expect(guest.getByRole('alert')).toContainText('Wait for your turn');
   });
 
   test('lets the host remove a player before the game starts', async ({ context }) => {
@@ -168,6 +180,9 @@ test.describe('two-player game over the deterministic transport', () => {
     await seatTwoPlayers(host, guest);
 
     await host.getByRole('button', { name: 'Remove Eli' }).click();
+    // Throwing somebody out cannot be undone from their side, and the control sits
+    // beside their name in a list, so it asks first.
+    await host.getByRole('dialog').getByRole('button', { name: 'Remove player' }).click();
     await expect(host.getByText('1 of 2 players')).toBeVisible();
     await expect(guest.getByText('The host removed you from the room')).toBeVisible();
   });

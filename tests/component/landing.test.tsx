@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { screen, within } from '@testing-library/react';
-import { renderApp, resetStore, setState } from './helpers.tsx';
+import { openSettings, renderApp, resetStore, setState } from './helpers.tsx';
 import { useAppStore } from '../../src/features/game/state/store.ts';
 
 beforeEach(resetStore);
@@ -13,13 +13,17 @@ describe('landing screen', () => {
     expect(screen.getByRole('button', { name: 'הצטרפות למשחק' })).toBeInTheDocument();
   });
 
-  it('shows nothing beyond what is needed to start playing', () => {
+  it('shows nothing beyond the two entry points and settings', () => {
     renderApp();
-    expect(screen.getAllByRole('button')).toHaveLength(2);
+    // Create, join, and the one control that holds every preference.
+    expect(
+      screen.getAllByRole('button').map((node) => node.getAttribute('aria-label') ?? node.textContent),
+    ).toEqual(['הגדרות', 'פתיחת משחק', 'הצטרפות למשחק']);
   });
 
   it('switches language and document direction', async () => {
     const { user } = renderApp();
+    await openSettings(user);
     await user.click(screen.getByRole('radio', { name: 'English' }));
 
     expect(document.documentElement.dir).toBe('ltr');
@@ -32,6 +36,7 @@ describe('landing screen', () => {
 
   it('switches theme on the document root', async () => {
     const { user } = renderApp();
+    await openSettings(user);
     await user.click(screen.getByRole('radio', { name: 'כהה' }));
     expect(document.documentElement.dataset.theme).toBe('dark');
 
@@ -39,12 +44,33 @@ describe('landing screen', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
   });
 
+  it('closes the settings sheet on Escape, leaving the choice applied', async () => {
+    const { user } = renderApp();
+    await openSettings(user);
+    await user.click(screen.getByRole('radio', { name: 'כהה' }));
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
   it('moves between language options with the arrow keys', async () => {
     const { user } = renderApp();
+    await openSettings(user);
     const hebrew = screen.getByRole('radio', { name: 'עברית' });
     hebrew.focus();
     await user.keyboard('{ArrowRight}');
     expect(useAppStore.getState().language).toBe('en');
+  });
+
+  it('jumps to the ends of a segmented control with Home and End', async () => {
+    const { user } = renderApp();
+    await openSettings(user);
+    screen.getByRole('radio', { name: 'לפי המערכת' }).focus();
+    await user.keyboard('{End}');
+    expect(useAppStore.getState().theme).toBe('dark');
+    await user.keyboard('{Home}');
+    expect(useAppStore.getState().theme).toBe('system');
   });
 
   it('navigates to the create screen', async () => {
@@ -84,10 +110,21 @@ describe('landing screen', () => {
     expect(link).toHaveAttribute('href', '#main');
   });
 
-  it('labels the top bar controls', () => {
+  it('labels the settings controls', async () => {
+    const { user } = renderApp();
+    const dialog = await openSettings(user);
+    expect(within(dialog).getByRole('radiogroup', { name: 'שפה' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radiogroup', { name: 'ערכת צבעים' })).toBeInTheDocument();
+  });
+
+  it('explains what the game is to somebody who has never seen it', () => {
     renderApp();
-    const bar = screen.getByRole('banner');
-    expect(within(bar).getByRole('radiogroup', { name: 'שפה' })).toBeInTheDocument();
-    expect(within(bar).getByRole('radiogroup', { name: 'ערכת צבעים' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'איך זה עובד' })).toBeInTheDocument();
+    expect(screen.getByText('שחקן אחד פותח חדר.')).toBeInTheDocument();
+  });
+
+  it('keeps the leave control off the screen outside a room', () => {
+    renderApp();
+    expect(screen.queryByRole('button', { name: 'יציאה' })).not.toBeInTheDocument();
   });
 });

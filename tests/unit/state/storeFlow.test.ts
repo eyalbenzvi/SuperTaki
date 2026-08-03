@@ -332,6 +332,56 @@ describe('preferences and navigation', () => {
     expect(store().error).toBeNull();
   });
 
+  it('locks the table while a move is unanswered, so one tap cannot become two', async () => {
+    const { host } = await startHost();
+    await store().joinRoom({ name: 'אלי', roomCode: TEST_ROOM });
+    await flush();
+    host.startGame();
+    await flush();
+
+    expect(store().actionPending).toBe(false);
+    store().drawCard();
+    // The intent is on the wire and nothing has come back yet.
+    expect(store().actionPending).toBe(true);
+
+    // A second tap in that window is dropped rather than sent twice.
+    store().drawCard();
+    expect(store().actionPending).toBe(true);
+
+    await flush();
+    // The host's answer — a rejection here, since it is not this seat's turn —
+    // releases the lock, so a dropped packet can never freeze the hand.
+    expect(store().actionPending).toBe(false);
+    host.destroy('leftVoluntarily');
+  });
+
+  it('tracks the leave request separately from leaving', () => {
+    store().requestLeave();
+    expect(store().leaveIntent).toBe(true);
+    store().cancelLeave();
+    expect(store().leaveIntent).toBe(false);
+  });
+
+  it('re-announces the same message by bumping its nonce', () => {
+    store().announce('תור שלך');
+    const first = store().announcement;
+    expect(first?.text).toBe('תור שלך');
+
+    store().announce('תור שלך');
+    expect(store().announcement?.nonce).toBeGreaterThan(first?.nonce ?? 0);
+
+    // Nothing to say is not a message.
+    store().announce('');
+    expect(store().announcement?.text).toBe('תור שלך');
+  });
+
+  it('records whether the device has a network at all', () => {
+    store().setOnline(false);
+    expect(store().online).toBe(false);
+    store().setOnline(true);
+    expect(store().online).toBe(true);
+  });
+
   it('ignores game actions when no session is active', () => {
     expect(() => {
       store().playCard('x');

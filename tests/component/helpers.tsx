@@ -1,4 +1,4 @@
-import { render, type RenderResult } from '@testing-library/react';
+import { render, screen, type RenderResult } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { App } from '../../src/app/App.tsx';
@@ -32,6 +32,22 @@ export function renderWithUser(element: ReactElement): RenderResult & {
 } {
   const user = userEvent.setup();
   return { ...render(element), user };
+}
+
+/**
+ * Opens the settings sheet, where language and theme now live.
+ *
+ * They used to sit permanently in the top bar; on a phone that cost two wrapped
+ * rows of chrome, so they are behind one control.
+ */
+export async function openSettings(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  await user.click(screen.getByRole('button', { name: 'הגדרות' }));
+  return screen.getByRole('dialog');
+}
+
+/** The app's polite live region, excluded when a test wants a screen's own status. */
+export function statusRegions(): HTMLElement[] {
+  return screen.getAllByRole('status').filter((node) => !node.classList.contains('sr-only'));
 }
 
 export const HOST_ID = 'pl_host000000';

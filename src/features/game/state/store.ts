@@ -48,9 +48,25 @@ export interface RejectionNotice {
   readonly nonce: number;
 }
 
+/** One line for assistive technology; the nonce forces a re-announcement. */
+export interface Announcement {
+  readonly text: string;
+  readonly nonce: number;
+}
+
 /** Maximum entries kept in the game log; older lines are dropped. */
 const FEED_LIMIT = 60;
 const ROOM_CODE_ATTEMPTS = 4;
+
+/**
+ * How long a submitted move keeps the table locked when no answer arrives.
+ *
+ * The lock exists so one tap cannot become two moves. It is released as soon as
+ * the host's answer lands — new state, new hand or a rejection — and this
+ * deadline only covers the case where nothing comes back at all, so a dropped
+ * packet cannot leave a player unable to act.
+ */
+const ACTION_LOCK_MS = 5000;
 
 export interface AppState {
   language: Language;
@@ -77,6 +93,14 @@ export interface AppState {
   rejection: RejectionNotice | null;
   closedReason: SessionClosedReason | null;
   resumable: ResumableRoom | null;
+
+  /** True from the moment a move is submitted until the table answers. */
+  actionPending: boolean;
+  /** Set when the player asks to leave; the shell owns the confirmation. */
+  leaveIntent: boolean;
+  /** `navigator.onLine`, watched so the UI can explain a dead connection. */
+  online: boolean;
+  announcement: Announcement | null;
 }
 
 export interface AppActions {
@@ -111,7 +135,11 @@ export interface AppActions {
   readonly closeTaki: () => void;
   readonly passBreak: () => void;
   readonly votePlayAgain: (agree: boolean) => void;
+  readonly requestLeave: () => void;
+  readonly cancelLeave: () => void;
   readonly leaveRoom: () => void;
+  readonly setOnline: (online: boolean) => void;
+  readonly announce: (text: string) => void;
 }
 
 export type AppStore = AppState & AppActions;
@@ -123,6 +151,8 @@ export type AppStore = AppState & AppActions;
 let session: HostSession | ClientSession | null = null;
 let feedCounter = 0;
 let rejectionCounter = 0;
+let announcementCounter = 0;
+let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Test seam: replaces the active session (used by component tests). */
 export function __setSessionForTests(next: HostSession | ClientSession | null): void {
@@ -153,6 +183,10 @@ function initialState(): AppState {
     rejection: null,
     closedReason: null,
     resumable: loadResumableRoom(),
+    actionPending: false,
+    leaveIntent: false,
+    online: typeof navigator === 'undefined' || navigator.onLine !== false,
+    announcement: null,
   };
 }
 
@@ -169,6 +203,8 @@ const CLEARED_SESSION: Partial<AppState> = {
   hand: [],
   feed: [],
   playAgain: null,
+  actionPending: false,
+  leaveIntent: false,
 };
 
 function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
@@ -183,6 +219,17 @@ function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
 }
 
 export const useAppStore = create<AppStore>((set, get) => {
+  /** Releases the "move in flight" lock, whatever released it. */
+  function clearActionLock(): void {
+    if (actionLockTimer !== null) {
+      clearTimeout(actionLockTimer);
+      actionLockTimer = null;
+    }
+    if (get().actionPending) {
+      set({ actionPending: false });
+    }
+  }
+
   /** Applies one session update to the store. */
   function applyUpdate(update: SessionUpdate): void {
     switch (update.type) {
@@ -194,9 +241,11 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'publicState':
+        clearActionLock();
         set({ publicState: update.state });
         return;
       case 'hand':
+        clearActionLock();
         set({ hand: update.cards });
         return;
       case 'events': {
@@ -208,6 +257,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'actionRejected':
+        clearActionLock();
         rejectionCounter += 1;
         set({ rejection: { code: update.code, nonce: rejectionCounter } });
         return;
@@ -249,10 +299,24 @@ export const useAppStore = create<AppStore>((set, get) => {
     }
   }
 
+  /**
+   * Sends one move and locks the table until the answer lands.
+   *
+   * The lock is what stops a double tap, an impatient second tap, or a stuck
+   * finger from becoming two moves — the host would reject the duplicate, but
+   * the player would see a confusing "that card is not in your hand" for a card
+   * they legitimately played.
+   */
   function submit(action: GameAction): void {
-    if (!session) {
+    if (!session || get().actionPending) {
       return;
     }
+    if (actionLockTimer !== null) {
+      clearTimeout(actionLockTimer);
+    }
+    actionLockTimer = setTimeout(clearActionLock, ACTION_LOCK_MS);
+    set({ actionPending: true });
+
     if (session instanceof HostSession) {
       session.submitLocalAction(action);
     } else {
@@ -422,6 +486,7 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     startGame: () => {
       if (session instanceof HostSession) {
+        clearActionLock();
         set({ feed: [] });
         session.startGame();
       }
@@ -451,11 +516,34 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
+    requestLeave: () => {
+      set({ leaveIntent: true });
+    },
+
+    cancelLeave: () => {
+      set({ leaveIntent: false });
+    },
+
     leaveRoom: () => {
       session?.destroy('leftVoluntarily');
       session = null;
       clearResumableRoom();
+      clearActionLock();
       set({ ...CLEARED_SESSION, screen: 'home', error: null, closedReason: null, resumable: null });
+    },
+
+    setOnline: (online) => {
+      if (get().online !== online) {
+        set({ online });
+      }
+    },
+
+    announce: (text) => {
+      if (text.length === 0) {
+        return;
+      }
+      announcementCounter += 1;
+      set({ announcement: { text, nonce: announcementCounter } });
     },
   };
 });

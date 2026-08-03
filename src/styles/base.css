@@ -1,3 +1,11 @@
+/*
+ * Element defaults and layout primitives.
+ *
+ * Everything here is either a browser reset, a typographic default taken from
+ * the token scale, or one of the four primitives (`page`, `stack`, `row`,
+ * `cluster`) that every screen is built out of.
+ */
+
 *,
 *::before,
 *::after {
@@ -13,18 +21,36 @@ body {
 
 html {
   -webkit-text-size-adjust: 100%;
+  /*
+   * Keeps a swipe inside the app: without this, scrolling the hand or the log
+   * to its end hands the gesture to the browser's pull-to-refresh, which
+   * reloads the page mid-game.
+   */
+  overscroll-behavior-y: none;
 }
 
 body {
   background-color: var(--bg-base);
-  background-image: var(--bg-gradient);
-  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
   overflow-wrap: break-word;
+}
+
+/*
+ * The page gradient sits on its own fixed layer rather than on
+ * `background-attachment: fixed`, which forces a full repaint on every scroll
+ * frame in mobile Safari.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--bg-gradient);
+  pointer-events: none;
 }
 
 h1,
@@ -32,22 +58,30 @@ h2,
 h3,
 h4 {
   margin: 0 0 var(--space-2);
-  line-height: 1.25;
+  line-height: var(--leading-tight);
   text-wrap: balance;
 }
 
 h1 {
-  font-size: clamp(1.6rem, 6vw, 2.4rem);
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-black);
+  letter-spacing: -0.01em;
 }
 h2 {
-  font-size: clamp(1.2rem, 4.5vw, 1.6rem);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
 }
 h3 {
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
 }
 
 p {
   margin: 0 0 var(--space-3);
+}
+
+p:last-child {
+  margin-block-end: 0;
 }
 
 ul {
@@ -59,9 +93,23 @@ li {
   margin-block-end: var(--space-1);
 }
 
-button {
+button,
+input,
+select,
+textarea {
   font: inherit;
   color: inherit;
+}
+
+/*
+ * Removes the 300 ms tap delay and double-tap-to-zoom on controls, so a tap on
+ * a card registers as fast as a native one.
+ */
+button,
+[role='button'],
+label,
+summary {
+  touch-action: manipulation;
 }
 
 :focus-visible {
@@ -86,7 +134,7 @@ button {
   position: absolute;
   inset-inline-start: var(--space-3);
   inset-block-start: -100px;
-  z-index: 100;
+  z-index: var(--z-skip);
   padding: var(--space-2) var(--space-3);
   background: var(--surface-raised);
   color: var(--text);
@@ -96,21 +144,49 @@ button {
 }
 
 .skip-link:focus {
-  inset-block-start: var(--space-3);
+  inset-block-start: calc(var(--safe-top) + var(--space-3));
 }
+
+/* Shell -------------------------------------------------------------------- */
 
 .app-shell {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh;
+  padding-inline: var(--safe-left) var(--safe-right);
 }
+
+/*
+ * The table is a fixed-height app, not a document: the hand must stay under the
+ * player's thumb whatever else is on screen, so the shell is pinned to the
+ * viewport and only the parts that are allowed to scroll do.
+ */
+.app-shell--fixed {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell--fixed > main {
+  min-height: 0;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Layout primitives ------------------------------------------------------- */
 
 .page {
   width: 100%;
-  max-width: 44rem;
+  max-width: 34rem;
   margin-inline: auto;
   padding: var(--space-4);
+  padding-block-end: calc(var(--space-6) + var(--safe-bottom));
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -118,13 +194,18 @@ button {
 }
 
 .page--wide {
-  max-width: 64rem;
+  max-width: 48rem;
 }
 
 .stack {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  min-width: 0;
+}
+
+.stack--tight {
+  gap: var(--space-2);
 }
 
 .row {
@@ -132,10 +213,24 @@ button {
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .row--between {
   justify-content: space-between;
+}
+
+.row--nowrap {
+  flex-wrap: nowrap;
+}
+
+/* A row of small things that may wrap, e.g. badges next to a name. */
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .muted {
@@ -143,12 +238,25 @@ button {
 }
 
 .text-small {
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
+}
+
+.text-tiny {
+  font-size: var(--text-xs);
 }
 
 .center {
   text-align: center;
 }
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Motion ------------------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {
   *,

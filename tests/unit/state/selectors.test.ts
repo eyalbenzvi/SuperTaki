@@ -12,6 +12,7 @@ import {
   opponents,
   playableCardIds,
   playerName,
+  sortHandForDisplay,
   standings,
   winnerName,
 } from '../../../src/features/game/state/selectors.ts';
@@ -82,6 +83,10 @@ function state(patch: Partial<AppState> = {}): AppState {
     rejection: null,
     closedReason: null,
     resumable: null,
+    actionPending: false,
+    leaveIntent: false,
+    online: true,
+    announcement: null,
     ...patch,
   };
 }
@@ -197,5 +202,38 @@ describe('standings and health', () => {
     };
     expect(everyoneConnected(state({ lobby: allGood }))).toBe(true);
     expect(everyoneConnected(state({ lobby: null }))).toBe(true);
+  });
+});
+
+describe('hand display order', () => {
+  it('groups the hand by colour and orders each group, colourless last', () => {
+    const hand: Card[] = [
+      { id: 'a', kind: 'colorChange' },
+      { id: 'b', kind: 'number', color: 'blue', value: 3 },
+      { id: 'c', kind: 'number', color: 'red', value: 9 },
+      { id: 'd', kind: 'stop', color: 'red' },
+      { id: 'e', kind: 'number', color: 'red', value: 2 },
+      { id: 'f', kind: 'number', color: 'yellow', value: 5 },
+      { id: 'g', kind: 'king' },
+    ];
+    expect(sortHandForDisplay(hand).map((card) => card.id)).toEqual(['e', 'c', 'd', 'f', 'b', 'a', 'g']);
+  });
+
+  it('leaves the callers array untouched', () => {
+    const hand: Card[] = [
+      { id: 'b', kind: 'number', color: 'blue', value: 3 },
+      { id: 'a', kind: 'number', color: 'red', value: 1 },
+    ];
+    sortHandForDisplay(hand);
+    expect(hand.map((card) => card.id)).toEqual(['b', 'a']);
+  });
+
+  it('is stable, so cards do not swap places between renders', () => {
+    const hand: Card[] = [
+      { id: 'x', kind: 'number', color: 'red', value: 4 },
+      { id: 'y', kind: 'number', color: 'red', value: 4 },
+    ];
+    expect(sortHandForDisplay(hand).map((card) => card.id)).toEqual(['x', 'y']);
+    expect(sortHandForDisplay(sortHandForDisplay(hand)).map((card) => card.id)).toEqual(['x', 'y']);
   });
 });

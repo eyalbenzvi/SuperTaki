@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
-import { GUEST_ID, HOST_ID, lobbyFixture, renderApp, resetStore, setState } from './helpers.tsx';
+import {
+  GUEST_ID,
+  HOST_ID,
+  lobbyFixture,
+  renderApp,
+  resetStore,
+  setState,
+  statusRegions,
+} from './helpers.tsx';
 
 beforeEach(resetStore);
 
@@ -19,14 +27,18 @@ function enterLobby(patch: Parameters<typeof setState>[0] = {}): void {
 }
 
 describe('lobby', () => {
-  it('shows the room code and the invite link', () => {
+  it('leads with the room code, and keeps the link behind a disclosure', async () => {
     enterLobby();
-    renderApp();
+    const { user } = renderApp();
     expect(screen.getByText('TIGER-MANGO-42')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'העתקת הקוד' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'העתקת קישור' })).toBeInTheDocument();
+
+    // The raw URL is three wrapped lines nobody types by hand: available, not loud.
+    await user.click(screen.getByText('קישור הזמנה'));
     expect(
       screen.getByText('https://example.github.io/color-rush/#/join?room=TIGER-MANGO-42'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'העתקת קישור' })).toBeInTheDocument();
   });
 
   it('lists players in seat order with host and self markers', () => {
@@ -58,14 +70,43 @@ describe('lobby', () => {
     expect(screen.getByText('לא יציב')).toBeInTheDocument();
   });
 
-  it('lets the host remove a guest but not themselves', async () => {
+  it('lets the host remove a guest but not themselves, and confirms first', async () => {
     const removePlayer = vi.fn();
     enterLobby({ removePlayer });
     const { user } = renderApp();
 
     expect(screen.queryByRole('button', { name: 'הסרת דנה' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'הסרת אלי' }));
+
+    // The control sits beside a name in a list — exactly the shape of a mis-tap —
+    // and throwing somebody out cannot be undone from their side.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAccessibleName('להסיר את אלי?');
+    expect(removePlayer).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'הסרת השחקן' }));
     expect(removePlayer).toHaveBeenCalledWith(GUEST_ID);
+  });
+
+  it('can back out of removing a player', async () => {
+    const removePlayer = vi.fn();
+    enterLobby({ removePlayer });
+    const { user } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'הסרת אלי' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'ביטול' }));
+    expect(removePlayer).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('nudges a host who is still on their own', () => {
+    enterLobby({
+      lobby: lobbyFixture({
+        players: [{ id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 }],
+      }),
+    });
+    renderApp();
+    expect(screen.getByText(/שתפו את קוד החדר/)).toBeInTheDocument();
   });
 
   it('starts the game directly when everyone is fully connected', async () => {
@@ -116,7 +157,7 @@ describe('lobby', () => {
     renderApp();
     expect(screen.queryByRole('button', { name: 'התחלת המשחק' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'הסרת אלי' })).not.toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('ממתינים שהמנחה יתחיל');
+    expect(statusRegions()[0]).toHaveTextContent('ממתינים שהמנחה יתחיל');
   });
 
   it('confirms leaving, warning the host about closing the room', async () => {
@@ -136,6 +177,7 @@ describe('lobby', () => {
     enterLobby({ setMaxPlayers });
     const { user } = renderApp();
 
+    await user.click(screen.getByText('הגדרות החדר'));
     const group = screen.getByRole('radiogroup', { name: 'מספר שחקנים מקסימלי' });
     await user.click(within(group).getByRole('radio', { name: '5' }));
     expect(setMaxPlayers).toHaveBeenCalledWith(5);
