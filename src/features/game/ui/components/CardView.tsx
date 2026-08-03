@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Translator } from '../../../../i18n/index.ts';
-import { cardColor, isNumberCard, type Card } from '../../engine/cards.ts';
-import { cardFaceLabel, describeCard } from '../cardText.ts';
+import { cardColor, type Card } from '../../engine/cards.ts';
+import { describeCard } from '../cardText.ts';
 import { CardGlyph } from './CardGlyph.tsx';
 
 export type CardSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -38,31 +38,27 @@ export function CardFace({ card, t, size = 'md' }: CardFaceProps): ReactNode {
       role="img"
       aria-label={describeCard(t, card)}
     >
-      <CardBody card={card} t={t} />
+      <CardBody card={card} />
     </div>
   );
 }
 
-function CardBody({ card, t }: { readonly card: Card; readonly t: Translator }): ReactNode {
+const CORNERS = ['tl', 'tr', 'bl', 'br'] as const;
+
+function CardBody({ card }: { readonly card: Card }): ReactNode {
   return (
     <>
-      {/* The same symbol in two opposite corners, as on a printed card, so a
-          fanned hand stays readable. The second one is upside down. */}
-      <span className="card__corner card__corner--start" aria-hidden="true">
-        <CardGlyph card={card} />
-      </span>
-      <span className="card__glyph">
-        <CardGlyph card={card} />
-      </span>
-      {/* Action cards need a word as well as a symbol: colour and shape alone
-          would not separate +2 from +3 at a glance. A number card's glyph is
-          already the value, so repeating it would only add clutter. */}
-      {isNumberCard(card) ? null : (
-        <span className="card__label" aria-hidden="true">
-          {cardFaceLabel(t, card)}
+      {/* The symbol repeated small in all four corners, as it is printed: the
+          bottom pair upside down, so the card reads either way up and a fanned
+          hand stays legible. No word is printed on a real card, and none is
+          needed here — every symbol is a distinct shape, and the full name is
+          on the card's accessible label. */}
+      {CORNERS.map((corner) => (
+        <span key={corner} className={`card__corner card__corner--${corner}`} aria-hidden="true">
+          <CardGlyph card={card} flat />
         </span>
-      )}
-      <span className="card__corner card__corner--end" aria-hidden="true">
+      ))}
+      <span className="card__glyph">
         <CardGlyph card={card} />
       </span>
     </>
@@ -108,7 +104,7 @@ export function PlayableCard({
         onPlay(card);
       }}
     >
-      <CardBody card={card} t={t} />
+      <CardBody card={card} />
     </button>
   );
 }

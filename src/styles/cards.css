@@ -52,9 +52,9 @@
 }
 
 /*
- * Colourless cards carry all four suit colours, which is what marks them out
- * in the printed deck as "any colour": a band top and bottom, and — where the
- * symbol is built from four parts — one colour per part.
+ * A colourless card is white like the rest; what marks it out is its drawing —
+ * four suits at once, a crown, a cracked numeral. The printed deck puts no
+ * band or border on them either.
  */
 .card--wild {
   --glyph: var(--card-red);
@@ -67,45 +67,12 @@
   --glyph-deep: var(--card-yellow-deep);
 }
 
-.card--wild::before,
-.card--wild::after {
-  content: '';
-  position: absolute;
-  inset-inline: 0;
-  block-size: max(3px, calc(var(--card-width) * 0.055));
-  background: linear-gradient(
-    to right,
-    var(--card-red) 0 25%,
-    var(--card-yellow) 25% 50%,
-    var(--card-green) 50% 75%,
-    var(--card-blue) 75% 100%
-  );
-}
-
-.card--wild::before {
-  inset-block-start: 0;
-}
-
-.card--wild::after {
-  inset-block-end: 0;
-  transform: scaleX(-1);
-}
-
 /* The back: a dense two-colour weave on the same white stock. */
 .card--back {
   color: var(--card-blue-deep);
   background:
-    repeating-linear-gradient(
-      45deg,
-      transparent 0 3px,
-      color-mix(in srgb, var(--card-red) 55%, transparent) 3px 6px
-    ),
-    repeating-linear-gradient(
-      -45deg,
-      transparent 0 3px,
-      color-mix(in srgb, var(--card-blue) 55%, transparent) 3px 6px
-    ),
-    var(--card-face);
+    repeating-linear-gradient(45deg, transparent 0 2px, var(--card-red) 2px 4px),
+    repeating-linear-gradient(-45deg, transparent 0 2px, var(--card-blue) 2px 4px), var(--card-face);
 }
 
 /* Symbols ------------------------------------------------------------------ */
@@ -114,6 +81,8 @@
   display: block;
   inline-size: 100%;
   block-size: 100%;
+  /* Numerals and TAKI are Latin; a right-to-left page must not reorder them. */
+  direction: ltr;
   overflow: visible;
 }
 
@@ -137,6 +106,49 @@
 .glyph__face {
   fill: var(--glyph);
   stroke-width: 2.2;
+}
+
+/*
+ * A cube's three faces: lid, then the two walls in progressively deeper
+ * shades. `glyph--solid` marks a drawing that carries its own depth and so is
+ * never stamped.
+ */
+.cube path {
+  stroke: var(--card-outline);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+.cube__top {
+  fill: var(--cube-top);
+}
+.cube__left {
+  fill: var(--cube-left);
+}
+.cube__right {
+  fill: var(--cube-right);
+}
+
+.cube.glyph__slot--0 {
+  --cube-top: var(--card-red);
+  --cube-left: color-mix(in srgb, var(--card-red) 78%, #000000);
+  --cube-right: var(--card-red-deep);
+}
+.cube.glyph__slot--1 {
+  --cube-top: var(--card-yellow);
+  --cube-left: color-mix(in srgb, var(--card-yellow) 78%, #000000);
+  --cube-right: var(--card-yellow-deep);
+}
+.cube.glyph__slot--2 {
+  --cube-top: var(--card-green);
+  --cube-left: color-mix(in srgb, var(--card-green) 78%, #000000);
+  --cube-right: var(--card-green-deep);
+}
+.cube.glyph__slot--3 {
+  --cube-top: var(--card-blue);
+  --cube-left: color-mix(in srgb, var(--card-blue) 78%, #000000);
+  --cube-right: var(--card-blue-deep);
 }
 
 /* Parts of a symbol that take a suit colour each, on colourless cards. */
@@ -167,49 +179,48 @@
 }
 
 .card__glyph {
-  inline-size: calc(var(--card-width) * 0.56);
-  block-size: calc(var(--card-width) * 0.56);
+  inline-size: calc(var(--card-width) * 0.7);
+  block-size: calc(var(--card-width) * 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.card__label {
-  /* Never smaller than ~10px, whatever the card size. */
-  font-size: max(0.625rem, calc(var(--card-width) * 0.135));
-  font-weight: 800;
-  text-align: center;
-  line-height: 1.05;
-  max-inline-size: 100%;
-  overflow-wrap: anywhere;
-  color: var(--card-label);
-}
-
-/* The corner index, repeated upside down in the far corner. */
+/*
+ * The corner index, in all four corners with the bottom pair turned over, the
+ * way a printed card is laid out.
+ */
 .card__corner {
   position: absolute;
-  inline-size: calc(var(--card-width) * 0.2);
-  block-size: calc(var(--card-width) * 0.2);
+  inline-size: calc(var(--card-width) * 0.17);
+  block-size: calc(var(--card-width) * 0.17);
 }
 
-.card__corner--start {
-  inset-block-start: calc(var(--card-width) * 0.055);
-  inset-inline-start: calc(var(--card-width) * 0.06);
+.card__corner--tl {
+  inset-block-start: calc(var(--card-width) * 0.05);
+  inset-inline-start: calc(var(--card-width) * 0.055);
 }
 
-.card__corner--end {
-  inset-block-end: calc(var(--card-width) * 0.055);
-  inset-inline-end: calc(var(--card-width) * 0.06);
+.card__corner--tr {
+  inset-block-start: calc(var(--card-width) * 0.05);
+  inset-inline-end: calc(var(--card-width) * 0.055);
+}
+
+.card__corner--bl {
+  inset-block-end: calc(var(--card-width) * 0.05);
+  inset-inline-start: calc(var(--card-width) * 0.055);
   transform: rotate(180deg);
 }
 
-/* A corner is too small for the extrusion to read; flatten it. */
-.card__corner .glyph__depth {
-  display: none;
+.card__corner--br {
+  inset-block-end: calc(var(--card-width) * 0.05);
+  inset-inline-end: calc(var(--card-width) * 0.055);
+  transform: rotate(180deg);
 }
 
+/* A corner is a flat silhouette, so it needs a heavier outline to hold up. */
 .card__corner .glyph__face {
-  stroke-width: 3;
+  stroke-width: 9;
 }
 
 /* Sizes -------------------------------------------------------------------- */
