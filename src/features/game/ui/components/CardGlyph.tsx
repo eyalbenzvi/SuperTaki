@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import type { Card } from '../../engine/cards.ts';
 import { isNumberCard } from '../../engine/cards.ts';
 import { BlockArt } from '../../../../lib/BlockArt.tsx';
@@ -418,7 +418,31 @@ export interface CardGlyphProps {
   readonly flat?: boolean;
 }
 
-export function CardGlyph({ card, flat = false }: CardGlyphProps): ReactNode {
+/**
+ * Memoised, and compared on what the drawing actually depends on rather than on
+ * object identity: two Red 5s are the same picture, and a card object that is
+ * replaced wholesale by an incoming snapshot must not redraw a symbol that has
+ * not changed. Every symbol here is built from polygon geometry at render time,
+ * so this is the difference between a smooth table and a stuttering one.
+ */
+export const CardGlyph = memo(
+  CardGlyphInner,
+  (a, b) =>
+    a.flat === b.flat &&
+    a.card.kind === b.card.kind &&
+    colorOf(a.card) === colorOf(b.card) &&
+    valueOf(a.card) === valueOf(b.card),
+);
+
+function colorOf(card: Card): string | null {
+  return 'color' in card ? card.color : null;
+}
+
+function valueOf(card: Card): number | null {
+  return 'value' in card ? card.value : null;
+}
+
+function CardGlyphInner({ card, flat = false }: CardGlyphProps): ReactNode {
   if (card.kind === 'colorChange') {
     return (
       <svg className="glyph" viewBox="0 0 100 100" aria-hidden="true" focusable="false">

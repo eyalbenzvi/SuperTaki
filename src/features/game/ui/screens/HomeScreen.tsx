@@ -1,16 +1,24 @@
 import type { ReactNode } from 'react';
 import { BrandMark } from '../../../../app/BrandMark.tsx';
+import { Button } from '../../../../components/Button.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
+import { ResumeCard } from '../components/ResumeCard.tsx';
 
+/**
+ * The landing screen.
+ *
+ * Two ways in, one of them obviously the main one, and three lines explaining
+ * what this thing is — a player arriving from a link has never seen it before,
+ * and "create or join?" is not a question you can answer without knowing that
+ * one person opens a room and everyone else comes to it.
+ */
 export function HomeScreen(): ReactNode {
   const t = useT();
   const goTo = useAppStore((state) => state.goTo);
-  const resumable = useAppStore((state) => state.resumable);
-  const forgetResumable = useAppStore((state) => state.forgetResumable);
 
   return (
-    <div className="page">
+    <div className="page page--home">
       <div className="hero">
         <h1 className="hero__title">
           <BrandMark />
@@ -18,47 +26,44 @@ export function HomeScreen(): ReactNode {
         <p className="hero__subtitle">{t('app.subtitle')}</p>
       </div>
 
-      {resumable ? (
-        <div className="notice notice--info">
-          <strong>{t('join.resumeTitle')}</strong>
-          <span>{t('join.resumeBody', { room: resumable.roomCode, name: resumable.displayName })}</span>
-          <div className="btn-group">
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => {
-                goTo('join');
-              }}
-            >
-              {t('join.resumeAction')}
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={forgetResumable}>
-              {t('join.resumeDiscard')}
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <ResumeCard
+        onResume={() => {
+          goTo('join');
+        }}
+      />
 
       <div className="home-actions">
-        <button
-          type="button"
-          className="btn btn--primary btn--large btn--block"
+        <Button
+          variant="primary"
+          size="lg"
+          block
           onClick={() => {
             goTo('create');
           }}
         >
           {t('home.create')}
-        </button>
-        <button
-          type="button"
-          className="btn btn--large btn--block"
+        </Button>
+        <Button
+          size="lg"
+          block
           onClick={() => {
             goTo('join');
           }}
         >
           {t('home.join')}
-        </button>
+        </Button>
       </div>
+
+      <section className="steps" aria-labelledby="how-title">
+        <h2 className="steps__title" id="how-title">
+          {t('home.howTitle')}
+        </h2>
+        <ol className="steps__list">
+          <li>{t('home.step1')}</li>
+          <li>{t('home.step2')}</li>
+          <li>{t('home.step3')}</li>
+        </ol>
+      </section>
     </div>
   );
 }

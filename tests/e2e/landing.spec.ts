@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openSettings } from './helpers.ts';
 
 test.describe('landing screen', () => {
   test('opens in Hebrew with right-to-left layout', async ({ page }) => {
@@ -11,6 +12,7 @@ test.describe('landing screen', () => {
 
   test('switches to English and back', async ({ page }) => {
     await page.goto('/');
+    await openSettings(page);
     await page.getByRole('radio', { name: 'English' }).click();
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
     await expect(page.getByRole('button', { name: 'Create game' })).toBeVisible();
@@ -21,6 +23,7 @@ test.describe('landing screen', () => {
 
   test('remembers the language after a reload', async ({ page }) => {
     await page.goto('/');
+    await openSettings(page);
     await page.getByRole('radio', { name: 'English' }).click();
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
@@ -28,6 +31,7 @@ test.describe('landing screen', () => {
 
   test('switches theme and remembers it', async ({ page }) => {
     await page.goto('/');
+    await openSettings(page);
     await page.getByRole('radio', { name: 'כהה' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
@@ -38,14 +42,18 @@ test.describe('landing screen', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   });
 
-  test('shows the wordmark and nothing but the way in', async ({ page }) => {
+  test('shows the wordmark, the two ways in, and settings', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { level: 1 })).toHaveAccessibleName('סופר טאקי');
-    await expect(page.getByRole('button')).toHaveCount(2);
+    await expect(page.getByRole('button')).toHaveCount(3);
+    await expect(page.getByRole('button', { name: 'הגדרות' })).toBeVisible();
   });
 
   test('is reachable by keyboard only', async ({ page }) => {
     await page.goto('/');
+    // Wait for the shell before pressing anything: a Tab that lands before React
+    // has attached goes to the document, not to the skip link.
+    await expect(page.getByRole('button', { name: 'פתיחת משחק' })).toBeVisible();
     await page.keyboard.press('Tab');
     await expect(page.getByRole('link', { name: 'דלג לתוכן הראשי' })).toBeFocused();
 

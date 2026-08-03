@@ -1,37 +1,57 @@
 import type { ReactNode } from 'react';
 import { BrandMark } from './BrandMark.tsx';
-import { SegmentedControl } from '../components/SegmentedControl.tsx';
-import { LANGUAGES, type Language } from '../i18n/index.ts';
+import { Button } from '../components/Button.tsx';
 import { useAppStore } from '../features/game/state/store.ts';
-import type { ThemeChoice } from '../features/game/state/persistence.ts';
 import { useT } from './useT.ts';
 
-const THEMES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
+export interface TopBarProps {
+  readonly onOpenSettings: () => void;
+  readonly settingsOpen: boolean;
+}
 
-export function TopBar(): ReactNode {
+/**
+ * One compact row, on every screen.
+ *
+ * Preferences used to sit here permanently and cost a phone two wrapped rows of
+ * chrome — about a fifth of the screen — competing with the table for attention.
+ * They are now one control. What stays visible is what a player in a room needs
+ * at a glance: where they are, and the way out.
+ *
+ * The wordmark is dropped on the landing screen, where the hero already carries
+ * it at full size.
+ *
+ * The settings dialog is deliberately *not* rendered in here: the bar carries a
+ * `backdrop-filter`, which makes it a containing block, and a fixed-position
+ * sheet inside it would be positioned and clipped against the bar instead of the
+ * viewport.
+ */
+export function TopBar({ onOpenSettings, settingsOpen }: TopBarProps): ReactNode {
   const t = useT();
-  const language = useAppStore((state) => state.language);
-  const theme = useAppStore((state) => state.theme);
-  const setLanguage = useAppStore((state) => state.setLanguage);
-  const setTheme = useAppStore((state) => state.setTheme);
+  const screen = useAppStore((state) => state.screen);
+  const role = useAppStore((state) => state.role);
+  const requestLeave = useAppStore((state) => state.requestLeave);
 
   return (
     <header className="topbar">
-      <div className="topbar__brand">
-        <BrandMark size="sm" />
-      </div>
+      <div className="topbar__brand">{screen === 'home' ? null : <BrandMark size="sm" />}</div>
       <div className="topbar__controls">
-        <SegmentedControl<Language>
-          label={t('language.label')}
-          value={language}
-          onChange={setLanguage}
-          options={LANGUAGES.map((code) => ({ value: code, label: t(`language.${code}`) }))}
-        />
-        <SegmentedControl<ThemeChoice>
-          label={t('theme.label')}
-          value={theme}
-          onChange={setTheme}
-          options={THEMES.map((choice) => ({ value: choice, label: t(`theme.${choice}`) }))}
+        {role === null ? null : (
+          <Button
+            iconOnly
+            icon="leave"
+            variant="ghost"
+            aria-label={t('common.leave')}
+            onClick={requestLeave}
+          />
+        )}
+        <Button
+          iconOnly
+          icon="settings"
+          variant="ghost"
+          aria-label={t('app.settings')}
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
+          onClick={onOpenSettings}
         />
       </div>
     </header>

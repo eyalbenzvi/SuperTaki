@@ -1,9 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Button } from '../../../../components/Button.tsx';
+import { Field } from '../../../../components/Field.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { clearHash, inviteFromHash } from '../../../../app/routing.ts';
 import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../../../../lib/sanitize.ts';
 import { parseInvite } from '../../network/roomCode.ts';
 import { useAppStore } from '../../state/store.ts';
+import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
+import { ResumeCard } from '../components/ResumeCard.tsx';
 
 export function JoinRoomScreen(): ReactNode {
   const t = useT();
@@ -11,7 +15,6 @@ export function JoinRoomScreen(): ReactNode {
   const busy = useAppStore((state) => state.busy);
   const resumable = useAppStore((state) => state.resumable);
   const joinRoom = useAppStore((state) => state.joinRoom);
-  const forgetResumable = useAppStore((state) => state.forgetResumable);
   const goTo = useAppStore((state) => state.goTo);
 
   // Prefilled from the invite link on first render, so no effect has to
@@ -74,20 +77,9 @@ export function JoinRoomScreen(): ReactNode {
     <div className="page">
       <h1>{t('join.title')}</h1>
 
-      {resumable ? (
-        <div className="notice notice--info">
-          <strong>{t('join.resumeTitle')}</strong>
-          <span>{t('join.resumeBody', { room: resumable.roomCode, name: resumable.displayName })}</span>
-          <div className="btn-group">
-            <button type="button" className="btn btn--primary" onClick={resume} disabled={busy}>
-              {t('join.resumeAction')}
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={forgetResumable}>
-              {t('join.resumeDiscard')}
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <ConnectionPhaseNotice />
+
+      <ResumeCard onResume={resume} busy={busy} />
 
       {detectedRoom ? (
         <p className="text-small muted" role="status">
@@ -102,70 +94,56 @@ export function JoinRoomScreen(): ReactNode {
           submit();
         }}
       >
-        <div className="field">
-          <label className="field__label" htmlFor="join-name">
-            {t('join.nameLabel')}
-          </label>
-          <input
-            id="join-name"
-            className="input"
-            value={name}
-            maxLength={DISPLAY_NAME_MAX_LENGTH}
-            autoComplete="nickname"
-            aria-invalid={nameError !== null}
-            onChange={(event) => {
-              setName(event.target.value);
-              setNameError(null);
-            }}
-          />
-          {nameError ? (
-            <span className="field__error" role="alert">
-              {nameError}
-            </span>
-          ) : null}
-        </div>
+        <Field
+          label={t('join.nameLabel')}
+          error={nameError}
+          value={name}
+          placeholder={t('create.namePlaceholder')}
+          maxLength={DISPLAY_NAME_MAX_LENGTH}
+          autoComplete="nickname"
+          autoFocus={!detectedRoom}
+          onChange={(event) => {
+            setName(event.target.value);
+            setNameError(null);
+          }}
+        />
 
-        <div className="field">
-          <label className="field__label" htmlFor="join-invite">
-            {t('join.inviteLabel')}
-          </label>
-          <input
-            id="join-invite"
-            className="input code-value"
-            value={invite}
-            placeholder={t('join.invitePlaceholder')}
-            autoComplete="off"
-            spellCheck={false}
-            aria-describedby="join-invite-hint"
-            aria-invalid={inviteError !== null}
-            onChange={(event) => {
-              setInvite(event.target.value);
-              setInviteError(null);
-            }}
-          />
-          <span className="field__hint" id="join-invite-hint">
-            {t('join.inviteHint')}
-          </span>
-          {inviteError ? (
-            <span className="field__error" role="alert">
-              {inviteError}
-            </span>
-          ) : null}
-        </div>
+        {/*
+          A room code is upper-case, hyphenated and not a word: the phone keyboard
+          has to be told so, or it capitalises the first letter only, offers
+          autocorrect and hides the hyphen behind a modifier key.
+        */}
+        <Field
+          label={t('join.inviteLabel')}
+          hint={t('join.inviteHint')}
+          error={inviteError}
+          inputClass="code-input"
+          value={invite}
+          placeholder={t('join.invitePlaceholder')}
+          autoComplete="off"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="go"
+          onChange={(event) => {
+            setInvite(event.target.value);
+            setInviteError(null);
+          }}
+        />
 
-        <div className="btn-group">
-          <button type="submit" className="btn btn--primary btn--large" disabled={busy}>
+        <div className="form-actions">
+          <Button type="submit" variant="primary" size="lg" block busy={busy}>
             {busy ? t('join.connecting') : t('join.submit')}
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
+          </Button>
+          <Button
+            variant="ghost"
+            block
             onClick={() => {
               goTo('home');
             }}
           >
             {t('common.back')}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

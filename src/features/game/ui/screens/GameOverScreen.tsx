@@ -1,9 +1,19 @@
 import type { ReactNode } from 'react';
+import { Badge } from '../../../../components/Badge.tsx';
+import { Button } from '../../../../components/Button.tsx';
+import { Icon } from '../../../../components/Icon.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { standings, winnerName } from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 
+/**
+ * The end of a round.
+ *
+ * The result is the screen, not a line of text above a table: who won is stated
+ * once, large, and marked in the standings by a word as well as by a tint. Below
+ * it, the only two things left to decide — another round, or out.
+ */
 export function GameOverScreen(): ReactNode {
   const t = useT();
   const state = useAppStore();
@@ -18,10 +28,15 @@ export function GameOverScreen(): ReactNode {
     <div className="page">
       <ConnectionPhaseNotice />
 
-      <h1>{t('over.title')}</h1>
-      <p className="hero__subtitle">
-        {iWon ? t('over.winnerYou') : t('over.winner', { name: winnerName(state) ?? '—' })}
-      </p>
+      <div className={`result ${iWon ? 'result--mine' : ''}`.trim()}>
+        <span className="result__icon" aria-hidden="true">
+          <Icon name="trophy" size={2.4} />
+        </span>
+        <h1 className="result__title">{t('over.title')}</h1>
+        <p className="result__winner">
+          {iWon ? t('over.winnerYou') : t('over.winner', { name: winnerName(state) ?? '—' })}
+        </p>
+      </div>
 
       <section className="panel">
         <h2 className="panel__title">{t('over.standings')}</h2>
@@ -38,40 +53,55 @@ export function GameOverScreen(): ReactNode {
               <tr key={row.playerId} className={row.playerId === winner ? 'standings__winner' : undefined}>
                 <td>{row.rank}</td>
                 <td>
-                  {row.name}
-                  {row.playerId === state.localPlayerId ? (
-                    <span className="text-small muted"> ({t('common.you')})</span>
-                  ) : null}
+                  <span className="cluster">
+                    <span className="truncate">{row.name}</span>
+                    {row.playerId === state.localPlayerId ? (
+                      <span className="text-small muted">({t('common.you')})</span>
+                    ) : null}
+                    {/* A tinted row is invisible to a player who cannot see the
+                        tint, so the winner is also named. */}
+                    {row.playerId === winner ? (
+                      <Badge tone="success" icon="trophy">
+                        {t('over.winnerBadge')}
+                      </Badge>
+                    ) : null}
+                  </span>
                 </td>
-                <td>{row.cardCount}</td>
+                {/* The column header carries the unit; repeating it in every
+                    cell just makes the table harder to scan. */}
+                <td className="standings__count">{row.cardCount}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
 
-      <div className="btn-group">
-        <button
-          type="button"
-          className="btn btn--primary btn--large"
+      <div className="action-bar">
+        <Button
+          variant="primary"
+          size="lg"
+          block
+          icon={iAgreed ? 'hourglass' : 'clockwise'}
           aria-pressed={iAgreed}
           onClick={() => {
             state.votePlayAgain(!iAgreed);
           }}
         >
           {t('over.playAgain')}
-        </button>
-        <button type="button" className="btn" onClick={state.leaveRoom}>
+        </Button>
+        {/* Leaving here still closes the room for a host, so it goes through the
+            same confirmation as any other exit. */}
+        <Button variant="ghost" block onClick={state.requestLeave}>
           {t('over.home')}
-        </button>
+        </Button>
+        <p className="action-bar__hint" role="status">
+          {required > 0
+            ? t('over.playAgainWaiting', { agreed: agreed.length, required })
+            : t('over.playAgainHint')}
+        </p>
       </div>
 
-      <p className="text-small muted" role="status">
-        {required > 0
-          ? t('over.playAgainWaiting', { agreed: agreed.length, required })
-          : t('over.playAgainHint')}
-      </p>
-      <p className="text-small muted">{t('over.noPersistence')}</p>
+      <p className="text-small muted center">{t('over.noPersistence')}</p>
     </div>
   );
 }

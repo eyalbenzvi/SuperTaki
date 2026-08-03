@@ -1,9 +1,11 @@
 /*
- * Design tokens.
+ * Design tokens — the whole visual vocabulary of the app.
  *
- * Every colour used anywhere in the app is declared here so light and dark
- * themes stay in sync and card colours can be reused by both the table and the
- * UI chrome. Contrast ratios for text on surfaces are at least 4.5:1.
+ * Nothing outside this file invents a colour, a radius, a duration or a font
+ * size. Light and dark are the same set of names with different values, so a
+ * component written once is correct in both. Every text/surface pair below
+ * clears 4.5:1, and every solid suit colour used as a *background* has an ink
+ * token that clears 4.5:1 on it.
  */
 
 :root {
@@ -11,25 +13,31 @@
    * The four suit colours, identical in both themes so cards stay
    * recognisable. Cards are printed objects: the face is white in either
    * theme, and the colour is carried by the symbol drawn on it.
-   *
-   * `-ink` is the readable text colour when the suit is used as a solid
-   * background (chips, the colour picker) rather than as a drawing colour.
    */
   --card-red: #e4002b;
-  --card-red-ink: #ffffff;
   --card-blue: #0057b8;
-  --card-blue-ink: #ffffff;
   --card-green: #00983f;
-  --card-green-ink: #ffffff;
   --card-yellow: #ffc400;
+
+  /*
+   * The same four as *solid fills that carry text* — the colour picker, the
+   * active-colour rail. Green had to be taken down a stop: white on #00983f is
+   * 3.8:1, and on #007a33 it is 5.5:1.
+   */
+  --card-red-solid: #c40025;
+  --card-red-ink: #ffffff;
+  --card-blue-solid: #0057b8;
+  --card-blue-ink: #ffffff;
+  --card-green-solid: #007a33;
+  --card-green-ink: #ffffff;
+  --card-yellow-solid: #ffc400;
   --card-yellow-ink: #1a1206;
 
   /*
    * Artwork shades. Every symbol is a solid block, and a block shows three
    * tones of one hue at once: the front face turned towards the light, the
    * walls turned sideways, and the walls turned down, which catch least of it.
-   * Printing inks, so a little softer and warmer than the flat suit colours
-   * above — those still have to carry white text on the colour picker.
+   * Printing inks, so a little softer and warmer than the flat suit colours.
    */
   --card-red-face: #e23a2b;
   --card-red-mid: #ab2417;
@@ -61,30 +69,95 @@
   --card-outline: #1b1b21;
   --card-label: #35353d;
 
+  /* Radii ---------------------------------------------------------------- */
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 18px;
+  --radius-xl: 24px;
   --radius-pill: 999px;
 
+  /* Spacing scale — a 4px base, so every gap is a multiple of it. --------- */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
+  --space-7: 3rem;
 
+  /* Type ----------------------------------------------------------------- */
   --font-sans:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans Hebrew', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
 
+  /*
+   * 13px is the floor for interface text, and it is used only for badges and
+   * counters. Anything a player reads as a sentence is 14px or more.
+   */
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: clamp(1.35rem, 5vw, 1.75rem);
+  --text-3xl: clamp(1.6rem, 6.5vw, 2.35rem);
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-black: 800;
+
+  /* Card sizes ----------------------------------------------------------- */
+  --card-w-xs: 2.25rem;
+  --card-w-sm: 3rem;
+  --card-w-md: 4.5rem;
+  --card-w-lg: 5.5rem;
+  --card-w-xl: 7rem;
+
+  /* Interaction ---------------------------------------------------------- */
   --tap-target: 44px;
-  --transition-fast: 120ms ease;
-  --transition-medium: 220ms ease;
+  --tap-target-sm: 36px;
 
+  /* Motion — three speeds and two curves, nothing else. ------------------ */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-instant: 90ms;
+  --dur-fast: 160ms;
+  --dur-base: 240ms;
+  --dur-slow: 380ms;
+  --transition-fast: var(--dur-instant) var(--ease-out);
+  --transition-medium: var(--dur-base) var(--ease-out);
+
+  /* Elevation ------------------------------------------------------------ */
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.16);
   --shadow-md: 0 4px 12px rgb(0 0 0 / 0.18);
   --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.24);
+  --shadow-card: 0 2px 6px rgb(0 0 0 / 0.22);
+  --shadow-card-raised: 0 10px 20px rgb(0 0 0 / 0.28);
+
+  /* Stacking — one ordered list, so nothing has to guess a number. ------- */
+  --z-table: 1;
+  --z-sticky: 10;
+  --z-topbar: 20;
+  --z-drawer: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+  --z-skip: 100;
 
   --focus-ring: 3px;
+
+  /*
+   * Safe areas. `viewport-fit=cover` means the viewport runs under the notch
+   * and the home indicator, so every edge-anchored surface adds its own inset.
+   */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 :root,
@@ -96,7 +169,8 @@
   --surface: #ffffff;
   --surface-raised: #ffffff;
   --surface-sunken: #e9edf5;
-  --surface-translucent: rgb(255 255 255 / 0.82);
+  --surface-translucent: rgb(255 255 255 / 0.88);
+  --scrim: rgb(14 17 24 / 0.55);
   --border: #c3cad9;
   --border-strong: #8d97ab;
 
@@ -107,18 +181,28 @@
   --accent: #c40025;
   --accent-ink: #ffffff;
   --accent-soft: #ffe1e6;
+  --accent-border: #dc8f9c;
 
   --danger: #b3261e;
   --danger-ink: #ffffff;
   --danger-soft: #fbe3e1;
 
   --success: #14663f;
+  --success-ink: #ffffff;
   --success-soft: #dcf1e6;
+  --success-border: #7cbfa0;
   --warning: #8a5300;
   --warning-soft: #fdefd4;
+  --warning-border: #dcb768;
+
+  --info: #10265f;
+  --info-soft: #e2e9fb;
+  --info-border: #a3b6e4;
 
   --focus-color: #10265f;
-  --table-felt: linear-gradient(160deg, #dfe5f1 0%, #cdd6e8 100%);
+  --focus-color-inverse: #ffffff;
+  --table-felt: linear-gradient(165deg, #dfe5f1 0%, #ccd5e7 100%);
+  --table-rail: #b3bfd6;
 }
 
 :root[data-theme='dark'] {
@@ -129,7 +213,8 @@
   --surface: #1a202e;
   --surface-raised: #222a3b;
   --surface-sunken: #141926;
-  --surface-translucent: rgb(26 32 46 / 0.86);
+  --surface-translucent: rgb(18 23 35 / 0.92);
+  --scrim: rgb(0 0 0 / 0.66);
   --border: #384259;
   --border-strong: #5b6884;
 
@@ -141,16 +226,26 @@
   --accent: #e4002b;
   --accent-ink: #ffffff;
   --accent-soft: #4d1620;
+  --accent-border: #8c2334;
 
   --danger: #ff8f85;
   --danger-ink: #2a0d0a;
   --danger-soft: #4a1f1c;
 
   --success: #7bd6a5;
+  --success-ink: #0e1118;
   --success-soft: #17392a;
+  --success-border: #2f6d4e;
   --warning: #f3c26b;
   --warning-soft: #3d2f10;
+  --warning-border: #6a5320;
+
+  --info: #bcd0ff;
+  --info-soft: #1b2542;
+  --info-border: #35406b;
 
   --focus-color: #bcd0ff;
-  --table-felt: linear-gradient(160deg, #1c2333 0%, #141a28 100%);
+  --focus-color-inverse: #0e1118;
+  --table-felt: linear-gradient(165deg, #1f2739 0%, #141a28 100%);
+  --table-rail: #2c3549;
 }

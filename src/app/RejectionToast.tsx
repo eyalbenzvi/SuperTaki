@@ -1,12 +1,19 @@
 import { useEffect, type ReactNode } from 'react';
+import { Button } from '../components/Button.tsx';
+import { Icon } from '../components/Icon.tsx';
 import { useAppStore } from '../features/game/state/store.ts';
 import { useT } from './useT.ts';
 
-const VISIBLE_MS = 4000;
+const VISIBLE_MS = 5000;
 
 /**
  * Explains a rejected move. Rejections are the host's answer to an illegal
- * action, so they must be shown rather than swallowed.
+ * action, so they must be shown rather than swallowed — and they interrupt,
+ * because the player believes the move happened.
+ *
+ * The effect is keyed on the rejection object, whose nonce changes even when the
+ * reason repeats, so the same refusal twice restarts the timer instead of
+ * looking like nothing happened.
  */
 export function RejectionToast(): ReactNode {
   const t = useT();
@@ -30,10 +37,20 @@ export function RejectionToast(): ReactNode {
 
   return (
     <div className="toast" role="alert">
-      <span>{t(`reject.${rejection.code}`, takiColor ? { color: t(`card.${takiColor}`) } : undefined)}</span>
-      <button type="button" className="btn btn--ghost" onClick={dismissRejection}>
-        {t('common.close')}
-      </button>
+      <span className="toast__icon" aria-hidden="true">
+        <Icon name="alert" size={1.3} />
+      </span>
+      <span className="toast__text">
+        {t(`reject.${rejection.code}`, takiColor ? { color: t(`card.${takiColor}`) } : undefined)}
+      </span>
+      <Button
+        iconOnly
+        icon="close"
+        variant="ghost"
+        size="sm"
+        aria-label={t('common.close')}
+        onClick={dismissRejection}
+      />
     </div>
   );
 }

@@ -1,12 +1,18 @@
-import type { ReactNode } from 'react';
-import type { Translator } from '../../../../i18n/index.ts';
+import { memo, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { Icon } from '../../../../components/Icon.tsx';
+import { countLabel, type Translator } from '../../../../i18n/index.ts';
 import type { Card, CardColor } from '../../engine/cards.ts';
 import type { ConnectionHealth } from '../../network/protocol.ts';
 import type { OpponentView } from '../../state/selectors.ts';
 import { colorName } from '../cardText.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
 
-/** Coloured indicator for the colour that must currently be matched. */
+/**
+ * The colour that must currently be matched.
+ *
+ * A swatch plus its name, never the swatch alone: the whole point of the
+ * indicator is lost on a player who cannot separate red from green.
+ */
 export function ColorIndicator({
   color,
   t,
@@ -15,13 +21,36 @@ export function ColorIndicator({
   readonly t: Translator;
 }): ReactNode {
   return (
-    <span className="color-swatch">
-      <span className={`color-swatch__dot color-dot--${color}`} aria-hidden="true" />
+    <span className={`color-swatch color-swatch--${color}`}>
+      <span className="color-swatch__dot" aria-hidden="true" />
       {t('game.activeColor', { color: colorName(t, color) })}
     </span>
   );
 }
 
+/** Which way round the table play is moving. */
+export function DirectionIndicator({
+  direction,
+  t,
+}: {
+  readonly direction: 1 | -1;
+  readonly t: Translator;
+}): ReactNode {
+  const label = direction === 1 ? t('game.directionCw') : t('game.directionCcw');
+  return (
+    <span className="direction-chip">
+      <Icon name={direction === 1 ? 'clockwise' : 'anticlockwise'} size={1.15} />
+      <span className="direction-chip__label">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * A player's link quality.
+ *
+ * A healthy connection is the normal case and says so with a dot alone; anything
+ * worse spells the word out, because that is the state a player has to act on.
+ */
 export function HealthBadge({
   health,
   t,
@@ -37,11 +66,50 @@ export function HealthBadge({
   return (
     <span className={`health health--${health}`}>
       <span className="health__dot" aria-hidden="true" />
-      {labels[health]}
+      {health === 'connected' ? <span className="sr-only">{labels[health]}</span> : labels[health]}
     </span>
   );
 }
 
+const OpponentSeat = memo(function OpponentSeat({
+  opponent,
+  t,
+}: {
+  readonly opponent: OpponentView;
+  readonly t: Translator;
+}): ReactNode {
+  const lastCard = opponent.cardCount === 1;
+  return (
+    <li className={`seat ${opponent.isCurrent ? 'seat--current' : ''}`.trim()}>
+      <span className="seat__pile">
+        <FaceDownCard t={t} size="xs" />
+      </span>
+      <span className="seat__name truncate" title={opponent.name}>
+        {opponent.name}
+      </span>
+      <span className={`seat__count ${lastCard ? 'seat__count--low' : ''}`.trim()}>
+        {countLabel(t, 'game.cardsLeft', opponent.cardCount)}
+      </span>
+      {lastCard ? <span className="sr-only">{t('game.lastCard')}</span> : null}
+      <HealthBadge health={opponent.health} t={t} />
+      {opponent.isCurrent ? (
+        <>
+          <span className="seat__marker" aria-hidden="true" />
+          <span className="sr-only">{t('game.turnBadge')}</span>
+        </>
+      ) : null}
+    </li>
+  );
+});
+
+/**
+ * The other players, in play order starting after the local seat, so what is on
+ * screen matches the order of play whoever is looking.
+ *
+ * Laid out as a row of narrow seats rather than wide cards, so a full table of
+ * six fits across a phone without a horizontal scroll — whose turn it is must
+ * never be something a player has to scroll to find.
+ */
 export function OpponentList({
   opponents,
   t,
@@ -50,21 +118,10 @@ export function OpponentList({
   readonly t: Translator;
 }): ReactNode {
   return (
-    <section aria-label={t('game.opponents')}>
-      <ul className="opponents">
+    <section className="seats" aria-label={t('game.opponents')}>
+      <ul className="seats__list">
         {opponents.map((opponent) => (
-          <li
-            key={opponent.id}
-            className={`opponent ${opponent.isCurrent ? 'opponent--current' : ''}`.trim()}
-          >
-            <FaceDownCard t={t} size="sm" />
-            <div className="opponent__info">
-              <span className="opponent__name">{opponent.name}</span>
-              <span className="opponent__cards">{t('game.cardsLeft', { count: opponent.cardCount })}</span>
-              <HealthBadge health={opponent.health} t={t} />
-              {opponent.isCurrent ? <span className="badge badge--turn">{t('game.yourTurn')}</span> : null}
-            </div>
-          </li>
+          <OpponentSeat key={opponent.id} opponent={opponent} t={t} />
         ))}
       </ul>
     </section>
@@ -75,15 +132,26 @@ export interface PilesProps {
   readonly t: Translator;
   readonly discardTop: Card | null;
   readonly drawPileCount: number;
+  readonly activeColor: CardColor;
   readonly canDraw: boolean;
   readonly onDraw: () => void;
   readonly drawBlockedReason: string;
 }
 
+/**
+ * The middle of the table: the pile you draw from, the card you must match, and
+ * the colour that is currently in force.
+ *
+ * The active colour is drawn as a rail *around the discard pile* rather than as a
+ * chip elsewhere on the screen. After a Change Colour the top card and the
+ * colour in force disagree, and that is exactly the moment a player needs the
+ * two facts in one place.
+ */
 export function Piles({
   t,
   discardTop,
   drawPileCount,
+  activeColor,
   canDraw,
   onDraw,
   drawBlockedReason,
@@ -91,28 +159,28 @@ export function Piles({
   return (
     <div className="piles">
       <div className="pile">
-        <span className="pile__label" id="draw-pile-label">
-          {t('game.drawPile')}
-        </span>
         <button
           type="button"
           className={`card card--back card--lg ${canDraw ? 'card--playable' : 'card--dimmed'}`}
           onClick={onDraw}
           disabled={!canDraw}
-          aria-disabled={!canDraw}
-          aria-label={t('game.drawPileAria', { count: drawPileCount })}
+          aria-label={countLabel(t, 'game.drawPileAria', drawPileCount)}
           title={canDraw ? t('game.drawPile') : drawBlockedReason}
         />
-        <span className="pile__count">{t('game.cardsLeft', { count: drawPileCount })}</span>
+        <span className="pile__label">{t('game.drawPile')}</span>
+        <span className="pile__count">{countLabel(t, 'game.cardsLeft', drawPileCount)}</span>
       </div>
 
-      <div className="pile">
+      <div className="pile pile--discard">
+        <div className={`discard discard--${activeColor}`}>
+          {discardTop ? (
+            <CardFace key={discardTop.id} card={discardTop} t={t} size="lg" extraClass="card--landing" />
+          ) : (
+            <p className="discard__empty text-small">{t('game.discardEmpty')}</p>
+          )}
+        </div>
         <span className="pile__label">{t('game.discardTop')}</span>
-        {discardTop ? (
-          <CardFace card={discardTop} t={t} size="xl" />
-        ) : (
-          <p className="text-small muted">{t('game.discardEmpty')}</p>
-        )}
+        <ColorIndicator color={activeColor} t={t} />
       </div>
     </div>
   );
@@ -123,26 +191,109 @@ export interface HandProps {
   readonly playableIds: readonly string[];
   readonly t: Translator;
   readonly onPlay: (card: Card) => void;
+  readonly onRefuse?: (card: Card) => void;
   readonly disabledReason: string;
+  readonly locked?: boolean;
 }
 
-export function Hand({ cards, playableIds, t, onPlay, disabledReason }: HandProps): ReactNode {
+/** Below this many cards the hand is spread out; above it the cards overlap. */
+const FAN_FROM = 6;
+
+/**
+ * The player's own cards.
+ *
+ * Two things make this work on a phone. The cards overlap once there are more
+ * than a handful, so a big hand still shows most of itself at a glance — but
+ * never by more than half a card, so every card keeps a strip wider than a
+ * fingertip, and the focused or hovered card lifts clear of its neighbours. And
+ * the whole row is one keyboard widget: a single tab stop, arrow keys along the
+ * fan in the reading direction, Home and End to the ends. Twelve cards would
+ * otherwise be twelve tab stops between the table and everything below it.
+ */
+export function Hand({
+  cards,
+  playableIds,
+  t,
+  onPlay,
+  onRefuse,
+  disabledReason,
+  locked = false,
+}: HandProps): ReactNode {
   const playable = new Set(playableIds);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  /** The roving tab stop starts on the first legal card, or on the first card. */
+  const firstPlayable = cards.findIndex((card) => playable.has(card.id));
+  const activeIndex = firstPlayable < 0 ? 0 : firstPlayable;
+
+  const focusCard = (index: number): void => {
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('button.card');
+    if (!buttons || buttons.length === 0) {
+      return;
+    }
+    const target = buttons[Math.max(0, Math.min(index, buttons.length - 1))];
+    target?.focus();
+    // Not implemented in every environment the tests run in.
+    target?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLUListElement>): void => {
+    const buttons = [...(listRef.current?.querySelectorAll<HTMLButtonElement>('button.card') ?? [])];
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (current < 0) {
+      return;
+    }
+    const rtl = document.documentElement.dir === 'rtl';
+    const forwards = rtl ? 'ArrowLeft' : 'ArrowRight';
+    const backwards = rtl ? 'ArrowRight' : 'ArrowLeft';
+
+    switch (event.key) {
+      case forwards:
+        event.preventDefault();
+        focusCard(current + 1);
+        return;
+      case backwards:
+        event.preventDefault();
+        focusCard(current - 1);
+        return;
+      case 'Home':
+        event.preventDefault();
+        focusCard(0);
+        return;
+      case 'End':
+        event.preventDefault();
+        focusCard(buttons.length - 1);
+        return;
+      default:
+        return;
+    }
+  };
+
   return (
-    <section aria-label={t('game.yourHand')}>
-      <div className="row row--between">
-        <h2 className="panel__title">{t('game.yourHand')}</h2>
-        <span className="text-small muted">{t('game.handCount', { count: cards.length })}</span>
+    <section className="hand-area" aria-label={t('game.yourHand')}>
+      <div className="hand-area__head">
+        <h2 className="hand-area__title">{t('game.yourHand')}</h2>
+        <span className="hand-area__count">{countLabel(t, 'game.handCount', cards.length)}</span>
       </div>
-      <ul className="hand">
-        {cards.map((card) => (
+      <ul
+        className={`hand ${cards.length > FAN_FROM ? 'hand--fanned' : ''}`.trim()}
+        // The number of overlaps, so the stylesheet can solve the fan's spacing
+        // from the row's real width instead of guessing at a fixed offset.
+        style={{ '--hand-gaps': Math.max(1, cards.length - 1) } as CSSProperties}
+        ref={listRef}
+        onKeyDown={onKeyDown}
+      >
+        {cards.map((card, index) => (
           <li key={card.id} className="hand__slot">
             <PlayableCard
               card={card}
               t={t}
               playable={playable.has(card.id)}
               onPlay={onPlay}
+              {...(onRefuse ? { onRefuse } : {})}
               disabledReason={disabledReason}
+              locked={locked}
+              tabIndex={index === activeIndex ? 0 : -1}
             />
           </li>
         ))}

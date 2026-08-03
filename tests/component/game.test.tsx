@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
-import { GUEST_ID, HOST_ID, enterGame, lobbyFixture, renderApp, resetStore, setState } from './helpers.tsx';
+import {
+  GUEST_ID,
+  HOST_ID,
+  enterGame,
+  lobbyFixture,
+  renderApp,
+  resetStore,
+  setState,
+  statusRegions,
+} from './helpers.tsx';
 import { getPlayableCardIds } from '../../src/features/game/engine/rules.ts';
 import { playContextFromPublic } from '../../src/features/game/engine/views.ts';
 import type { Card } from '../../src/features/game/engine/cards.ts';
@@ -45,6 +54,22 @@ function situation(options: {
       ],
     },
   });
+}
+
+/**
+ * A hand card is a real button that is never `disabled` — see `PlayableCard` —
+ * so legality is asserted through `aria-disabled` and the legal-card class.
+ */
+function expectPlayable(name: string): void {
+  const card = screen.getByRole('button', { name });
+  expect(card).toHaveAttribute('aria-disabled', 'false');
+  expect(card).toHaveClass('card--playable');
+}
+
+function expectRefused(name: string): void {
+  const card = screen.getByRole('button', { name });
+  expect(card).toHaveAttribute('aria-disabled', 'true');
+  expect(card).toHaveClass('card--dimmed');
 }
 
 const red5: Card = { id: 'c1', kind: 'number', color: 'red', value: 5 };
@@ -97,23 +122,37 @@ describe('legal card highlighting', () => {
     situation({ hand: [red5, blue2, colorChange], discardTop: red9, activeColor: 'red' });
     renderApp();
 
-    expect(screen.getByRole('button', { name: 'הנחת אדום 5' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'הנחת שינוי צבע' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'הנחת כחול 2' })).toBeDisabled();
+    expectPlayable('הנחת אדום 5');
+    expectPlayable('הנחת שינוי צבע');
+    expectRefused('הנחת כחול 2');
   });
 
   it('accepts a symbol match across colours', () => {
     situation({ hand: [blue5, blue2], discardTop: red5, activeColor: 'red' });
     renderApp();
-    expect(screen.getByRole('button', { name: 'הנחת כחול 5' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'הנחת כחול 2' })).toBeDisabled();
+    expectPlayable('הנחת כחול 5');
+    expectRefused('הנחת כחול 2');
   });
 
-  it('disables the whole hand when it is not your turn', () => {
+  it('blocks the whole hand when it is not your turn, and says why', async () => {
+    const playCard = vi.fn();
     situation({ hand: [red5, colorChange], discardTop: red9, activeColor: 'red', myTurn: false });
-    renderApp();
-    expect(screen.getByRole('button', { name: 'הנחת אדום 5' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'הנחת שינוי צבע' })).toBeDisabled();
+    setState({ playCard });
+    const { user } = renderApp();
+
+    const card = screen.getByRole('button', { name: 'הנחת אדום 5' });
+    expectRefused('הנחת אדום 5');
+    expectRefused('הנחת שינוי צבע');
+
+    /*
+     * The cards stay reachable rather than being `disabled`: a disabled button
+     * cannot be focused, so a keyboard or screen-reader player could not read
+     * their own hand. Pressing one explains itself instead of doing nothing.
+     */
+    expect(card).toHaveAttribute('title', 'צריך לחכות לתור שלך.');
+    await user.click(card);
+    expect(playCard).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('צריך לחכות לתור שלך.');
   });
 
   it('agrees with the engine about which cards are legal', () => {
@@ -299,10 +338,10 @@ describe('Taki mode', () => {
     });
     renderApp();
 
-    expect(screen.getByRole('button', { name: 'הנחת אדום 5' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'הנחת כחול 5' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'הנחת שינוי צבע' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'הנחת סופר טאקי' })).toBeDisabled();
+    expectPlayable('הנחת אדום 5');
+    expectRefused('הנחת כחול 5');
+    expectRefused('הנחת שינוי צבע');
+    expectRefused('הנחת סופר טאקי');
   });
 
   it('hides the close control from the player who does not own the sequence', () => {
@@ -328,7 +367,7 @@ describe('outstanding Plus', () => {
 });
 
 describe('game log', () => {
-  it('lists public events without exposing hands', () => {
+  function withFeed(): void {
     enterGame();
     setState({
       feed: [
@@ -340,11 +379,25 @@ describe('game log', () => {
         { id: 3, event: { type: 'cardDrawn', playerId: HOST_ID, count: 1 } },
       ],
     });
-    renderApp();
+  }
 
-    expect(screen.getByText('הסבב מתחיל. הצבע: אדום.')).toBeInTheDocument();
-    expect(screen.getByText('אלי הניח/ה כחול 5.')).toBeInTheDocument();
+  it('keeps the newest line on screen without spending the table on history', () => {
+    withFeed();
+    renderApp();
+    // The ticker carries the latest event; the rest is one press away.
     expect(screen.getByText('דנה משך/ה קלף.')).toBeInTheDocument();
+    expect(screen.queryByText('הסבב מתחיל. הצבע: אדום.')).not.toBeInTheDocument();
+  });
+
+  it('lists public events without exposing hands', async () => {
+    withFeed();
+    const { user } = renderApp();
+    await user.click(screen.getByRole('button', { name: 'יומן המשחק' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('הסבב מתחיל. הצבע: אדום.')).toBeInTheDocument();
+    expect(within(dialog).getByText('אלי הניח/ה כחול 5.')).toBeInTheDocument();
+    expect(within(dialog).getByText('דנה משך/ה קלף.')).toBeInTheDocument();
   });
 
   it('says so when nothing has happened yet', () => {
@@ -395,9 +448,9 @@ describe('the +2 run, the King and the +3', () => {
     situation({ hand: [redPlusTwo, king, blue5], discardTop: red9, activeColor: 'red', pendingDraw: 2 });
     renderApp();
 
-    expect(screen.getByRole('button', { name: 'הנחת אדום קח 2' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'הנחת מלך' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'הנחת כחול 5' })).toBeDisabled();
+    expectPlayable('הנחת אדום קח 2');
+    expectPlayable('הנחת מלך');
+    expectRefused('הנחת כחול 5');
   });
 
   it('announces the free turn a King buys', () => {
@@ -461,6 +514,6 @@ describe('leaving a game', () => {
   it('waits politely before the first snapshot arrives', () => {
     setState({ screen: 'game', role: 'client', phase: 'connected', publicState: null });
     renderApp();
-    expect(screen.getByRole('status')).toHaveTextContent('ממתינים לשולחן…');
+    expect(statusRegions()[0]).toHaveTextContent('ממתינים לשולחן…');
   });
 });

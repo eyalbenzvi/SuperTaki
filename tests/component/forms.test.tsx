@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
-import { renderApp, resetStore, setState } from './helpers.tsx';
+import { renderApp, resetStore, setState, statusRegions } from './helpers.tsx';
 import { useAppStore } from '../../src/features/game/state/store.ts';
 
 beforeEach(() => {
@@ -36,6 +36,33 @@ describe('create room form', () => {
     setState({ screen: 'create' });
     renderApp();
     expect(screen.getByLabelText('השם שיוצג')).toHaveAttribute('maxlength', '16');
+  });
+
+  it('shows an example name rather than an empty box', () => {
+    setState({ screen: 'create' });
+    renderApp();
+    expect(screen.getByLabelText('השם שיוצג')).toHaveAttribute('placeholder', 'לדוגמה: דנה');
+  });
+
+  it('ties the hint and the error to the field for a screen reader', async () => {
+    setState({ screen: 'create', createRoom: vi.fn().mockResolvedValue(undefined) });
+    const { user } = renderApp();
+    const field = screen.getByLabelText('השם שיוצג');
+    const described = () => (field.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+
+    expect(described()).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'יצירת חדר' }));
+    // The requirement and the failure are both announced, not just the failure.
+    expect(described()).toHaveLength(2);
+    for (const id of described()) {
+      expect(document.getElementById(id)).toBeInTheDocument();
+    }
+  });
+
+  it('keeps a way back while the room is opening', () => {
+    setState({ screen: 'create', busy: true });
+    renderApp();
+    expect(screen.getByRole('button', { name: 'חזרה' })).toBeEnabled();
   });
 
   it('shows progress while the room is opening', () => {
@@ -136,7 +163,15 @@ describe('join room form', () => {
     renderApp();
 
     expect(screen.getByLabelText('קישור הזמנה או קוד חדר')).toHaveValue('TIGER-MANGO-42');
-    expect(screen.getByRole('status')).toHaveTextContent('TIGER-MANGO-42');
+    expect(statusRegions()[0]).toHaveTextContent('TIGER-MANGO-42');
+  });
+
+  it('sets the room-code field up for a phone keyboard', () => {
+    setState({ screen: 'join' });
+    renderApp();
+    const field = screen.getByLabelText('קישור הזמנה או קוד חדר');
+    expect(field).toHaveAttribute('autocapitalize', 'characters');
+    expect(field).toHaveAttribute('spellcheck', 'false');
   });
 
   it('rejoins with the stored resume credentials', async () => {

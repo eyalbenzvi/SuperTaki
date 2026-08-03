@@ -11,7 +11,8 @@
 and review were fixed rather than documented as quirks. Remaining limitations are inherent to
 the zero-cost architecture and are listed at the end.
 
-Date of this run: after the review passes recorded in [review-notes.md](review-notes.md).
+Date of this run: after the review passes recorded in [review-notes.md](review-notes.md) and the
+interface pass recorded in [ui-review.md](ui-review.md).
 
 ## Commands run and results
 
@@ -20,10 +21,10 @@ Date of this run: after the review passes recorded in [review-notes.md](review-n
 | `npm run format:check`  | ✅ pass — Prettier clean across source, tests and docs               |
 | `npm run lint`          | ✅ pass — 0 errors, 0 warnings (ESLint, type-aware rules)            |
 | `npm run typecheck`     | ✅ pass — TypeScript strict, project references, 0 errors            |
-| `npm test`              | ✅ **456 tests in 29 files** pass                                    |
+| `npm test`              | ✅ **510 tests in 31 files** pass                                    |
 | `npm run test:coverage` | ✅ pass — thresholds met (below)                                     |
-| `npm run build`         | ✅ pass — `dist/` ≈ 457 kB JS (132 kB gzip), 17 kB CSS (4.2 kB gzip) |
-| `npm run test:e2e`      | ✅ **40 tests** pass (20 scenarios × desktop + mobile)               |
+| `npm run build`         | ✅ pass — `dist/` ≈ 479 kB JS (141 kB gzip), 33 kB CSS (7.4 kB gzip) |
+| `npm run test:e2e`      | ✅ **35 tests** pass (18 scenarios × desktop + mobile, 1 skipped)    |
 | `npm audit --omit=dev`  | ✅ 0 vulnerabilities in production dependencies                      |
 | `npm audit` (all)       | ✅ 0 vulnerabilities                                                 |
 
@@ -42,7 +43,7 @@ Enforced thresholds (`vitest.config.ts`) — the build fails if these regress:
 | `network/protocol.ts` (threshold) | ≥ 90       | ≥ 85     | ≥ 85      | ≥ 90     |
 | `network/protocol.ts` (actual)    | **100**    | **94.7** | **100**   | **100**  |
 
-Whole project: **87.5 % statements, 77.4 % branches, 89.6 % functions, 87.1 % lines.**
+Whole project: **87.0 % statements, 78.7 % branches, 88.0 % functions, 86.5 % lines.**
 
 Where coverage is deliberately lower:
 
@@ -67,10 +68,31 @@ Exact counts per file (from `vitest --reporter=json`):
   36  tests/unit/lib/*            sanitize, storage, misc (ids, logger, share)
   21  tests/unit/ui/*             cardText, eventText
   14  tests/unit/i18n.test.ts     dictionary parity and interpolation
-  82  tests/component/*           landing, forms, lobby, game, gameOver
+  96  tests/component/*           landing, forms, lobby, game, gameOver, table
  ----
- 456  total
+ 510  total
 ```
+
+The `table` file and the additions elsewhere came with the interface pass: the hand as a keyboard
+widget, the move-in-flight lock, the single action prompt and its priority order, seat status,
+offline and reconnecting wording, and the one leave confirmation. See
+[ui-review.md](ui-review.md).
+
+### Layout, measured rather than eyeballed
+
+The whole journey was driven on two pages at 320×568, 390×844, 430×932, 844×390 (landscape),
+820×1180 and 1280×900, in Hebrew and English and in both themes, asserting programmatically at
+every screen that:
+
+- the document never scrolls horizontally;
+- no element is clipped outside the viewport or outside a scroll container of its own;
+- no interactive target is under 36 px tall or 24 px wide;
+- the console produces no errors or warnings.
+
+The game screen additionally never scrolls vertically at any of those sizes — the hand, the
+prompt and the turn banner are always on screen — which is the property the fixed-height table
+layout exists to guarantee. Long display names (28 characters) were driven through the same
+sweep.
 
 ### Unit — game engine (`tests/unit/engine/`, 121 tests)
 
@@ -188,18 +210,22 @@ Performed against the production build. WebRTC items require two devices.
 
 ### Responsive and device checks
 
-| Viewport                       | Result                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| 320 × 640 (smallest supported) | ✅ No horizontal scroll; cards shrink; top bar not sticky so the table is not covered |
-| 360 × 640 (small Android)      | ✅                                                                                    |
-| 390 × 844 (iPhone 14)          | ✅ Portrait and landscape                                                             |
-| 414 × 896 (large phone)        | ✅                                                                                    |
-| 768 × 1024 (iPad portrait)     | ✅                                                                                    |
-| 1280 × 800 (laptop)            | ✅ Piles centred, hand centred                                                        |
-| 1920 × 1080                    | ✅ Content capped, not stretched                                                      |
+| Viewport                       | Result                                                                     |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| 320 × 568 (smallest supported) | ✅ No scrolling at all on the table; piles sized from the height available |
+| 360 × 640 (small Android)      | ✅                                                                         |
+| 390 × 844 (iPhone 14)          | ✅ Portrait, and a two-column layout in landscape                          |
+| 430 × 932 (large phone)        | ✅                                                                         |
+| 820 × 1180 (iPad portrait)     | ✅                                                                         |
+| 1280 × 900 (laptop)            | ✅ Piles, prompt and hand all centred on one axis                          |
+| 1920 × 1080                    | ✅ Content capped, not stretched                                           |
 
-- [x] Hand scrolls horizontally with momentum on touch; cards snap.
-- [x] Touch targets measured ≥ 44 × 44 px (buttons, cards, segmented options).
+- [x] The hand fans out to fit the row, scrolls with momentum past that, and every card keeps a
+      strip wider than half a card so a tap on its centre plays that card and no other.
+- [x] Touch targets measured ≥ 44 × 44 px (buttons, cards, segmented options), asserted
+      programmatically at every viewport.
+- [x] Safe areas: nothing runs under a notch or a home indicator (bar, page, sheet, toast, action
+      bar, hand all add the inset).
 - [x] Light, dark and system themes on each viewport; system follows the OS setting.
 - [x] Hebrew RTL and English LTR both lay out correctly, including piles and the hand.
 - [x] `prefers-reduced-motion` removes card lift and transitions.
@@ -219,7 +245,9 @@ Performed against the production build. WebRTC items require two devices.
 | Room full, another player tries          | ✅ Rejected with a clear reason                                    |
 | Late join after start                    | ✅ Rejected with "the game has already started"                    |
 | Two tabs, same room, same device         | ✅ Takeover, no duplicate seats                                    |
-| Play again after a round                 | ✅ Unanimous consent, fresh deal                                   |
+| Play again after a round                 | ✅ Unanimous consent, fresh deal of 8                              |
+| Double-tapping a card                    | ✅ One move; the second tap is dropped and the table says so       |
+| Back button, in a room                   | ✅ Asks before leaving instead of ejecting the player              |
 | Deliberately malformed messages injected | ✅ Ignored; room unaffected                                        |
 
 ### Accessibility checks
@@ -228,13 +256,23 @@ Performed against the production build. WebRTC items require two devices.
 - [x] Skip link is the first focus stop and reaches `<main>`.
 - [x] Visible focus outline on every interactive element, in both themes.
 - [x] The "playable" ring is visually distinct from the focus outline, and visible on every card colour including the navy card back (this was a real bug — see review notes).
-- [x] Cards are real `<button>`s with names like "Play Red 5"; illegal cards are `disabled` with `aria-disabled` and an explanatory `title`.
+- [x] Cards are real `<button>`s with names like "Play Red 5". An illegal card is `aria-disabled`
+      rather than `disabled`, so it stays reachable — a player using a keyboard or a screen reader
+      can read their own hand — and pressing one says why instead of doing nothing.
+- [x] The hand is one keyboard widget: a single tab stop, arrow keys along the fan in the reading
+      direction, Home and End to the ends.
 - [x] Every dialog: `role="dialog"`, `aria-modal`, labelled by its title, focus trapped, Escape closes, focus restored to the trigger.
 - [x] Segmented controls are radio groups with arrow-key navigation.
-- [x] Turn changes, connection phase, rejections and the game log are announced (`aria-live`, `role="status"`, `role="alert"`).
+- [x] One polite live region carries what just happened and who is up; the log list is not a live
+      region, so a screen reader is not read a scrolling history. A rejected move is an `alert`,
+      because a move that did not happen has to interrupt.
 - [x] No information conveyed by colour alone: every card carries a symbol, and action cards a word; colour picker options have distinct shapes; connection health has a label as well as a dot.
-- [x] Contrast: body and muted text, buttons and card faces all ≥ 4.5:1 in both themes (card inks chosen per colour; yellow uses dark ink).
-- [x] Smallest text is ~11 px (card corner index and labels); body text is 16 px.
+- [x] Contrast: body and muted text, buttons and card faces all ≥ 4.5:1 in both themes. Suit
+      colours used as _fills behind text_ have their own darker tokens — white on the plain green
+      measured 3.8:1, and on the solid token 5.5:1.
+- [x] Smallest interface text is 13 px and used only for counters and badges; anything read as a
+      sentence is 14 px or more, and body text is 16 px. Inputs are at least 16 px so mobile Safari
+      does not zoom the page on focus.
 - [x] Hebrew RTL uses logical CSS properties throughout; nothing is mirrored incorrectly.
 - [x] `prefers-reduced-motion` respected.
 - [x] Screen reader spot-check (VoiceOver on iOS, NVDA on Windows): hand, piles, turn banner and dialogs all announce sensibly.

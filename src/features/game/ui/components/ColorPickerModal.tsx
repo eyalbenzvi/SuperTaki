@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
+import { Button } from '../../../../components/Button.tsx';
 import { Modal } from '../../../../components/Modal.tsx';
 import type { Translator } from '../../../../i18n/index.ts';
 import { CARD_COLORS, type Card, type CardColor } from '../../engine/cards.ts';
 import { colorName, describeCard } from '../cardText.ts';
+import { CardFace } from './CardView.tsx';
 
 /** Distinct shapes so the four options are distinguishable without colour. */
 const COLOR_GLYPH: Record<CardColor, string> = {
@@ -20,7 +22,13 @@ export interface ColorPickerModalProps {
   readonly onCancel: () => void;
 }
 
-/** Mobile-friendly colour choice for Colour Change and Super Taki. */
+/**
+ * The colour choice for Change Colour and Super Taki.
+ *
+ * Four large targets, each carrying a colour, a shape and its name, so the choice
+ * is never colour alone. The card being played is shown beside them: this dialog
+ * interrupts a move, and it has to be obvious which move.
+ */
 export function ColorPickerModal({ open, card, t, onChoose, onCancel }: ColorPickerModalProps): ReactNode {
   return (
     <Modal
@@ -28,12 +36,15 @@ export function ColorPickerModal({ open, card, t, onChoose, onCancel }: ColorPic
       title={card ? t('game.chooseColorFor', { card: describeCard(t, card) }) : t('game.chooseColorTitle')}
       onClose={onCancel}
       actions={
-        <button type="button" className="btn btn--ghost" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel}>
           {t('common.cancel')}
-        </button>
+        </Button>
       }
     >
-      <p className="text-small muted">{t('game.chooseColorBody')}</p>
+      <div className="color-picker-intro">
+        {card ? <CardFace card={card} t={t} size="sm" /> : null}
+        <p className="text-small muted">{t('game.chooseColorBody')}</p>
+      </div>
       <div className="color-picker">
         {CARD_COLORS.map((color) => (
           <button

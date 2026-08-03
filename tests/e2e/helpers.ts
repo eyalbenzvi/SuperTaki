@@ -9,10 +9,24 @@ export async function openApp(page: Page, path = '/'): Promise<void> {
   await switchToEnglish(page);
 }
 
+/**
+ * Language lives in the settings sheet now, not permanently in the top bar: on a
+ * phone the two segmented controls cost about a fifth of the screen.
+ *
+ * The gear's own accessible name is localised, so it is found by position rather
+ * than by label — the caller does not always know which language is loaded.
+ */
+export async function openSettings(page: Page): Promise<void> {
+  await page.locator('.topbar__controls button').last().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+}
+
 export async function switchToEnglish(page: Page): Promise<void> {
-  const english = page.getByRole('radio', { name: 'English' });
-  await english.click();
+  await openSettings(page);
+  await page.getByRole('radio', { name: 'English' }).click();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
 }
 
 export async function createRoom(page: Page, name: string, maxPlayers = 4): Promise<string> {
@@ -36,6 +50,34 @@ export async function joinRoom(page: Page, name: string, roomCode: string): Prom
 }
 
 /**
+ * Waits for a submitted move to be answered.
+ *
+ * A move locks the hand and the pile until the table replies, so acting before
+ * that would stall on Playwright's actionability check instead of on the game.
+ * A player waits for the table to settle too.
+ */
+export async function awaitSettled(page: Page): Promise<void> {
+  await page
+    .locator('.game__action', { hasText: /Sending your move|שולח את המהלך/ })
+    .waitFor({ state: 'hidden', timeout: 5000 })
+    .catch(() => undefined);
+}
+
+/**
+ * Whether this page is the one on turn.
+ *
+ * Matched on the banner's own class rather than on the words "Your turn": the
+ * shell's live region carries the same phrase, and a text search would find two
+ * elements and throw.
+ */
+export async function onTurn(page: Page): Promise<boolean> {
+  return page
+    .locator('.turn-banner--mine')
+    .isVisible()
+    .catch(() => false);
+}
+
+/**
  * Plays the first legal card if there is one, otherwise draws. Returns false
  * when it was not this page's turn, so a caller can drive both seats without
  * knowing whose move it is.
@@ -46,11 +88,8 @@ export async function joinRoom(page: Page, name: string, roomCode: string): Prom
  */
 export async function takeAnyTurn(page: Page): Promise<boolean> {
   await page.bringToFront();
-  const onTurn = await page
-    .getByText('Your turn')
-    .isVisible()
-    .catch(() => false);
-  if (!onTurn) {
+  await awaitSettled(page);
+  if (!(await onTurn(page))) {
     return false;
   }
 
@@ -83,4 +122,19 @@ export async function playAnyLegalCard(page: Page): Promise<void> {
   }
   await picker.getByRole('button', { name: 'Red', exact: true }).click();
   await expect(picker).toBeHidden();
+}
+
+/**
+ * Asserts that a line appears in the game log.
+ *
+ * The log is a dialog now rather than a panel that permanently occupied a fifth
+ * of the table, so reading it is a deliberate act — here as for a player.
+ */
+export async function expectLogged(page: Page, text: string | RegExp): Promise<void> {
+  await page.bringToFront();
+  await page.getByRole('button', { name: 'Game log' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.feed__item', { hasText: text }).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
 }

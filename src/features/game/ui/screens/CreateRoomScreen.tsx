@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from 'react';
+import { Button } from '../../../../components/Button.tsx';
+import { Field } from '../../../../components/Field.tsx';
 import { SegmentedControl } from '../../../../components/SegmentedControl.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { LANGUAGES, type Language } from '../../../../i18n/index.ts';
@@ -50,38 +52,26 @@ export function CreateRoomScreen(): ReactNode {
           submit();
         }}
       >
-        <div className="field">
-          <label className="field__label" htmlFor="create-name">
-            {t('create.nameLabel')}
-          </label>
-          <input
-            id="create-name"
-            className="input"
-            value={name}
-            maxLength={DISPLAY_NAME_MAX_LENGTH}
-            autoComplete="nickname"
-            aria-describedby="create-name-hint"
-            aria-invalid={error !== null}
-            onChange={(event) => {
-              setName(event.target.value);
-              setError(null);
-            }}
-          />
-          <span className="field__hint" id="create-name-hint">
-            {t('create.nameHint')}
-          </span>
-          {error ? (
-            <span className="field__error" role="alert">
-              {error}
-            </span>
-          ) : null}
-        </div>
+        <Field
+          label={t('create.nameLabel')}
+          hint={t('create.nameHint')}
+          error={error}
+          value={name}
+          placeholder={t('create.namePlaceholder')}
+          maxLength={DISPLAY_NAME_MAX_LENGTH}
+          autoComplete="nickname"
+          autoFocus
+          enterKeyHint="go"
+          onChange={(event) => {
+            setName(event.target.value);
+            setError(null);
+          }}
+        />
 
         <div className="field">
-          <span className="field__label" id="max-players-label">
-            {t('create.maxPlayers')}
-          </span>
+          <span className="field__label">{t('create.maxPlayers')}</span>
           <SegmentedControl<number>
+            block
             label={t('create.maxPlayers')}
             value={maxPlayers}
             onChange={setMaxPlayers}
@@ -92,6 +82,7 @@ export function CreateRoomScreen(): ReactNode {
         <div className="field">
           <span className="field__label">{t('create.tableLanguage')}</span>
           <SegmentedControl<Language>
+            block
             label={t('create.tableLanguage')}
             value={tableLanguage}
             onChange={setTableLanguage}
@@ -100,19 +91,21 @@ export function CreateRoomScreen(): ReactNode {
           <span className="field__hint">{t('create.tableLanguageHint')}</span>
         </div>
 
-        <div className="btn-group">
-          <button type="submit" className="btn btn--primary btn--large" disabled={busy}>
+        <div className="form-actions">
+          <Button type="submit" variant="primary" size="lg" block busy={busy}>
             {busy ? t('create.creating') : t('create.submit')}
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
+          </Button>
+          {/* Stays live while the room is opening: a broker that never answers
+              must not leave the player on a screen with one dead button. */}
+          <Button
+            variant="ghost"
+            block
             onClick={() => {
               goTo('home');
             }}
           >
             {t('common.back')}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

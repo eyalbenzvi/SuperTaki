@@ -92,12 +92,37 @@ describe('end of round', () => {
     expect(screen.getByText('שום דבר לא נשמר: סגירת החדר מוחקת את המשחק לחלוטין.')).toBeInTheDocument();
   });
 
-  it('returns home and tears down the room', async () => {
+  it('confirms before a host closes the room from here', async () => {
     const leaveRoom = vi.fn();
     enterGameOver({ leaveRoom });
     const { user } = renderApp();
 
     await user.click(screen.getByRole('button', { name: 'חזרה לדף הבית' }));
+    // The round is over but the room is not: leaving takes the rematch with it.
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('יציאה תסגור את החדר לכולם');
+    expect(leaveRoom).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
     expect(leaveRoom).toHaveBeenCalled();
+  });
+
+  it('marks the winner in words as well as with a tint', () => {
+    enterGameOver();
+    renderApp();
+    const winnerRow = screen.getByRole('table').querySelector('.standings__winner');
+    expect(winnerRow).not.toBeNull();
+    expect(winnerRow).toHaveTextContent('מנצח/ת');
+  });
+
+  it('keeps the standings numeric, with the unit in the header', () => {
+    enterGameOver();
+    renderApp();
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('columnheader', { name: 'קלפים שנשארו' })).toBeInTheDocument();
+    expect([...table.querySelectorAll('.standings__count')].map((cell) => cell.textContent)).toEqual([
+      '0',
+      '3',
+    ]);
   });
 });

@@ -41,5 +41,30 @@ export function createTranslator(language: Language): Translator {
   return (key, params) => translate(language, key, params);
 }
 
+/**
+ * The base of a plural pair: any key for which both `<base>.one` and
+ * `<base>.other` exist. Adding one half without the other is a type error at
+ * every call site, which is the point.
+ */
+export type PluralKey = {
+  [K in TranslationKey]: K extends `${infer Base}.one`
+    ? `${Base}.other` extends TranslationKey
+      ? Base
+      : never
+    : never;
+}[TranslationKey];
+
+/**
+ * Selects the singular or plural form of a counted phrase.
+ *
+ * English and Hebrew both split at one, so the rule is shared; a language with
+ * more categories would replace this function, not the call sites. The `.one`
+ * form never interpolates the number, because some languages spell it out.
+ */
+export function countLabel(t: Translator, base: PluralKey, count: number): string {
+  const key = `${base}.${count === 1 ? 'one' : 'other'}` as TranslationKey;
+  return t(key, { count });
+}
+
 export type { TranslationKey, Translations };
 export { en, he };

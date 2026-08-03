@@ -1,28 +1,42 @@
-import type { Card, CardColor } from '../engine/cards.ts';
-import { requiresColorChoice } from '../engine/cards.ts';
+import type { Card, CardColor, CardKind } from '../engine/cards.ts';
+import { cardColor, isNumberCard, requiresColorChoice } from '../engine/cards.ts';
 import { getPlayableCardIds } from '../engine/rules.ts';
 import { computeStandings, playContextFromPublic, type StandingRow } from '../engine/views.ts';
-import type { LobbyPlayer } from '../network/protocol.ts';
-import type { AppState } from './store.ts';
+import type { PublicGameState } from '../engine/views.ts';
+import type { LobbyPlayer, LobbySnapshot } from '../network/protocol.ts';
 
-/** Derived view-model helpers. Pure functions of store state. */
+/**
+ * Derived view-model helpers. Pure functions of store state.
+ *
+ * Each takes the narrowest slice it actually reads rather than the whole store,
+ * so a screen can subscribe to four fields instead of every field and still call
+ * these directly. `AppState` satisfies all of them structurally.
+ */
 
-export function isHost(state: AppState): boolean {
+/** What every table-side helper below needs, and nothing more. */
+export interface TableSnapshot {
+  readonly publicState: PublicGameState | null;
+  readonly localPlayerId: string | null;
+  readonly hand: readonly Card[];
+  readonly lobby: LobbySnapshot | null;
+}
+
+export function isHost(state: { readonly role: 'host' | 'client' | null }): boolean {
   return state.role === 'host';
 }
 
-export function localLobbyPlayer(state: AppState): LobbyPlayer | null {
+export function localLobbyPlayer(state: Pick<TableSnapshot, 'lobby' | 'localPlayerId'>): LobbyPlayer | null {
   if (!state.lobby || !state.localPlayerId) {
     return null;
   }
   return state.lobby.players.find((player) => player.id === state.localPlayerId) ?? null;
 }
 
-export function seatedPlayers(state: AppState): readonly LobbyPlayer[] {
+export function seatedPlayers(state: Pick<TableSnapshot, 'lobby'>): readonly LobbyPlayer[] {
   return state.lobby?.players ?? [];
 }
 
-export function isMyTurn(state: AppState): boolean {
+export function isMyTurn(state: Pick<TableSnapshot, 'publicState' | 'localPlayerId'>): boolean {
   const { publicState, localPlayerId } = state;
   return (
     publicState !== null &&
@@ -37,7 +51,9 @@ export function isMyTurn(state: AppState): boolean {
  * answered. Worked out from the player's own hand, because who holds a breaker
  * is deliberately never published to the table.
  */
-export function canBreakPlusThree(state: AppState): boolean {
+export function canBreakPlusThree(
+  state: Pick<TableSnapshot, 'publicState' | 'localPlayerId' | 'hand'>,
+): boolean {
   const plusThree = state.publicState?.plusThree;
   if (!plusThree || plusThree.playerId === state.localPlayerId) {
     return false;
@@ -46,7 +62,9 @@ export function canBreakPlusThree(state: AppState): boolean {
 }
 
 /** Ids of the cards the local player may legally play right now. */
-export function playableCardIds(state: AppState): readonly string[] {
+export function playableCardIds(
+  state: Pick<TableSnapshot, 'publicState' | 'localPlayerId' | 'hand'>,
+): readonly string[] {
   if (!state.publicState) {
     return [];
   }
@@ -67,8 +85,54 @@ export function needsColorChoice(card: Card): boolean {
   return requiresColorChoice(card);
 }
 
-export function activeColor(state: AppState): CardColor | null {
+export function activeColor(state: Pick<TableSnapshot, 'publicState'>): CardColor | null {
   return state.publicState?.activeColor ?? null;
+}
+
+/* Hand order ---------------------------------------------------------------- */
+
+const COLOR_RANK: Record<CardColor, number> = { red: 0, yellow: 1, green: 2, blue: 3 };
+
+/** Within a colour: numbers first in value order, then the action cards. */
+const KIND_RANK: Record<CardKind, number> = {
+  number: 0,
+  plus: 1,
+  stop: 2,
+  plusTwo: 3,
+  direction: 4,
+  taki: 5,
+  superTaki: 6,
+  colorChange: 7,
+  king: 8,
+  plusThree: 9,
+  breakPlusThree: 10,
+};
+
+/**
+ * The order the hand is shown in: grouped by colour, ordered inside each group,
+ * colourless cards last.
+ *
+ * Purely a display concern — a card is always played by id — but it is the
+ * difference between reading a hand of fourteen at a glance and hunting through
+ * it. Deal order is meaningless to the player, and it made the hand reshuffle
+ * itself visually every time a card was drawn.
+ */
+export function sortHandForDisplay(hand: readonly Card[]): readonly Card[] {
+  return [...hand].sort((a, b) => {
+    const colorA = cardColor(a);
+    const colorB = cardColor(b);
+    const rankA = colorA ? COLOR_RANK[colorA] : 4;
+    const rankB = colorB ? COLOR_RANK[colorB] : 4;
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+    if (KIND_RANK[a.kind] !== KIND_RANK[b.kind]) {
+      return KIND_RANK[a.kind] - KIND_RANK[b.kind];
+    }
+    const valueA = isNumberCard(a) ? a.value : 0;
+    const valueB = isNumberCard(b) ? b.value : 0;
+    return valueA - valueB;
+  });
 }
 
 export interface OpponentView {
@@ -84,7 +148,7 @@ export interface OpponentView {
  * Opponents in play order starting after the local player, so the seating on
  * screen matches the order of play regardless of who is looking.
  */
-export function opponents(state: AppState): readonly OpponentView[] {
+export function opponents(state: TableSnapshot): readonly OpponentView[] {
   const { publicState, localPlayerId, lobby } = state;
   if (!publicState) {
     return [];
@@ -111,7 +175,7 @@ export function opponents(state: AppState): readonly OpponentView[] {
     });
 }
 
-export function currentPlayerName(state: AppState): string | null {
+export function currentPlayerName(state: Pick<TableSnapshot, 'publicState'>): string | null {
   const { publicState } = state;
   if (!publicState?.currentPlayerId) {
     return null;
@@ -119,7 +183,7 @@ export function currentPlayerName(state: AppState): string | null {
   return publicState.players.find((player) => player.id === publicState.currentPlayerId)?.name ?? null;
 }
 
-export function playerName(state: AppState, playerId: string): string {
+export function playerName(state: Pick<TableSnapshot, 'publicState' | 'lobby'>, playerId: string): string {
   const fromState = state.publicState?.players.find((player) => player.id === playerId)?.name;
   if (fromState) {
     return fromState;
@@ -127,24 +191,24 @@ export function playerName(state: AppState, playerId: string): string {
   return state.lobby?.players.find((player) => player.id === playerId)?.name ?? playerId;
 }
 
-export function standings(state: AppState): readonly StandingRow[] {
+export function standings(state: Pick<TableSnapshot, 'publicState'>): readonly StandingRow[] {
   return state.publicState ? computeStandings(state.publicState) : [];
 }
 
-export function winnerName(state: AppState): string | null {
+export function winnerName(state: Pick<TableSnapshot, 'publicState' | 'lobby'>): string | null {
   const winnerId = state.publicState?.winnerId;
   return winnerId ? playerName(state, winnerId) : null;
 }
 
-export function isTakiOpenForMe(state: AppState): boolean {
+export function isTakiOpenForMe(state: Pick<TableSnapshot, 'publicState' | 'localPlayerId'>): boolean {
   const taki = state.publicState?.takiMode;
   return taki !== null && taki !== undefined && taki.playerId === state.localPlayerId;
 }
 
-export function connectedCount(state: AppState): number {
+export function connectedCount(state: Pick<TableSnapshot, 'lobby'>): number {
   return seatedPlayers(state).filter((player) => player.health !== 'disconnected').length;
 }
 
-export function everyoneConnected(state: AppState): boolean {
+export function everyoneConnected(state: Pick<TableSnapshot, 'lobby'>): boolean {
   return seatedPlayers(state).every((player) => player.health === 'connected');
 }
