@@ -25,7 +25,7 @@ async function takeOneAction(page: Page): Promise<boolean> {
     await playable.click();
     const picker = page.getByRole('dialog');
     if (await picker.isVisible().catch(() => false)) {
-      await picker.getByRole('button', { name: 'Green' }).click();
+      await picker.getByRole('button', { name: 'Green', exact: true }).click();
     }
     return true;
   }

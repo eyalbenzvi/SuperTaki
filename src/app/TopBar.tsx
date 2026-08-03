@@ -19,7 +19,7 @@ export function TopBar(): ReactNode {
     <header className="topbar">
       <div className="topbar__brand">
         <span>{t('app.title')}</span>
-        <span className="text-small muted">{t('app.subtitle')}</span>
+        <span className="text-small muted topbar__subtitle">{t('app.subtitle')}</span>
       </div>
       <div className="topbar__controls">
         <SegmentedControl<Language>

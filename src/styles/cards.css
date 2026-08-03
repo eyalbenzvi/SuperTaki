@@ -71,7 +71,8 @@
 }
 
 .card__label {
-  font-size: calc(var(--card-width) * 0.15);
+  /* Never smaller than ~11px, whatever the card size. */
+  font-size: max(0.7rem, calc(var(--card-width) * 0.15));
   font-weight: 700;
   text-align: center;
   line-height: 1.1;
@@ -83,7 +84,7 @@
   position: absolute;
   inset-block-start: 3px;
   inset-inline-start: 5px;
-  font-size: calc(var(--card-width) * 0.16);
+  font-size: max(0.7rem, calc(var(--card-width) * 0.16));
   font-weight: 800;
   opacity: 0.85;
 }
@@ -113,15 +114,27 @@ button.card:disabled {
   cursor: not-allowed;
 }
 
+/*
+ * "Playable" uses an inset two-tone ring: light inside, dark outside. A single
+ * themed colour is invisible on some card faces — a dark ring disappears on the
+ * navy card back in light mode, a light one washes out on yellow. The pair reads
+ * on every card colour in both themes, and stays distinct from the focus
+ * outline, which is drawn outside the box. A card can be both at once.
+ */
 .card--playable {
-  outline: 3px solid var(--focus-color);
-  outline-offset: 2px;
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    inset 0 0 0 3px rgb(255 255 255 / 0.95),
+    inset 0 0 0 5px rgb(0 0 0 / 0.5),
+    var(--shadow-md);
 }
 
+/*
+ * An unplayable card is dimmed only slightly: the legal-card ring and the real
+ * `disabled` state carry the meaning, and heavier dimming would push the text
+ * on a coloured card below the 4.5:1 contrast floor in dark mode.
+ */
 .card--dimmed {
-  opacity: 0.5;
-  filter: saturate(0.6);
+  opacity: 0.82;
 }
 
 button.card--playable:hover,
@@ -155,6 +168,10 @@ button.card--playable:focus-visible {
   align-items: center;
   justify-content: center;
   gap: var(--space-5);
+  /* Keep the two piles together instead of stranding them in a wide band. */
+  max-inline-size: 26rem;
+  inline-size: 100%;
+  margin-inline: auto;
   padding: var(--space-3);
   border-radius: var(--radius-lg);
   background: var(--table-felt);

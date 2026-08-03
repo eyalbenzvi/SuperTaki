@@ -595,14 +595,16 @@ export class HostSession implements Session {
 
     this.game = result.state;
     this.versionFloor = result.state.version;
+    // Send the final table *before* announcing the phase change, so nobody
+    // renders the end-of-round screen against the previous snapshot.
+    this.broadcastGameState();
+    this.emitEvents(result.events);
     if (this.game.phase === 'finished') {
       this.phase = 'finished';
       this.playAgainVotes.clear();
       this.emitLobby();
       this.emitPlayAgain();
     }
-    this.broadcastGameState();
-    this.emitEvents(result.events);
   }
 
   // -------------------------------------------------------------- play again

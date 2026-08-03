@@ -38,9 +38,11 @@ export function CardFace({ card, t, size = 'md' }: CardFaceProps): ReactNode {
 }
 
 function CardBody({ card, t }: { readonly card: Card; readonly t: Translator }): ReactNode {
+  const number = isNumberCard(card);
   return (
     <>
-      {isNumberCard(card) ? (
+      {/* A small corner index, as on a real card, so a fanned hand stays readable. */}
+      {number ? (
         <span className="card__corner" aria-hidden="true">
           {card.value}
         </span>
@@ -48,9 +50,13 @@ function CardBody({ card, t }: { readonly card: Card; readonly t: Translator }):
       <span className="card__glyph">
         <CardGlyph card={card} />
       </span>
-      <span className="card__label" aria-hidden="true">
-        {cardFaceLabel(t, card)}
-      </span>
+      {/* Action cards need a word as well as a symbol; a number card's glyph is
+          already the value, so repeating it would only add clutter. */}
+      {number ? null : (
+        <span className="card__label" aria-hidden="true">
+          {cardFaceLabel(t, card)}
+        </span>
+      )}
     </>
   );
 }

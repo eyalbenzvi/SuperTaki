@@ -45,6 +45,29 @@ describe('create room form', () => {
     expect(submit).toBeDisabled();
   });
 
+  it('reports a failure to open the room instead of staying silent', () => {
+    setState({
+      screen: 'create',
+      phase: 'failed',
+      error: { code: 'signalingUnavailable', retryable: true },
+    });
+    renderApp();
+
+    expect(screen.getByText(/לא הצלחנו להגיע לשירות החיבור החינמי/)).toBeInTheDocument();
+    expect(screen.getByText('למה זה קורה?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'חזרה לדף הבית' })).toBeInTheDocument();
+  });
+
+  it('reports a taken room code', () => {
+    setState({
+      screen: 'create',
+      phase: 'failed',
+      error: { code: 'idUnavailable', retryable: false },
+    });
+    renderApp();
+    expect(screen.getByText(/קוד החדר הזה תפוס/)).toBeInTheDocument();
+  });
+
   it('offers the player count range 2 to 6', () => {
     setState({ screen: 'create' });
     renderApp();

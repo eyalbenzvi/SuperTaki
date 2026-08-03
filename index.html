@@ -17,13 +17,15 @@
       - No `unsafe-inline` for scripts; Vite emits external modules only.
       - Styles need `unsafe-inline` because the app sets `color-scheme` on the
         root element at runtime and Vite injects a style tag in dev.
+      - `frame-ancestors` is deliberately absent: it is ignored in a <meta> tag
+        and GitHub Pages cannot send real response headers. Nothing in this app
+        holds credentials, so clickjacking has no target.
     -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self';
                base-uri 'self';
                object-src 'none';
-               frame-ancestors 'none';
                form-action 'none';
                img-src 'self' data:;
                style-src 'self' 'unsafe-inline';

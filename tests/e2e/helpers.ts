@@ -35,14 +35,23 @@ export async function joinRoom(page: Page, name: string, roomCode: string): Prom
   await page.getByRole('button', { name: 'Join room' }).click();
 }
 
-/** Plays one legal card (choosing a colour when the card is a wild). */
+/**
+ * Plays one legal card, choosing a colour when the card turns out to be a wild.
+ *
+ * The colour button is looked up *inside the dialog* and matched exactly: a
+ * page-wide search for "Red" also matches hand cards named "Play Red 5".
+ */
 export async function playAnyLegalCard(page: Page): Promise<void> {
   const playable = page.locator('.hand .card--playable').first();
   await expect(playable).toBeVisible();
   await playable.click();
 
   const picker = page.getByRole('dialog');
-  if (await picker.isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: 'Red' }).click();
+  try {
+    await picker.waitFor({ state: 'visible', timeout: 1000 });
+  } catch {
+    return; // not a wild card; nothing to choose
   }
+  await picker.getByRole('button', { name: 'Red', exact: true }).click();
+  await expect(picker).toBeHidden();
 }

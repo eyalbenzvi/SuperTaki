@@ -1,0 +1,330 @@
+# Wire protocol
+
+Version: **1** (`PROTOCOL_VERSION` in `src/features/game/network/protocol.ts`)
+
+Every message is JSON, travels over a WebRTC data channel with `serialization: 'json'`, and
+is validated with Zod **before it can influence any state**. Schemas are the single source of
+truth; this document describes them.
+
+## Design rules
+
+1. **Clients send intents, never state.** There is no message that carries a game state from
+   a client. The vocabulary makes an illegitimate claim inexpressible.
+2. **Clients do not name themselves.** No client→host message carries a player id (except
+   `resumeRequest`, which must prove a token). The host binds a seat to the connection at
+   join time and injects that id server-side.
+3. **Validate first, then act.** Envelope → protocol version → room id → duplicate id →
+   payload schema. Only then does a handler run.
+4. **Unknown fields are dropped, not trusted.** Zod objects strip anything not in the schema,
+   so an extra `{isHost: true}` cannot smuggle privilege.
+5. **Bounded everything.** Strings, arrays and numbers have maxima; a whole message is capped
+   at 64 KiB.
+
+## Envelope
+
+Every message is a flat object with these fields plus a `type` and a `payload`:
+
+| Field             | Type           | Bounds     | Purpose                                       |
+| ----------------- | -------------- | ---------- | --------------------------------------------- |
+| `protocolVersion` | integer        | 0–1000     | Compatibility gate                            |
+| `id`              | string         | 1–64 chars | Message id, used for de-duplication           |
+| `roomId`          | string         | 3–32 chars | Room code; mismatches are ignored             |
+| `senderPeerId`    | string         | 1–64 chars | Transport-level id, for diagnostics only      |
+| `timestamp`       | integer        | ≥ 0        | `Date.now()` at send; never used for ordering |
+| `type`            | string literal | —          | Discriminator                                 |
+| `payload`         | object         | per type   | Contents                                      |
+
+`timestamp` is deliberately **not** used to order anything — clocks on separate devices are
+not comparable. Ordering comes from `GameState.version`.
+
+De-duplication uses a bounded LRU of the last 512 message ids per connection. WebRTC data
+channels are reliable and ordered, so duplicates are rare in practice; the guard exists for
+resends after a reconnect and for deliberate replay by a hostile peer.
+
+## Validation pipeline
+
+```
+parseClientMessage(raw) / parseHostMessage(raw)
+  1. not an object / array / null            -> { ok:false, error:'notAnObject' }
+  2. JSON longer than 64 KiB or cyclic       -> { ok:false, error:'tooLarge' }
+  3. envelope shape invalid                  -> { ok:false, error:'malformedEnvelope' }
+  4. protocolVersion !== 1                   -> { ok:false, error:'protocolMismatch', received }
+  5. unknown `type`                          -> { ok:false, error:'unknownType', received }
+  6. payload fails its schema                -> { ok:false, error:'invalidPayload', issues }
+  7. otherwise                               -> { ok:true, message }
+```
+
+The two entry points are directional: `parseClientMessage` accepts only messages a client may
+send, and `parseHostMessage` only messages a host may send. A client that sends `publicState`
+to the host is rejected as `unknownType` — the host has no code path that could accept it.
+
+Reaction to a failure:
+
+| Failure                                                                         | Host reaction                                      | Client reaction           |
+| ------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
+| `notAnObject`, `malformedEnvelope`, `invalidPayload`, `unknownType`, `tooLarge` | log and ignore                                     | log and ignore            |
+| `protocolMismatch`                                                              | reply `joinRejected(protocolMismatch)`, then close | surface a localised error |
+| wrong `roomId`                                                                  | ignore                                             | ignore                    |
+| duplicate `id`                                                                  | ignore                                             | ignore                    |
+
+Ignoring is deliberate: a peer that sends nonsense must not be able to make the host log
+loudly, allocate memory or tear down the room.
+
+## Client → host messages
+
+| Type            | Payload                          | Notes                                                                                                            |
+| --------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `joinRequest`   | `{displayName, wantsSpectator?}` | Name is 1–16 chars; the host sanitises and de-duplicates it. `wantsSpectator` is reserved and currently ignored. |
+| `resumeRequest` | `{playerId, resumeToken}`        | Retakes an existing seat after a refresh. Token is 8–64 chars.                                                   |
+| `action`        | `{action}`                       | The only way to affect the game. See below.                                                                      |
+| `playAgainVote` | `{agree}`                        | Only meaningful once a round has finished.                                                                       |
+| `leave`         | `{}`                             | Voluntary departure.                                                                                             |
+| `ping` / `pong` | `{nonce}`                        | Heartbeat.                                                                                                       |
+
+### `action` payloads
+
+```ts
+| { type: 'playCard'; cardId: string; chosenColor?: 'red'|'blue'|'green'|'yellow' }
+| { type: 'drawCard' }
+| { type: 'closeTaki' }
+```
+
+`chosenColor` is required for wild cards and forbidden otherwise; the engine rejects both
+mistakes (`colorRequired`, `colorNotAllowed`).
+
+## Host → client messages
+
+| Type             | Payload                                       | Notes                                                                                                                     |
+| ---------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `joinAccepted`   | `{playerId, resumeToken, displayName, lobby}` | The assigned seat and its rejoin secret. `displayName` may differ from the requested one after sanitising/de-duplication. |
+| `joinRejected`   | `{reason}`                                    | `roomFull \| gameInProgress \| invalidName \| protocolMismatch \| unknownSeat \| invalidResumeToken \| roomClosed`        |
+| `lobbyState`     | `{lobby}`                                     | Broadcast on any seat or health change.                                                                                   |
+| `publicState`    | `{state}`                                     | The whole table, minus every hand.                                                                                        |
+| `privateHand`    | `{hand}`                                      | **Unicast.** Only the owner's cards.                                                                                      |
+| `gameEvents`     | `{version, events}`                           | Log lines; max 64 per message.                                                                                            |
+| `actionRejected` | `{code, requestId?}`                          | **Unicast**, an engine `RejectionCode`.                                                                                   |
+| `playAgainState` | `{agreed, required}`                          | Vote progress for the next round.                                                                                         |
+| `kicked`         | `{reason}`                                    | `removedByHost \| duplicateConnection`                                                                                    |
+| `hostClosed`     | `{reason}`                                    | `hostLeft \| roomReset`                                                                                                   |
+| `ping` / `pong`  | `{nonce}`                                     | Heartbeat.                                                                                                                |
+
+## Snapshot / event model
+
+Both are sent, and they serve different purposes:
+
+- **Snapshots** (`publicState`, `privateHand`) are the truth. A client renders from the newest
+  snapshot it has accepted. Snapshots are idempotent, so a resend is harmless — which is what
+  makes reconnection simple.
+- **Events** (`gameEvents`) are the narrative: "Dana played Blue 7". They drive the game log
+  and nothing else. Losing an event costs a log line, never correctness.
+
+A client never reconstructs state by replaying events. That decision removes a whole class of
+divergence bugs.
+
+### Ordering
+
+`publicState.state.version` and `privateHand.hand.version` are the same monotonic counter.
+Clients apply a message only if `version >= lastAppliedVersion`; equal is accepted so a
+deliberate resend (reconnect, resume) still lands. Versions continue across rounds — a new
+deal does not restart at 1.
+
+### Privacy invariants
+
+- `publicGameStateSchema` has no field that can hold a hand: players carry `cardCount`, not
+  cards. The only `Card` in it is `discardTop`, which is face up on the table.
+- `privateHand` is only ever sent with `connection.send` to one connection, never broadcast.
+- A client additionally checks `hand.playerId === myPlayerId` and ignores a hand that is not
+  its own, so even a buggy host cannot make a client render someone else's cards.
+
+## Example messages
+
+Join request (client → host):
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "9f2c1a7b4e0d8c33",
+  "roomId": "TIGER-MANGO-42",
+  "senderPeerId": "abc123def456",
+  "timestamp": 1758000000000,
+  "type": "joinRequest",
+  "payload": { "displayName": "Dana" }
+}
+```
+
+Join accepted (host → client):
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "1b7e4c2a9d5f0e81",
+  "roomId": "TIGER-MANGO-42",
+  "senderPeerId": "crush-tiger-mango-42",
+  "timestamp": 1758000000120,
+  "type": "joinAccepted",
+  "payload": {
+    "playerId": "pl_4f8fc9480f6e569d",
+    "resumeToken": "b3d1f0a29c7e45118ab6d2c4e9f01d7a",
+    "displayName": "Dana",
+    "lobby": {
+      "roomCode": "TIGER-MANGO-42",
+      "hostPeerId": "crush-tiger-mango-42",
+      "hostPlayerId": "pl_7c1e33a90b2d4f68",
+      "maxPlayers": 4,
+      "phase": "lobby",
+      "tableLanguage": "he",
+      "players": [
+        { "id": "pl_7c1e33a90b2d4f68", "name": "Noa", "isHost": true, "health": "connected", "seat": 0 },
+        { "id": "pl_4f8fc9480f6e569d", "name": "Dana", "isHost": false, "health": "connected", "seat": 1 }
+      ]
+    }
+  }
+}
+```
+
+An action (client → host) — note there is no player id anywhere:
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "5c8a2e1d7b3f9046",
+  "roomId": "TIGER-MANGO-42",
+  "senderPeerId": "abc123def456",
+  "timestamp": 1758000042000,
+  "type": "action",
+  "payload": { "action": { "type": "playCard", "cardId": "w-superTaki-0", "chosenColor": "green" } }
+}
+```
+
+Public state (host → all) — card counts only:
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "aa10bb20cc30dd40",
+  "roomId": "TIGER-MANGO-42",
+  "senderPeerId": "crush-tiger-mango-42",
+  "timestamp": 1758000042100,
+  "type": "publicState",
+  "payload": {
+    "state": {
+      "version": 12,
+      "phase": "playing",
+      "players": [
+        { "id": "pl_7c1e33a90b2d4f68", "name": "Noa", "cardCount": 6 },
+        { "id": "pl_4f8fc9480f6e569d", "name": "Dana", "cardCount": 7 }
+      ],
+      "drawPileCount": 78,
+      "discardTop": { "id": "w-superTaki-0", "kind": "superTaki" },
+      "discardCount": 5,
+      "activeColor": "green",
+      "direction": 1,
+      "currentPlayerId": "pl_4f8fc9480f6e569d",
+      "takiMode": {
+        "color": "green",
+        "playerId": "pl_4f8fc9480f6e569d",
+        "cardsPlayed": 1,
+        "openedWithSuperTaki": true
+      },
+      "pendingPlus": false,
+      "winnerId": null
+    }
+  }
+}
+```
+
+Private hand (host → one client only):
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "bb11cc22dd33ee44",
+  "roomId": "TIGER-MANGO-42",
+  "senderPeerId": "crush-tiger-mango-42",
+  "timestamp": 1758000042110,
+  "type": "privateHand",
+  "payload": {
+    "hand": {
+      "version": 12,
+      "playerId": "pl_4f8fc9480f6e569d",
+      "cards": [
+        { "id": "n-green-3-1", "kind": "number", "color": "green", "value": 3 },
+        { "id": "a-stop-green-0", "kind": "stop", "color": "green" }
+      ]
+    }
+  }
+}
+```
+
+Events (host → all):
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "cc12dd34ee56ff78",
+  "roomId": "TIGER-MANGO-42",
+  "senderPeerId": "crush-tiger-mango-42",
+  "timestamp": 1758000042120,
+  "type": "gameEvents",
+  "payload": {
+    "version": 12,
+    "events": [
+      {
+        "type": "cardPlayed",
+        "playerId": "pl_4f8fc9480f6e569d",
+        "card": { "id": "w-superTaki-0", "kind": "superTaki" },
+        "resultingColor": "green"
+      },
+      { "type": "colorChosen", "playerId": "pl_4f8fc9480f6e569d", "color": "green" },
+      { "type": "takiOpened", "playerId": "pl_4f8fc9480f6e569d", "color": "green", "superTaki": true }
+    ]
+  }
+}
+```
+
+A rejection (host → one client):
+
+```json
+{
+  "protocolVersion": 1,
+  "id": "dd13ee24ff35aa46",
+  "roomId": "TIGER-MANGO-42",
+  "senderPeerId": "crush-tiger-mango-42",
+  "timestamp": 1758000042130,
+  "type": "actionRejected",
+  "payload": { "code": "wrongTakiColor" }
+}
+```
+
+None of the examples contain anything private: no email, no device identifier, no token that
+outlives the room. Peer ids are random per session, and the room code is an invitation, not a
+secret.
+
+## Rejection codes
+
+Produced by the engine and mapped to localised strings by key `reject.<code>`:
+
+`gameFinished`, `unknownPlayer`, `notYourTurn`, `cardNotInHand`, `illegalCard`,
+`colorRequired`, `colorNotAllowed`, `mustPlayAfterPlus`, `cannotDrawDuringTaki`,
+`noTakiOpen`, `wildNotAllowedInTaki`, `wrongTakiColor`, `notEnoughPlayers`,
+`tooManyPlayers`, `duplicatePlayerId`.
+
+A test asserts every code has a Hebrew and an English message, so an unlocalised rejection
+cannot reach a player.
+
+## Version compatibility strategy
+
+`protocolVersion` is a single integer, bumped on **any** breaking change to a message shape
+or its meaning.
+
+- The version is read in a **loose first pass**, before the strict schema. A peer running a
+  different version therefore gets a clear `protocolMismatch` rather than a confusing
+  validation error.
+- The host replies `joinRejected(protocolMismatch)` and closes; the client shows "the other
+  player is running a different version — both sides should reload the page".
+- There is no negotiation and no backwards compatibility shim. Both peers load the same
+  static site from the same URL, so a mismatch only happens when one has an old tab open. A
+  reload fixes it, which is a better outcome than maintaining translation layers between
+  versions of a private game.
+- Additive, optional fields do **not** need a bump: unknown fields are stripped, and an older
+  peer simply ignores them. `wantsSpectator` is an example of a field reserved this way.
