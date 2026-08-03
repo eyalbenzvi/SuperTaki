@@ -12,22 +12,49 @@
    * recognisable. Cards are printed objects: the face is white in either
    * theme, and the colour is carried by the symbol drawn on it.
    *
-   * `-deep` is the extruded side of that symbol, `-ink` the readable text
-   * colour when the suit is used as a solid background (chips, the colour
-   * picker) rather than as a drawing colour.
+   * `-ink` is the readable text colour when the suit is used as a solid
+   * background (chips, the colour picker) rather than as a drawing colour.
    */
   --card-red: #e4002b;
-  --card-red-deep: #9e001e;
   --card-red-ink: #ffffff;
   --card-blue: #0057b8;
-  --card-blue-deep: #003a7d;
   --card-blue-ink: #ffffff;
   --card-green: #00983f;
-  --card-green-deep: #00612a;
   --card-green-ink: #ffffff;
   --card-yellow: #ffc400;
-  --card-yellow-deep: #c08c00;
   --card-yellow-ink: #1a1206;
+
+  /*
+   * Artwork shades. Every symbol is a solid block, and a block shows three
+   * tones of one hue at once: the front face turned towards the light, the
+   * walls turned sideways, and the walls turned down, which catch least of it.
+   * Printing inks, so a little softer and warmer than the flat suit colours
+   * above — those still have to carry white text on the colour picker.
+   */
+  --card-red-face: #e23a2b;
+  --card-red-mid: #ab2417;
+  --card-red-deep: #79170f;
+  --card-blue-face: #2b8fd4;
+  --card-blue-mid: #19669e;
+  --card-blue-deep: #0f4269;
+  --card-green-face: #4cad38;
+  --card-green-mid: #337f25;
+  --card-green-deep: #1e5518;
+  --card-yellow-face: #fbc22b;
+  --card-yellow-mid: #db8d12;
+  --card-yellow-deep: #a4610b;
+
+  /*
+   * Two more inks, as vivid as the suits but not among them. The King, the +3
+   * and the +3 Breaker belong to no suit, and violet and orange say that
+   * without anyone mistaking one for a red or a yellow card.
+   */
+  --card-violet-face: #9b45d6;
+  --card-violet-mid: #6d24a3;
+  --card-violet-deep: #481570;
+  --card-orange-face: #f5871f;
+  --card-orange-mid: #bd5c05;
+  --card-orange-deep: #833d03;
 
   /* Card stock, and the outline every symbol is drawn with. */
   --card-face: #ffffff;

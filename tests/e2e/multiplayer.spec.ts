@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BROADCAST, createRoom, joinRoom, openApp, playAnyLegalCard, switchToEnglish } from './helpers.ts';
+import {
+  BROADCAST,
+  createRoom,
+  joinRoom,
+  openApp,
+  playAnyLegalCard,
+  switchToEnglish,
+  takeAnyTurn,
+} from './helpers.ts';
 
 /**
  * Two pages in one browser play a real game over the BroadcastChannel
@@ -91,7 +99,33 @@ test.describe('two-player game over the deterministic transport', () => {
     await host.getByRole('button', { name: 'Start game' }).click();
     await expect(host.getByText('Your turn')).toBeVisible();
 
-    const before = await host.locator('.hand .card').count();
+    /*
+     * An opening hand with nothing legal in it is uncommon — roughly one deal
+     * in fifty — but it does happen, and this test is about what a *play*
+     * does. Draw, let the guest move, and come back round until the host is
+     * holding something it can put down.
+     */
+    let before = 0;
+    let ready = false;
+    for (let step = 0; step < 24 && !ready; step += 1) {
+      await host.bringToFront();
+      const hostOnTurn = await host
+        .getByText('Your turn')
+        .isVisible()
+        .catch(() => false);
+      if (!hostOnTurn) {
+        await takeAnyTurn(guest);
+        continue;
+      }
+      before = await host.locator('.hand .card').count();
+      if ((await host.locator('.hand .card--playable').count()) > 0) {
+        ready = true;
+        break;
+      }
+      await host.getByRole('button', { name: /Draw pile, \d+ cards/ }).click();
+    }
+    expect(ready, 'the host never came round to a playable card').toBe(true);
+
     await playAnyLegalCard(host);
 
     // The host's hand shrinks (or the turn returns after a Stop/Plus);

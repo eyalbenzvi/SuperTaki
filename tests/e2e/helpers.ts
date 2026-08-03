@@ -36,12 +36,41 @@ export async function joinRoom(page: Page, name: string, roomCode: string): Prom
 }
 
 /**
+ * Plays the first legal card if there is one, otherwise draws. Returns false
+ * when it was not this page's turn, so a caller can drive both seats without
+ * knowing whose move it is.
+ *
+ * `bringToFront` matters: the two players are tabs in one browser, and
+ * Chromium stops firing `requestAnimationFrame` in the background one, which
+ * hangs Playwright's actionability check.
+ */
+export async function takeAnyTurn(page: Page): Promise<boolean> {
+  await page.bringToFront();
+  const onTurn = await page
+    .getByText('Your turn')
+    .isVisible()
+    .catch(() => false);
+  if (!onTurn) {
+    return false;
+  }
+
+  const playable = page.locator('.hand .card--playable').first();
+  if ((await playable.count()) > 0) {
+    await playAnyLegalCard(page);
+    return true;
+  }
+  await page.getByRole('button', { name: /Draw pile, \d+ cards/ }).click();
+  return true;
+}
+
+/**
  * Plays one legal card, choosing a colour when the card turns out to be a wild.
  *
  * The colour button is looked up *inside the dialog* and matched exactly: a
  * page-wide search for "Red" also matches hand cards named "Play Red 5".
  */
 export async function playAnyLegalCard(page: Page): Promise<void> {
+  await page.bringToFront();
   const playable = page.locator('.hand .card--playable').first();
   await expect(playable).toBeVisible();
   await playable.click();

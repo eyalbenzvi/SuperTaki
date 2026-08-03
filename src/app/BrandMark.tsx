@@ -1,64 +1,54 @@
 import type { ReactNode } from 'react';
+import { BlockArt } from '../lib/BlockArt.tsx';
+import type { Part } from '../lib/blockGeometry.ts';
+import { letter, setAt, widthAt } from '../lib/blockAlphabet.ts';
 import { useT } from './useT.ts';
 
 /**
- * The Super Taki wordmark: SUPER small and black above the left shoulder of
- * TAKI, whose four letters are solid blocks — one suit colour each, outlined,
- * extruded down and to the left.
+ * The Super Taki wordmark: SUPER small and black over the left shoulder of
+ * TAKI, whose letters are solid blocks in the four suit colours.
  *
- * Built the same way as the card symbols: the word is stamped repeatedly along
- * the extrusion vector and the bright faces are drawn on top, so the mark and
- * the deck are unmistakably the same object. Drawn rather than set in CSS so
- * the blocks keep their proportions at every size and in both writing
- * directions; the accessible name is the plain title.
+ * Drawn by the same engine as the card symbols, from the same alphabet, so the
+ * mark and the deck are unmistakably the same object — bright faces, two tones
+ * of wall, a line on every edge. The letters sit on one baseline and overlap
+ * slightly; because a letter further right is nearer the viewer under this
+ * projection, each one correctly laps over the one before it.
+ *
+ * Drawn rather than set in CSS so the blocks keep their proportions at every
+ * size and in both writing directions; the accessible name is the plain title.
  */
-const DEPTH_STEPS = 10;
-const STEP_X = -0.95;
-const STEP_Y = 1.4;
 
-/* Letter centres, spaced by their own widths so the blocks touch but do not
-   swallow each other. The narrow I sits closer than the rest. */
-const LETTER_X = [32, 79, 129, 165] as const;
+/**
+ * Cap height, and the space between letters — negative, so each letter's wall
+ * lands on the face of the one before it. The mark is a heap of blocks pushed
+ * together, not a line of type.
+ */
+const CAP = 76;
+const TRACK = -5;
+const SUITS = [2, 0, 1, 3] as const;
 
 export function BrandMark({ size = 'md' }: { readonly size?: 'sm' | 'md' }): ReactNode {
   const t = useT();
-  const letters = [...t('app.titleMain')].slice(0, LETTER_X.length);
-  const depth = Array.from({ length: DEPTH_STEPS }, (_, index) => DEPTH_STEPS - index);
+  const characters = [...t('app.titleMain')].slice(0, SUITS.length);
 
-  const word = (
-    <>
-      {letters.map((letter, index) => (
-        <text
-          key={`${letter}-${index}`}
-          className={`brand__letter brand__letter--${index}`}
-          x={LETTER_X[index]}
-          y={100}
-          textAnchor="middle"
-          fontSize="70"
-          fontWeight="900"
-          fontFamily="inherit"
-        >
-          {letter}
-        </text>
-      ))}
-    </>
-  );
+  let cursor = 0;
+  const parts: Part[] = characters.map((character, index) => {
+    const shapes = letter(character);
+    const w = widthAt(shapes, CAP);
+    const part: Part = {
+      shapes: setAt(shapes, cursor + w / 2, CAP / 2, CAP),
+      slot: SUITS[index] ?? 0,
+    };
+    cursor += w + TRACK;
+    return part;
+  });
 
   return (
-    <svg className={`brand brand--${size}`} viewBox="0 0 178 118" role="img" aria-label={t('app.title')}>
-      <text className="brand__super" x="9" y="26" fontSize="24" fontWeight="800" fontFamily="inherit">
+    <svg className={`brand brand--${size}`} viewBox="0 0 208 132" role="img" aria-label={t('app.title')}>
+      <text className="brand__super" x="10" y="28" fontSize="28" fontWeight="800" fontFamily="inherit">
         {t('app.titleSuper')}
       </text>
-      {depth.map((step) => (
-        <g
-          key={step}
-          className="brand__depth"
-          transform={`translate(${(step * STEP_X).toFixed(2)} ${(step * STEP_Y).toFixed(2)})`}
-        >
-          {word}
-        </g>
-      ))}
-      <g className="brand__face">{word}</g>
+      <BlockArt parts={parts} box={{ x: 4, y: 30, w: 200, h: 98 }} depth={[-14, 17.5]} prefix="brand" />
     </svg>
   );
 }

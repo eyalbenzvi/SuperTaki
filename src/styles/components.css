@@ -390,50 +390,45 @@
   letter-spacing: 0.08em;
 }
 
-.brand__depth,
-.brand__face {
-  stroke: var(--card-outline);
-  stroke-linejoin: round;
-  paint-order: stroke;
-}
-
 /*
- * Thinner than it looks like it should be: the stamps sit about a unit apart,
- * so a heavy line on each one would stack into a solid black mass and hide the
- * colour of the extruded sides.
+ * The same three tones and the same outlined-every-edge treatment the cards
+ * use, at the mark's own scale.
  */
-.brand__depth {
-  stroke-width: 4.4;
+.brand path {
+  stroke: var(--card-outline);
+  stroke-width: 4.2;
+  stroke-linejoin: round;
 }
 
 .brand__face {
-  stroke-width: 5;
+  fill: var(--glyph);
+}
+.brand__wall--mid {
+  fill: var(--glyph-mid);
+}
+.brand__wall--deep {
+  fill: var(--glyph-deep);
 }
 
-.brand__face .brand__letter--0 {
-  fill: var(--card-green);
+.brand__slot--0 {
+  --glyph: var(--card-red-face);
+  --glyph-mid: var(--card-red-mid);
+  --glyph-deep: var(--card-red-deep);
 }
-.brand__face .brand__letter--1 {
-  fill: var(--card-red);
+.brand__slot--1 {
+  --glyph: var(--card-yellow-face);
+  --glyph-mid: var(--card-yellow-mid);
+  --glyph-deep: var(--card-yellow-deep);
 }
-.brand__face .brand__letter--2 {
-  fill: var(--card-yellow);
+.brand__slot--2 {
+  --glyph: var(--card-green-face);
+  --glyph-mid: var(--card-green-mid);
+  --glyph-deep: var(--card-green-deep);
 }
-.brand__face .brand__letter--3 {
-  fill: var(--card-blue);
-}
-
-.brand__depth .brand__letter--0 {
-  fill: var(--card-green-deep);
-}
-.brand__depth .brand__letter--1 {
-  fill: var(--card-red-deep);
-}
-.brand__depth .brand__letter--2 {
-  fill: var(--card-yellow-deep);
-}
-.brand__depth .brand__letter--3 {
-  fill: var(--card-blue-deep);
+.brand__slot--3 {
+  --glyph: var(--card-blue-face);
+  --glyph-mid: var(--card-blue-mid);
+  --glyph-deep: var(--card-blue-deep);
 }
 
 /*

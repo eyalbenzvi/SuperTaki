@@ -12,7 +12,8 @@
   --card-width: 4.5rem;
   /* Suit colours, overridden per card below. */
   --glyph: var(--card-outline);
-  --glyph-deep: var(--card-label);
+  --glyph-mid: var(--card-label);
+  --glyph-deep: var(--card-outline);
 
   position: relative;
   inline-size: var(--card-width);
@@ -34,45 +35,83 @@
   overflow: hidden;
 }
 
-.card--red {
-  --glyph: var(--card-red);
+.card--red,
+.glyph__slot--0 {
+  --glyph: var(--card-red-face);
+  --glyph-mid: var(--card-red-mid);
   --glyph-deep: var(--card-red-deep);
 }
-.card--blue {
-  --glyph: var(--card-blue);
+.card--blue,
+.glyph__slot--3 {
+  --glyph: var(--card-blue-face);
+  --glyph-mid: var(--card-blue-mid);
   --glyph-deep: var(--card-blue-deep);
 }
-.card--green {
-  --glyph: var(--card-green);
+.card--green,
+.glyph__slot--2 {
+  --glyph: var(--card-green-face);
+  --glyph-mid: var(--card-green-mid);
   --glyph-deep: var(--card-green-deep);
 }
-.card--yellow {
-  --glyph: var(--card-yellow);
+.card--yellow,
+.glyph__slot--1 {
+  --glyph: var(--card-yellow-face);
+  --glyph-mid: var(--card-yellow-mid);
   --glyph-deep: var(--card-yellow-deep);
 }
 
 /*
  * A colourless card is white like the rest; what marks it out is its drawing —
- * four suits at once, a crown, a cracked numeral. The printed deck puts no
+ * four suits at once, a crown, a snapped numeral. The printed deck puts no
  * band or border on them either.
+ *
+ * The ones that belong to no suit are struck in metal, so nobody reads a gold
+ * crown as a yellow card. Change Colour and Super Taki are the exception: they
+ * mean *every* colour, and they colour their own parts.
  */
 .card--wild {
-  --glyph: var(--card-red);
-  --glyph-deep: var(--card-red-deep);
+  --glyph: var(--card-violet-face);
+  --glyph-mid: var(--card-violet-mid);
+  --glyph-deep: var(--card-violet-deep);
 }
 
-/* A crown is gold wherever else it appears; no reason for it not to be here. */
 .card[data-kind='king'] {
-  --glyph: var(--card-yellow);
+  --glyph: var(--card-orange-face);
+  --glyph-mid: var(--card-orange-mid);
+  --glyph-deep: var(--card-orange-deep);
+}
+
+/* The stone in the King's rim, lit brighter than the metal around it. */
+.glyph__slot--4 {
+  --glyph: var(--card-yellow-face);
+  --glyph-mid: var(--card-yellow-mid);
   --glyph-deep: var(--card-yellow-deep);
 }
 
-/* The back: a dense two-colour weave on the same white stock. */
+/*
+ * The back: a fine red-and-blue lattice inside a white margin, the way a
+ * printed back keeps its pattern clear of the cut edge.
+ */
 .card--back {
-  color: var(--card-blue-deep);
+  --weave: calc(var(--card-width) * 0.07);
+  --thread: calc(var(--card-width) * 0.019);
+
   background:
-    repeating-linear-gradient(45deg, transparent 0 2px, var(--card-red) 2px 4px),
-    repeating-linear-gradient(-45deg, transparent 0 2px, var(--card-blue) 2px 4px), var(--card-face);
+    repeating-linear-gradient(
+        45deg,
+        var(--card-red-face) 0 var(--thread),
+        transparent var(--thread) var(--weave)
+      )
+      padding-box,
+    repeating-linear-gradient(
+        -45deg,
+        var(--card-blue-face) 0 var(--thread),
+        transparent var(--thread) var(--weave)
+      )
+      padding-box,
+    var(--card-face) padding-box;
+  border: calc(var(--card-width) * 0.055) solid var(--card-face);
+  padding: 0;
 }
 
 /* Symbols ------------------------------------------------------------------ */
@@ -87,95 +126,28 @@
 }
 
 /*
- * `paint-order: stroke` puts the outline behind the fill, so a thick outline
- * thickens the shape instead of eating into it. That is what gives the symbol
- * its printed, moulded weight.
+ * Every face of a symbol is outlined, internal edges included: the line where
+ * the front face meets a side wall is most of what makes the thing read as a
+ * solid. The stroke is centred rather than tucked behind the fill, so an
+ * internal edge and an outer edge come out the same weight.
  */
-.glyph__depth,
-.glyph__face {
+.glyph path {
   stroke: var(--card-outline);
+  stroke-width: 3;
   stroke-linejoin: round;
-  paint-order: stroke;
 }
 
-.glyph__depth {
-  fill: var(--glyph-deep);
-  stroke-width: 2.6;
-}
-
+/* Front face, walls turned sideways, walls turned down. */
 .glyph__face {
   fill: var(--glyph);
-  stroke-width: 2.2;
 }
 
-/*
- * A cube's three faces: lid, then the two walls in progressively deeper
- * shades. `glyph--solid` marks a drawing that carries its own depth and so is
- * never stamped.
- */
-.cube path {
-  stroke: var(--card-outline);
-  stroke-width: 2.4;
-  stroke-linejoin: round;
-  paint-order: stroke;
+.glyph__wall--mid {
+  fill: var(--glyph-mid);
 }
 
-.cube__top {
-  fill: var(--cube-top);
-}
-.cube__left {
-  fill: var(--cube-left);
-}
-.cube__right {
-  fill: var(--cube-right);
-}
-
-.cube.glyph__slot--0 {
-  --cube-top: var(--card-red);
-  --cube-left: color-mix(in srgb, var(--card-red) 78%, #000000);
-  --cube-right: var(--card-red-deep);
-}
-.cube.glyph__slot--1 {
-  --cube-top: var(--card-yellow);
-  --cube-left: color-mix(in srgb, var(--card-yellow) 78%, #000000);
-  --cube-right: var(--card-yellow-deep);
-}
-.cube.glyph__slot--2 {
-  --cube-top: var(--card-green);
-  --cube-left: color-mix(in srgb, var(--card-green) 78%, #000000);
-  --cube-right: var(--card-green-deep);
-}
-.cube.glyph__slot--3 {
-  --cube-top: var(--card-blue);
-  --cube-left: color-mix(in srgb, var(--card-blue) 78%, #000000);
-  --cube-right: var(--card-blue-deep);
-}
-
-/* Parts of a symbol that take a suit colour each, on colourless cards. */
-.glyph__slot--0 {
-  fill: var(--card-red);
-}
-.glyph__slot--1 {
-  fill: var(--card-yellow);
-}
-.glyph__slot--2 {
-  fill: var(--card-green);
-}
-.glyph__slot--3 {
-  fill: var(--card-blue);
-}
-
-.glyph__depth .glyph__slot--0 {
-  fill: var(--card-red-deep);
-}
-.glyph__depth .glyph__slot--1 {
-  fill: var(--card-yellow-deep);
-}
-.glyph__depth .glyph__slot--2 {
-  fill: var(--card-green-deep);
-}
-.glyph__depth .glyph__slot--3 {
-  fill: var(--card-blue-deep);
+.glyph__wall--deep {
+  fill: var(--glyph-deep);
 }
 
 .card__glyph {
@@ -192,8 +164,8 @@
  */
 .card__corner {
   position: absolute;
-  inline-size: calc(var(--card-width) * 0.17);
-  block-size: calc(var(--card-width) * 0.17);
+  inline-size: calc(var(--card-width) * 0.2);
+  block-size: calc(var(--card-width) * 0.2);
 }
 
 .card__corner--tl {
@@ -218,9 +190,13 @@
   transform: rotate(180deg);
 }
 
-/* A corner is a flat silhouette, so it needs a heavier outline to hold up. */
-.card__corner .glyph__face {
-  stroke-width: 9;
+/*
+ * A corner index is a few millimetres of card: it is drawn flat, and its
+ * outline has to be much heavier in proportion or it vanishes at the smallest
+ * card size.
+ */
+.card__corner .glyph path {
+  stroke-width: 8;
 }
 
 /* Sizes -------------------------------------------------------------------- */

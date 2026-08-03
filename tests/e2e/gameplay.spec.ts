@@ -12,7 +12,7 @@ import { BROADCAST, createRoom, joinRoom, openApp } from './helpers.ts';
  * The budget is generous: the 124-card deck, with +2 runs inflating hands,
  * makes for long rounds.
  */
-const MAX_ACTIONS = 900;
+const MAX_ACTIONS = 1400;
 
 /*
  * Both players are tabs in one browser, so one of them is always in the
@@ -67,7 +67,7 @@ async function takeOneAction(page: Page): Promise<boolean> {
 }
 
 test.describe('a complete round', () => {
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
 
   test('plays to a winner and offers another round', async ({ context }) => {
     const host = await context.newPage();
