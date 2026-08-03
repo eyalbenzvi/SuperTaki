@@ -1,5 +1,14 @@
 import { z } from 'zod';
 import { DISPLAY_NAME_MAX_LENGTH } from '../../../lib/sanitize.ts';
+
+/*
+ * Zod compiles validators with `new Function` when it can, and probes for that
+ * with `Function('')`. Our Content Security Policy has no `'unsafe-eval'`, so
+ * the probe throws, Zod falls back to its interpreted path, and the browser
+ * logs a CSP violation on every load. Declaring `jitless` skips the probe: same
+ * behaviour we already get, without weakening the policy or the console noise.
+ */
+z.config({ jitless: true });
 import type { Card } from '../engine/cards.ts';
 import { REJECTION_CODES } from '../engine/state.ts';
 

@@ -105,7 +105,7 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 ## Running the tests
 
 ```bash
-npm test                # 441 unit + component tests
+npm test                # 456 unit + component tests
 npm run test:coverage   # same, with coverage thresholds enforced
 npm run test:e2e        # 20 scenarios x 2 viewports (needs a Chromium download once)
 ```
@@ -242,16 +242,17 @@ data channels, which has been standard since roughly 2018. iOS Safari 15+ is fin
 
 ## Troubleshooting
 
-| Symptom                                            | What it means and what to do                                                                                                    |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| "The host could not be reached"                    | Wrong room code, or the host closed their tab. Check the code and that the host still has the page open.                        |
-| "The free connection service could not be reached" | The public PeerJS broker is unreachable. Check your internet connection and retry.                                              |
-| Connection fails on a company or school network    | That network is probably blocking peer-to-peer traffic. Try a phone hotspot or home Wi-Fi. There is no relay server, by design. |
-| "That room code is already taken"                  | Rare collision (or you already host a room in another tab). Create a new room.                                                  |
-| Stuck on "Reconnecting…"                           | The tab may have been suspended. Bring it to the foreground; the app retries with backoff.                                      |
-| Game ends unexpectedly for everyone                | The host left. Under this server-free design the room cannot continue.                                                          |
-| Blank page after deploying                         | Almost always a wrong `base` path — see [docs/deployment.md](docs/deployment.md).                                               |
-| Need diagnostics                                   | Append `?debug=1` to the URL and open the browser console.                                                                      |
+| Symptom                                            | What it means and what to do                                                                                                                                                                          |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The host could not be reached"                    | Wrong room code, or the host closed their tab. Check the code and that the host still has the page open.                                                                                              |
+| "The free connection service could not be reached" | The public PeerJS broker is unreachable. Check your internet connection and retry.                                                                                                                    |
+| Connection fails on a company or school network    | That network is probably blocking peer-to-peer traffic. Try a phone hotspot or home Wi-Fi. There is no relay server, by design.                                                                       |
+| "That room code is already taken"                  | Rare collision (or you already host a room in another tab). Create a new room.                                                                                                                        |
+| "Create game" spins with no room code              | The free signalling service is not responding. The app now gives up after 20 s with an explanation; if it persists the public broker is down — retry later, or configure your own PeerServer (above). |
+| Stuck on "Reconnecting…"                           | The tab may have been suspended. Bring it to the foreground; the app retries with backoff.                                                                                                            |
+| Game ends unexpectedly for everyone                | The host left. Under this server-free design the room cannot continue.                                                                                                                                |
+| Blank page after deploying                         | Almost always a wrong `base` path — see [docs/deployment.md](docs/deployment.md).                                                                                                                     |
+| Need diagnostics                                   | Append `?debug=1` to the URL and open the browser console.                                                                                                                                            |
 
 ## Repository layout
 

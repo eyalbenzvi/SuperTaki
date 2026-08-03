@@ -66,6 +66,21 @@ stated honestly.
   stale and sat with an empty hand. This is the single worst bug found in the whole project, and it
   was found only by playing a complete round through the UI in an end-to-end test. Versions are now
   monotonic for the lifetime of a room.
+- **fixed — Peer initialisation could hang for ever.** `readyPromise` resolved on `open` and
+  rejected on `error`, but the free public broker sometimes accepts the socket and then emits
+  neither. `createRoom` awaits that promise, so the UI sat on "opening the room…" with no room
+  code and no error — indistinguishable from a frozen app. A 20 s deadline now rejects with
+  `signalingUnavailable`, which the create screen already surfaces. Reported from the field, then
+  confirmed by reading the code; covered by a unit test against a fake `Peer`.
+- **fixed — Abandoned transports were never destroyed.** On a failed create or join the
+  `Transport` was dropped without `destroy()`, leaving a live socket that could still fire `open`
+  after the store had moved on; the room-code retry loop leaked one peer per attempt.
+- **fixed — The CSP logged a violation on every page load.** Zod probes for JIT support with
+  `Function('')`, which `script-src 'self'` blocks; Zod fell back to its interpreted path and the
+  browser reported a violation. `z.config({ jitless: true })` skips the probe. Verified by
+  instrumenting `securitypolicyviolation` on the built bundle: one violation before, zero after.
+  Notably the policy itself was **not** at fault for connectivity — the same probe confirmed the
+  PeerJS WebSocket to `wss://0.peerjs.com` is permitted by `connect-src`.
 - **verified — Client-side staleness handling.** `version < lastApplied` is dropped, `==` is
   accepted so a deliberate resend after a reconnect still lands.
 - **verified — Heartbeats in both directions.** The host pings every 5 s and grades each seat

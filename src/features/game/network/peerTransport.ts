@@ -115,7 +115,16 @@ export interface PeerTransportOptions {
   /** Requested peer id. Hosts derive it from the room code; clients omit it. */
   readonly id?: string;
   readonly connectTimeoutMs?: number;
+  /** How long to wait for the signalling server to assign a peer id. */
+  readonly readyTimeoutMs?: number;
 }
+
+/**
+ * The free public PeerJS broker sometimes accepts a socket and then goes quiet,
+ * emitting neither `open` nor `error`. Without a deadline the caller waits for
+ * ever: "Create room" spins with no room code and no explanation.
+ */
+export const READY_TIMEOUT_MS = 20_000;
 
 class PeerJsTransport implements Transport {
   readonly kind = 'peerjs' as const;
@@ -145,7 +154,15 @@ class PeerJsTransport implements Transport {
     this.peer = options.id ? new Peer(options.id, peerOptions) : new Peer(peerOptions);
 
     this.readyPromise = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (this.assignedId === null) {
+          log.warn('signalling did not assign a peer id in time');
+          reject(new TransportError('signalingUnavailable', 'The signalling server did not respond in time'));
+        }
+      }, options.readyTimeoutMs ?? READY_TIMEOUT_MS);
+
       const onOpen = (id: string): void => {
+        clearTimeout(timer);
         this.assignedId = id;
         log.debug('peer open', id);
         resolve(id);
@@ -153,6 +170,7 @@ class PeerJsTransport implements Transport {
       const onError = (error: Error & { type?: string }): void => {
         const mapped = new TransportError(mapErrorType(error.type ?? ''), error.message, error);
         if (this.assignedId === null) {
+          clearTimeout(timer);
           reject(mapped);
         }
       };

@@ -13,7 +13,7 @@ Date of this run: after the review passes recorded in [review-notes.md](review-n
 | `npm run format:check`  | ✅ pass — Prettier clean across source, tests and docs               |
 | `npm run lint`          | ✅ pass — 0 errors, 0 warnings (ESLint, type-aware rules)            |
 | `npm run typecheck`     | ✅ pass — TypeScript strict, project references, 0 errors            |
-| `npm test`              | ✅ **441 tests in 28 files** pass                                    |
+| `npm test`              | ✅ **456 tests in 29 files** pass                                    |
 | `npm run test:coverage` | ✅ pass — thresholds met (below)                                     |
 | `npm run build`         | ✅ pass — `dist/` ≈ 457 kB JS (132 kB gzip), 17 kB CSS (4.2 kB gzip) |
 | `npm run test:e2e`      | ✅ **40 tests** pass (20 scenarios × desktop + mobile)               |
@@ -39,14 +39,14 @@ Whole project: **87.5 % statements, 77.4 % branches, 89.6 % functions, 87.1 % li
 
 Where coverage is deliberately lower:
 
-| File                                        | Coverage | Why                                                                                                                                                                         |
-| ------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `peerTransport.ts`, `broadcastTransport.ts` | excluded | Thin wrappers over PeerJS and `BroadcastChannel`. Covered by end-to-end tests and manual multi-device play; unit-mocking them would test the mock.                          |
-| `peerConfig.ts`                             | 5 %      | Reads build-time `import.meta.env`, which is fixed per bundle. Verified manually with and without the variables set.                                                        |
-| `transportFactory.ts`                       | 0 %      | Three-line switch; the store tests replace it with the memory transport by design, and end-to-end tests exercise the real branch.                                           |
-| `clientSession.ts`, `hostSession.ts`        | ~80 %    | Uncovered lines are timer-driven heartbeat/backoff branches after long silences. Exercised in manual testing (see below); simulating them would mean testing `setInterval`. |
-| `logger.ts`                                 | 46 %     | The `?debug=1` sticky-flag path, checked manually.                                                                                                                          |
-| `useFocusTrap.ts`                           | 70 %     | Edge branches (a dialog with no focusable child). The real behaviour — trap, escape, restore — is covered by component tests.                                               |
+| File                                 | Coverage | Why                                                                                                                                                                         |
+| ------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `broadcastTransport.ts`              | excluded | Thin wrapper over `BroadcastChannel`; the end-to-end suite uses it as its transport, so it is covered there rather than by a mock of itself.                                |
+| `peerConfig.ts`                      | 5 %      | Reads build-time `import.meta.env`, which is fixed per bundle. Verified manually with and without the variables set.                                                        |
+| `transportFactory.ts`                | 0 %      | Three-line switch; the store tests replace it with the memory transport by design, and end-to-end tests exercise the real branch.                                           |
+| `clientSession.ts`, `hostSession.ts` | ~80 %    | Uncovered lines are timer-driven heartbeat/backoff branches after long silences. Exercised in manual testing (see below); simulating them would mean testing `setInterval`. |
+| `logger.ts`                          | 46 %     | The `?debug=1` sticky-flag path, checked manually.                                                                                                                          |
+| `useFocusTrap.ts`                    | 70 %     | Edge branches (a dialog with no focusable child). The real behaviour — trap, escape, restore — is covered by component tests.                                               |
 
 ## Test suites
 
@@ -55,14 +55,14 @@ Exact counts per file (from `vitest --reporter=json`):
 ```
  121  tests/unit/engine/*         deck, prng, setup, matching, commands, specialCards,
                                   taki, drawPile, win, views
- 113  tests/unit/network/*        protocol, envelope, roomCode, sessions, clientSession
+ 126  tests/unit/network/*        protocol, envelope, roomCode, sessions, clientSession
   54  tests/unit/state/*          persistence, selectors, storeFlow
   36  tests/unit/lib/*            sanitize, storage, misc (ids, logger, share)
   21  tests/unit/ui/*             cardText, eventText
   14  tests/unit/i18n.test.ts     dictionary parity and interpolation
   82  tests/component/*           landing, forms, lobby, game, gameOver
  ----
- 441  total
+ 456  total
 ```
 
 ### Unit — game engine (`tests/unit/engine/`, 121 tests)
@@ -80,7 +80,7 @@ Exact counts per file (from `vitest --reporter=json`):
 - **Views**: public state exposes counts only, private hand isolation, standings with ties, rule context parity between host and client.
 - **Immutability**: input state is asserted unchanged after every command; the version increments exactly once.
 
-### Unit — network (`tests/unit/network/`, 113 tests)
+### Unit — network (`tests/unit/network/`, 126 tests)
 
 - **Schema validation**: every message type accepted; primitives, arrays, `null`, missing envelope fields, unknown types, bad payloads, over-long names, oversized and cyclic messages all rejected with the right code.
 - **Direction**: a host-only message on the host's inbound path is rejected, and vice versa.
@@ -90,6 +90,10 @@ Exact counts per file (from `vitest --reporter=json`):
 - **Room codes**: generation validity and variety, no repeated word, normalisation of sloppy input, validation, peer-id derivation, invite build/parse round trip, invalid host override ignored, transport override preserved.
 - **Sessions over a mock transport** (32 tests): seating, name de-duplication, hostile-name sanitising, room full, player limits, table language, kicking, leaving, host departure, start requirements, private deals, public card counts, shared events, host and client actions, out-of-turn rejection, unknown card, playing a card you do not hold, late joins refused, reconnection with hand restore, wrong/unknown resume rejection, **a complete round played to a winner**, play-again voting and a fresh deal with continuing versions.
 - **Hostile traffic**: malformed messages, protocol mismatch, wrong room, replay, duplicate connections, actions from a peer that never joined.
+- **PeerJS wrapper** (13 tests, against a fake `Peer`): id assigned on `open`; **a broker that
+  accepts the socket and never opens is abandoned after a deadline**; no spurious timeout after a
+  successful open; all seven PeerJS error types mapped; a late error does not un-resolve `ready()`;
+  peer destroyed on teardown; refusal without WebRTC support.
 - **Client behaviour** (22 tests): join handshake, fail-fast on an absent room, stale snapshot dropped, equal version accepted, another player's hand ignored, out-of-order hand dropped, replay dropped, wrong room ignored, protocol mismatch reported, malformed ignored, ping/pong, event forwarding, kick and host-closed handling, no auto-retry after a definitive rejection, manual retry, intents carry no player id, leave announced, idempotent destroy.
 
 ### Unit — state, i18n, lib, UI text (`tests/unit/`, 125 tests)
@@ -273,7 +277,20 @@ Each of these was found by testing, not by inspection, and each is now covered b
 13. **The deploy workflow could not publish from a non-`main` default branch.** It triggered only
     on `main`, but the `github-pages` environment permits deployments only from the repository
     default branch. Both jobs are now guarded on the default branch, whatever it is called.
-14. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
+14. **Peer initialisation had no deadline.** `readyPromise` settled only on PeerJS's `open` or
+    `error`. When the free public broker accepts a socket and then goes quiet — emitting neither —
+    `createRoom` awaited for ever: the button sat on "opening the room…", no room code appeared
+    and no error was shown. There is now a 20 s deadline that rejects with
+    `signalingUnavailable`, covered by a unit test against a fake `Peer`.
+15. **A failed attempt leaked its transport.** `createRoom` and `joinRoom` abandoned the
+    `Transport` on error without destroying it, leaving an open socket that could still fire
+    `open` later; the room-code retry loop leaked one per attempt. Both paths now tear it down.
+16. **The Content Security Policy triggered a violation on every load.** Zod probes for JIT
+    support with `Function('')`; `script-src 'self'` blocks it, so Zod silently fell back to its
+    interpreted path and the browser logged a violation. `z.config({ jitless: true })` skips the
+    probe — same behaviour, no console noise, and no `'unsafe-eval'` added to the policy.
+    Verified by re-running the probe: zero violations.
+17. **A flaky end-to-end helper.** `getByRole('button', {name: 'Red'})` also matched hand cards
     named "Play Red 5", so it failed whenever the hand held a red card. Now scoped to the dialog
     with an exact match; verified stable over repeated runs.
 
@@ -302,7 +319,7 @@ Inherent to the architecture, not defects. All are surfaced to players in the UI
 | Gate                              | Status                  |
 | --------------------------------- | ----------------------- |
 | Formatting, lint, typecheck       | ✅                      |
-| Unit, component, end-to-end tests | ✅ 441 + 40             |
+| Unit, component, end-to-end tests | ✅ 456 + 40             |
 | Coverage thresholds               | ✅                      |
 | Production build                  | ✅                      |
 | Dependency audit                  | ✅ 0 vulnerabilities    |

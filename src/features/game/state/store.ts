@@ -16,7 +16,7 @@ import {
   type SessionError,
   type SessionUpdate,
 } from '../network/session.ts';
-import { TransportError } from '../network/transport.ts';
+import { TransportError, type Transport } from '../network/transport.ts';
 import { createTransport } from '../network/transportFactory.ts';
 import {
   applyLanguage,
@@ -332,8 +332,11 @@ export const useAppStore = create<AppStore>((set, get) => {
       for (let attempt = 0; attempt < ROOM_CODE_ATTEMPTS; attempt += 1) {
         const roomCode = generateRoomCode();
         const peerId = hostPeerIdForRoom(roomCode);
+        // Held outside the try so a failed attempt can tear its transport down
+        // instead of leaving an orphaned socket that may still fire `open`.
+        let transport: Transport | null = null;
         try {
-          const transport = createTransport({ id: peerId });
+          transport = createTransport({ id: peerId });
           set({ role: 'host', roomCode, hostPeerId: peerId, phase: 'initializing' });
           const hostSession = await createHostSession({
             transport,
@@ -353,6 +356,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         } catch (error) {
           const isTaken = error instanceof TransportError && error.code === 'idUnavailable';
           log.warn('room creation failed', error);
+          transport?.destroy();
           if (!isTaken || attempt === ROOM_CODE_ATTEMPTS - 1) {
             set({
               ...CLEARED_SESSION,
@@ -387,8 +391,9 @@ export const useAppStore = create<AppStore>((set, get) => {
       });
       saveDisplayName(cleaned);
 
+      let transport: Transport | null = null;
       try {
-        const transport = createTransport({});
+        transport = createTransport({});
         const clientSession = new ClientSession({
           transport,
           roomCode,
@@ -402,6 +407,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ busy: false });
       } catch (error) {
         log.warn('join failed', error);
+        transport?.destroy();
         set({
           busy: false,
           phase: 'failed',

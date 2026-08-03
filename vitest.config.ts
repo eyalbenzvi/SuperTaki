@@ -18,8 +18,8 @@ export default defineConfig({
         'src/main.tsx',
         'src/**/index.ts',
         'src/vite-env.d.ts',
-        // Thin wrappers over browser/PeerJS APIs; exercised by e2e and manual QA.
-        'src/features/game/network/peerTransport.ts',
+        // Thin wrapper over BroadcastChannel; exercised by the e2e suite, which
+        // uses it as its transport.
         'src/features/game/network/broadcastTransport.ts',
       ],
       thresholds: {

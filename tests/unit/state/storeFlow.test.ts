@@ -112,6 +112,58 @@ describe('creating a room through the store', () => {
     expect(state.lobby).toBeNull();
   });
 
+  it('surfaces a signalling timeout and tears the transport down', async () => {
+    // A transport whose `ready()` never opens is exactly what the free public
+    // broker produces when it accepts a socket and goes quiet.
+    const destroy = vi.fn();
+    holder.create = () => ({
+      kind: 'peerjs',
+      localId: null,
+      ready: () => Promise.reject(new TransportError('signalingUnavailable', 'no response')),
+      connect: () => Promise.reject(new TransportError('closed', 'n/a')),
+      onIncoming: () => () => {},
+      onError: () => () => {},
+      destroy,
+    });
+
+    await store().createRoom({ name: 'דנה', maxPlayers: 2, tableLanguage: 'he' });
+
+    const state = store();
+    expect(state.error?.code).toBe('signalingUnavailable');
+    expect(state.phase).toBe('failed');
+    expect(state.busy).toBe(false);
+    expect(state.roomCode).toBeNull();
+    // The abandoned peer must not be left holding a socket.
+    expect(destroy).toHaveBeenCalled();
+  });
+
+  it('tears down each abandoned transport while retrying a taken room code', async () => {
+    const destroy = vi.fn();
+    let attempts = 0;
+    const realCreate = (id?: string) => network.create(id);
+    holder.create = (id?: string) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          kind: 'peerjs',
+          localId: null,
+          ready: () => Promise.reject(new TransportError('idUnavailable', 'taken')),
+          connect: () => Promise.reject(new TransportError('closed', 'n/a')),
+          onIncoming: () => () => {},
+          onError: () => () => {},
+          destroy,
+        };
+      }
+      return realCreate(id);
+    };
+
+    await store().createRoom({ name: 'דנה', maxPlayers: 2, tableLanguage: 'he' });
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(store().role).toBe('host');
+    expect(store().error).toBeNull();
+  });
+
   it('ignores a second create while one is in flight', async () => {
     const first = store().createRoom({ name: 'דנה', maxPlayers: 2, tableLanguage: 'he' });
     await store().createRoom({ name: 'אחר', maxPlayers: 6, tableLanguage: 'en' });
