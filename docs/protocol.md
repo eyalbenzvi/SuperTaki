@@ -1,6 +1,6 @@
 # Wire protocol
 
-Version: **2** (`PROTOCOL_VERSION` in `src/features/game/network/protocol.ts`)
+Version: **3** (`PROTOCOL_VERSION` in `src/features/game/network/protocol.ts`)
 
 Every message is JSON, travels over a WebRTC data channel with `serialization: 'json'`, and
 is validated with Zod **before it can influence any state**. Schemas are the single source of
@@ -88,6 +88,7 @@ loudly, allocate memory or tear down the room.
 | { type: 'drawCard' }
 | { type: 'closeTaki' }
 | { type: 'passBreak' }
+| { type: 'declareLastCard' }
 ```
 
 `chosenColor` is required for Change Colour and forbidden on every other card, including
@@ -95,9 +96,14 @@ the other colourless ones; the engine rejects both mistakes (`colorRequired`,
 `colorNotAllowed`).
 
 `passBreak` declines to answer an open +3. It, and a `playCard` naming a +3 Breaker, are
-the only actions the host accepts **from a player whose turn it is not** — and only while a
-+3 is open. Everything else from another seat is `notYourTurn`, and everything at all while
-a +3 is open is `awaitingBreak`.
+accepted **from a player whose turn it is not** — and only while a +3 is open. Everything
+else from another seat is `notYourTurn`, and everything at all while a +3 is open is
+`awaitingBreak`.
+
+`declareLastCard` is the other out-of-turn action, and it is unconditional: it is accepted
+from any seat at any moment, including while a +3 has the table frozen, and only requires
+that the sender holds exactly one card (`nothingToDeclare`) and has not already declared it
+(`alreadyDeclared`). It changes nothing but `declaredLastCard`. See `docs/rules.md`.
 
 ## Host → client messages
 
@@ -139,6 +145,9 @@ deal does not restart at 1.
 
 - `publicGameStateSchema` has no field that can hold a hand: players carry `cardCount`, not
   cards. The only `Card` in it is `discardTop`, which is face up on the table.
+- `declaredLastCard` is public on purpose, and leaks nothing: it names players who are
+  already visibly on one card, and at a real table the declaration is a shout everybody
+  hears.
 - `plusThree` names only the player who played the +3, never the players holding a breaker.
   Publishing who can answer would leak a card from a hand; each client decides whether to
   offer the choice by looking at the hand it already has.
@@ -240,6 +249,7 @@ Public state (host → all) — card counts only:
       "pendingDraw": 0,
       "freePlay": false,
       "plusThree": null,
+      "declaredLastCard": [],
       "winnerId": null
     }
   }

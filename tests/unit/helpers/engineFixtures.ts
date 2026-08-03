@@ -69,6 +69,7 @@ export interface StateOverrides {
   pendingDraw?: number;
   freePlay?: boolean;
   plusThree?: GameState['plusThree'];
+  declaredLastCard?: readonly PlayerId[];
   phase?: GameState['phase'];
   winnerId?: PlayerId | null;
   version?: number;
@@ -100,6 +101,7 @@ export function makeState(overrides: StateOverrides = {}): GameState {
     pendingDraw: overrides.pendingDraw ?? 0,
     freePlay: overrides.freePlay ?? false,
     plusThree: overrides.plusThree ?? null,
+    declaredLastCard: overrides.declaredLastCard ?? [],
     rng: createRng(12345),
     winnerId: overrides.winnerId ?? null,
     seed: 12345,

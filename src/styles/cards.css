@@ -276,6 +276,11 @@ button.card:active {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  /*
+   * The width the row is solved from. Held here rather than read off the row
+   * itself, whose width is a result of the layout being solved.
+   */
+  inline-size: 100%;
 }
 
 .hand-area__head {
@@ -300,69 +305,53 @@ button.card:active {
   font-weight: var(--weight-bold);
 }
 
+/*
+ * The hand is a grid of narrow tracks holding cards wider than the track.
+ *
+ * `--hand-strip` is the track: the distance from one card's leading edge to the
+ * next, solved in `TableParts` from the row's measured width and the number of
+ * cards. Every card is a full `--hand-card` wide, so each one laps over the one
+ * before it by whatever the track gives up, and the last card of a row overhangs
+ * into the trailing padding — which is exactly the width of that overhang, so the
+ * rows stay optically centred.
+ *
+ * Rows are what makes this different from the sideways scroller it replaces. A
+ * hand of ten used to run off the edge of the screen behind a swipe nobody
+ * found; now it wraps, and the whole hand is on screen at once.
+ */
 .hand {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  overflow-y: hidden;
+  display: grid;
+  grid-template-columns: repeat(var(--hand-per-row, 1), var(--hand-strip, var(--card-w-md)));
+  justify-content: center;
+  row-gap: var(--space-1);
   /* Room above for a lifted card, and below for its shadow. */
-  padding: 14px var(--space-2) var(--space-2);
-  scroll-snap-type: x proximity;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
+  padding-block: 14px var(--space-2);
+  padding-inline-start: 0;
+  padding-inline-end: calc(var(--hand-card, var(--card-w-md)) - var(--hand-strip, var(--card-w-md)));
   list-style: none;
   margin: 0;
-  min-height: calc(var(--card-w-md) * 1.5 + 26px);
+  min-height: calc(var(--card-w-md) * var(--hand-scale, 1) * 1.5 + 26px);
 }
 
 /*
- * Centres the fan when it fits, without stranding it when it does not.
- * `justify-content: center` on a scroll container makes the overflowing start
- * unreachable, and `safe center` is not carried everywhere yet; two zero-width
- * auto-margin spacers absorb the free space and collapse to nothing the moment
- * there is none.
+ * A big hand is drawn a little smaller — see `handCardScale`. The room it gives
+ * back goes to the table, which otherwise has nothing left to draw the piles in.
  */
-.hand::before,
-.hand::after {
-  content: '';
-  flex: none;
-  margin: auto;
+.hand .card {
+  --card-width: calc(var(--card-w-md) * var(--hand-scale, 1));
 }
 
+/*
+ * The slot is the track; the card overflows it. `min-inline-size: 0` stops the
+ * card's own width from pushing the track back open, which would undo the
+ * overlap.
+ */
 .hand__slot {
-  scroll-snap-align: center;
   display: flex;
+  justify-content: start;
   margin: 0;
   position: relative;
-}
-
-/*
- * Past six cards the hand overlaps, and by exactly as much as it needs to.
- *
- * `100%` here is the width of the row, so the overlap is solved from the space
- * actually available and the number of cards: they spread out when there is room
- * and close up when there is not. Two limits keep it honest — never a positive
- * gap, and never tighter than `--hand-min-strip`.
- *
- * That floor is just over half a card, and the reason is the tap. A card is a
- * button, and a tap lands on the middle of it; if the strip were narrower than
- * half, the neighbour lapping over it would own the middle of the card underneath
- * and a confident tap would play the wrong card — irreversibly, in front of
- * everyone. At just over half, every card owns its own centre. Past the floor the
- * row scrolls instead, with a part-covered card at the edge showing there is more.
- */
-.hand--fanned {
-  --hand-min-strip: calc(var(--card-w-md) * 0.52);
-  gap: 0;
-}
-
-.hand--fanned .hand__slot + .hand__slot {
-  margin-inline-start: clamp(
-    calc(var(--hand-min-strip) - var(--card-w-md)),
-    calc((100% - var(--card-w-md)) / var(--hand-gaps) - var(--card-w-md)),
-    0px
-  );
+  min-inline-size: 0;
 }
 
 /*
@@ -370,8 +359,8 @@ button.card:active {
  * of paint order, so no z-index is needed until one card has to come to the
  * front.
  */
-.hand--fanned .hand__slot:hover,
-.hand--fanned .hand__slot:focus-within {
+.hand__slot:hover,
+.hand__slot:focus-within {
   z-index: 20;
 }
 

@@ -10,7 +10,15 @@
 export const CARD_COLORS = ['red', 'blue', 'green', 'yellow'] as const;
 export type CardColor = (typeof CARD_COLORS)[number];
 
-export const NUMBER_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+/**
+ * The numbers printed on the deck.
+ *
+ * There is no plain 2: in Taki the only card carrying a 2 is the +2, which is
+ * printed as a snapped "2" with a plus beside it. A separate number 2 would be a
+ * card the physical deck does not contain, and it read as a +2 that had lost its
+ * plus.
+ */
+export const NUMBER_VALUES = [1, 3, 4, 5, 6, 7, 8, 9] as const;
 export type NumberValue = (typeof NUMBER_VALUES)[number];
 
 /** Action cards that carry a colour. */
@@ -73,6 +81,12 @@ export const PLUS_TWO_PENALTY = 2;
 
 /** How many cards a +3 (or a broken +3) makes its victims draw. */
 export const PLUS_THREE_PENALTY = 3;
+
+/**
+ * How many cards a player draws for putting down their last card without having
+ * declared "last card" first. See `docs/rules.md`.
+ */
+export const LAST_CARD_PENALTY = 2;
 
 export function isWildCard(card: Card): card is WildCard {
   return (WILD_KINDS as readonly string[]).includes(card.kind);

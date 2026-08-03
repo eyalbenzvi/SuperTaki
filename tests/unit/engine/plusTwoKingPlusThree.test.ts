@@ -27,7 +27,7 @@ function play(state: GameState, playerId: string, spec: string, chosenColor?: Ca
 describe('+2', () => {
   it('makes the next player owe two cards', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:plusTwo', 'blue:2'), 'p-bob': cards('red:1', 'blue:3') },
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
     });
     const { state: next, events } = expectOk(play(state, 'p-alice', 'red:plusTwo'));
@@ -39,7 +39,7 @@ describe('+2', () => {
   it('accumulates when the run is answered, whatever the colour', () => {
     let state = makeState({
       hands: {
-        'p-alice': cards('red:plusTwo', 'blue:2'),
+        'p-alice': cards('red:plusTwo', 'blue:3'),
         'p-bob': cards('green:plusTwo', 'blue:3'),
       },
       discardPile: cards('red:9'),
@@ -53,7 +53,7 @@ describe('+2', () => {
 
   it('refuses anything but a +2 or a King while a run is open', () => {
     let state = makeState({
-      hands: { 'p-alice': cards('red:plusTwo', 'blue:2'), 'p-bob': cards('red:1', 'colorChange') },
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('red:1', 'colorChange') },
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
@@ -63,7 +63,7 @@ describe('+2', () => {
 
   it('hands the whole run to whoever cannot answer', () => {
     let state = makeState({
-      hands: { 'p-alice': cards('red:plusTwo', 'blue:2'), 'p-bob': cards('red:1', 'red:2') },
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('red:1', 'red:3') },
       drawPile: cards('green:4', 'green:5', 'green:6', 'green:7'),
       discardPile: cards('red:9'),
     });
@@ -79,7 +79,7 @@ describe('+2', () => {
     let state = makeState({
       hands: {
         'p-alice': cards('red:taki', 'red:plusTwo', 'red:3'),
-        'p-bob': cards('blue:1', 'blue:2'),
+        'p-bob': cards('blue:1', 'blue:3'),
       },
       discardPile: cards('red:9'),
     });
@@ -95,7 +95,7 @@ describe('+2', () => {
 describe('king', () => {
   it('cancels a pending run and buys a free turn', () => {
     let state = makeState({
-      hands: { 'p-alice': cards('red:plusTwo', 'blue:2'), 'p-bob': cards('king', 'blue:3') },
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('king', 'blue:3') },
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
@@ -110,7 +110,7 @@ describe('king', () => {
 
   it('leaves the leading colour alone and refuses a colour choice', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('king', 'blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('king', 'blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     expectRejected(play(state, 'p-alice', 'king', 'blue'), 'colorNotAllowed');
@@ -119,7 +119,7 @@ describe('king', () => {
 
   it('makes every card in hand legal on the free turn', () => {
     let state = makeState({
-      hands: { 'p-alice': cards('king', 'blue:2', 'green:7'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('king', 'blue:3', 'green:7'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'king')).state;
@@ -135,11 +135,11 @@ describe('+3 and the breaker', () => {
     const state = makeState({
       players: players('Alice', 'Bob', 'Carol'),
       hands: {
-        'p-alice': cards('plusThree', 'blue:2'),
+        'p-alice': cards('plusThree', 'blue:3'),
         'p-bob': cards('red:1'),
-        'p-carol': cards('red:2'),
+        'p-carol': cards('red:3'),
       },
-      drawPile: cards('green:1', 'green:2', 'green:3', 'green:4', 'green:5', 'green:6'),
+      drawPile: cards('green:1', 'green:3', 'green:3', 'green:4', 'green:5', 'green:6'),
       discardPile: cards('red:9'),
     });
     const { state: next, events } = expectOk(play(state, 'p-alice', 'plusThree'));
@@ -155,9 +155,9 @@ describe('+3 and the breaker', () => {
     const state = makeState({
       players: players('Alice', 'Bob', 'Carol'),
       hands: {
-        'p-alice': cards('plusThree', 'blue:2'),
+        'p-alice': cards('plusThree', 'blue:3'),
         'p-bob': cards('red:1', 'breakPlusThree'),
-        'p-carol': cards('red:2'),
+        'p-carol': cards('red:3'),
       },
       discardPile: cards('red:9'),
     });
@@ -165,7 +165,7 @@ describe('+3 and the breaker', () => {
     expect(open.plusThree).toEqual({ playerId: 'p-alice', awaiting: ['p-bob'] });
 
     expectRejected(applyCommand(open, { type: 'drawCard', playerId: 'p-alice' }), 'awaitingBreak');
-    expectRejected(play(open, 'p-carol', 'red:2'), 'awaitingBreak');
+    expectRejected(play(open, 'p-carol', 'red:3'), 'awaitingBreak');
     expectRejected(applyCommand(open, { type: 'passBreak', playerId: 'p-carol' }), 'noPlusThreeOpen');
   });
 
@@ -173,11 +173,11 @@ describe('+3 and the breaker', () => {
     let state = makeState({
       players: players('Alice', 'Bob', 'Carol'),
       hands: {
-        'p-alice': cards('plusThree', 'blue:2'),
+        'p-alice': cards('plusThree', 'blue:3'),
         'p-bob': cards('red:1', 'breakPlusThree'),
-        'p-carol': cards('red:2'),
+        'p-carol': cards('red:3'),
       },
-      drawPile: cards('green:1', 'green:2', 'green:3'),
+      drawPile: cards('green:1', 'green:3', 'green:3'),
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'plusThree')).state;
@@ -198,11 +198,11 @@ describe('+3 and the breaker', () => {
     let state = makeState({
       players: players('Alice', 'Bob', 'Carol'),
       hands: {
-        'p-alice': cards('plusThree', 'blue:2'),
+        'p-alice': cards('plusThree', 'blue:3'),
         'p-bob': cards('red:1', 'breakPlusThree'),
-        'p-carol': cards('red:2', 'breakPlusThree'),
+        'p-carol': cards('red:3', 'breakPlusThree'),
       },
-      drawPile: cards('green:1', 'green:2', 'green:3', 'green:4', 'green:5', 'green:6'),
+      drawPile: cards('green:1', 'green:3', 'green:3', 'green:4', 'green:5', 'green:6'),
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'plusThree')).state;
@@ -218,7 +218,7 @@ describe('+3 and the breaker', () => {
 
   it('never lets a breaker be played on its own', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('breakPlusThree', 'red:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('breakPlusThree', 'red:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
     expectRejected(play(state, 'p-alice', 'breakPlusThree'), 'noPlusThreeOpen');
@@ -227,7 +227,7 @@ describe('+3 and the breaker', () => {
 
   it('never publishes who is holding a breaker', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('plusThree', 'blue:2'), 'p-bob': cards('red:1', 'breakPlusThree') },
+      hands: { 'p-alice': cards('plusThree', 'blue:3'), 'p-bob': cards('red:1', 'breakPlusThree') },
       discardPile: cards('red:9'),
     });
     const open = expectOk(play(state, 'p-alice', 'plusThree')).state;

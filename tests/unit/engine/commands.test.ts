@@ -40,7 +40,7 @@ describe('command validation', () => {
 
   it('rejects illegal cards', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('blue:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:5'),
     });
     const cardId = (state.hands['p-alice'] ?? [])[0]!.id;
@@ -113,7 +113,7 @@ describe('playing a plain number card', () => {
 describe('drawing', () => {
   it('adds one card and ends the turn', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('blue:3'), 'p-bob': cards('red:1') },
       drawPile: cards('green:7', 'green:8'),
     });
     const { state: next, events } = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' }));
@@ -126,7 +126,7 @@ describe('drawing', () => {
 
   it('does not let the drawn card be played in the same turn', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('blue:2'), 'p-bob': cards('red:1') },
+      hands: { 'p-alice': cards('blue:3'), 'p-bob': cards('red:1') },
       drawPile: cards('red:7'),
     });
     const next = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' })).state;

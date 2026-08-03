@@ -7,7 +7,7 @@ beforeEach(resetStore);
 
 const red5: Card = { id: 'c1', kind: 'number', color: 'red', value: 5 };
 const red7: Card = { id: 'c2', kind: 'number', color: 'red', value: 7 };
-const blue2: Card = { id: 'c3', kind: 'number', color: 'blue', value: 2 };
+const blue3: Card = { id: 'c3', kind: 'number', color: 'blue', value: 3 };
 const red9: Card = { id: 'c4', kind: 'number', color: 'red', value: 9 };
 
 function table(options: { hand: readonly Card[]; myTurn?: boolean; patch?: Record<string, unknown> }): void {
@@ -31,7 +31,7 @@ function table(options: { hand: readonly Card[]; myTurn?: boolean; patch?: Recor
 describe('the hand as a keyboard widget', () => {
   it('exposes one tab stop and moves along the fan with the arrow keys', async () => {
     // Right-to-left is the default, so ArrowLeft moves the way the key points.
-    table({ hand: [blue2, red5, red7] });
+    table({ hand: [blue3, red5, red7] });
     const { user } = renderApp();
 
     const cards = screen.getAllByRole('button', { name: /^הנחת/ });
@@ -46,9 +46,9 @@ describe('the hand as a keyboard widget', () => {
     await user.keyboard('{ArrowRight}');
     expect(document.activeElement).toHaveAccessibleName('הנחת אדום 5');
     // Home and End follow the fan's own order, which is the sorted hand:
-    // red 5, red 7, blue 2.
+    // red 5, red 7, blue 3.
     await user.keyboard('{End}');
-    expect(document.activeElement).toHaveAccessibleName('הנחת כחול 2');
+    expect(document.activeElement).toHaveAccessibleName('הנחת כחול 3');
     await user.keyboard('{Home}');
     expect(document.activeElement).toHaveAccessibleName('הנחת אדום 5');
   });
@@ -65,11 +65,11 @@ describe('the hand as a keyboard widget', () => {
   });
 
   it('shows the hand in colour order rather than deal order', () => {
-    table({ hand: [blue2, red7, red5] });
+    table({ hand: [blue3, red7, red5] });
     renderApp();
     expect(
       screen.getAllByRole('button', { name: /^הנחת/ }).map((card) => card.getAttribute('aria-label')),
-    ).toEqual(['הנחת אדום 5', 'הנחת אדום 7', 'הנחת כחול 2']);
+    ).toEqual(['הנחת אדום 5', 'הנחת אדום 7', 'הנחת כחול 3']);
   });
 });
 

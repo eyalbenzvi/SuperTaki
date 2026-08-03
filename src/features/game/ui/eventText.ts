@@ -46,6 +46,15 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
         name: nameOf(event.playerId),
         target: nameOf(event.targetId),
       });
+    case 'lastCardDeclared':
+      return t('event.lastCardDeclared', { name: nameOf(event.playerId) });
+    case 'lastCardMissed':
+      // Both halves of the count take a name too, so the plural is picked here
+      // rather than through `countLabel`, which only ever passes the number.
+      return t(event.penalty === 1 ? 'event.lastCardMissed.one' : 'event.lastCardMissed.other', {
+        name: nameOf(event.playerId),
+        count: event.penalty,
+      });
     case 'directionChanged':
       return t(event.direction === 1 ? 'event.directionChangedCw' : 'event.directionChangedCcw');
     case 'extraTurn':

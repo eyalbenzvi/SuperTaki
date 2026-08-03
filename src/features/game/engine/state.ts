@@ -78,6 +78,12 @@ export interface GameState {
   readonly freePlay: boolean;
   /** Open +3 waiting for the breaker window to close, or `null`. */
   readonly plusThree: PlusThreeState | null;
+  /**
+   * Players who have declared "last card" for the single card they are holding
+   * now. A player leaves this list the moment their hand stops being exactly one
+   * card, so coming back down to one card needs a fresh declaration.
+   */
+  readonly declaredLastCard: readonly PlayerId[];
   readonly rng: RngState;
   readonly winnerId: PlayerId | null;
   /** Seed the game was created with, kept for reproducibility/debugging. */
@@ -95,7 +101,12 @@ export type GameCommand =
   | { readonly type: 'drawCard'; readonly playerId: PlayerId }
   | { readonly type: 'closeTaki'; readonly playerId: PlayerId }
   /** Declines to answer an open +3 with a +3 Breaker. */
-  | { readonly type: 'passBreak'; readonly playerId: PlayerId };
+  | { readonly type: 'passBreak'; readonly playerId: PlayerId }
+  /**
+   * Declares "last card". Legal from any seat, in or out of turn, and only while
+   * the declaring player holds exactly one card.
+   */
+  | { readonly type: 'declareLastCard'; readonly playerId: PlayerId };
 
 export type GameCommandType = GameCommand['type'];
 
@@ -125,6 +136,13 @@ export type GameEvent =
   | { readonly type: 'plusThreePlayed'; readonly playerId: PlayerId }
   /** A +3 Breaker sent the penalty back at `targetId`. */
   | { readonly type: 'plusThreeBroken'; readonly playerId: PlayerId; readonly targetId: PlayerId }
+  /** A player declared "last card" while holding their final card. */
+  | { readonly type: 'lastCardDeclared'; readonly playerId: PlayerId }
+  /**
+   * A player emptied their hand without having declared "last card". They drew
+   * the penalty instead of winning; `penalty` is how many cards they actually got.
+   */
+  | { readonly type: 'lastCardMissed'; readonly playerId: PlayerId; readonly penalty: number }
   | { readonly type: 'directionChanged'; readonly direction: TurnDirection }
   | { readonly type: 'extraTurn'; readonly playerId: PlayerId }
   | { readonly type: 'turnChanged'; readonly playerId: PlayerId }
@@ -151,6 +169,8 @@ export const REJECTION_CODES = [
   'noTakiOpen',
   'wildNotAllowedInTaki',
   'wrongTakiColor',
+  'nothingToDeclare',
+  'alreadyDeclared',
   'notEnoughPlayers',
   'tooManyPlayers',
   'duplicatePlayerId',

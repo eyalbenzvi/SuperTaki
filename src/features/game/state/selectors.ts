@@ -81,6 +81,29 @@ export function playableCardIds(
   return getPlayableCardIds(state.hand, playContextFromPublic(state.publicState));
 }
 
+/** Whether `playerId` has declared "last card" for the card they hold now. */
+export function hasDeclaredLastCard(state: Pick<TableSnapshot, 'publicState'>, playerId: string): boolean {
+  return state.publicState?.declaredLastCard.includes(playerId) ?? false;
+}
+
+/**
+ * Whether the local player owes a "last card" declaration.
+ *
+ * True from the moment their hand comes down to one card until they declare.
+ * Deliberately not conditioned on the turn: the declaration is legal at any
+ * moment, and the whole point of showing it early is that a player is never
+ * ambushed by the penalty on their next turn.
+ */
+export function mustDeclareLastCard(
+  state: Pick<TableSnapshot, 'publicState' | 'localPlayerId' | 'hand'>,
+): boolean {
+  const { publicState, localPlayerId } = state;
+  if (!publicState || publicState.phase !== 'playing' || !localPlayerId) {
+    return false;
+  }
+  return state.hand.length === 1 && !publicState.declaredLastCard.includes(localPlayerId);
+}
+
 export function needsColorChoice(card: Card): boolean {
   return requiresColorChoice(card);
 }
@@ -142,6 +165,8 @@ export interface OpponentView {
   readonly isCurrent: boolean;
   readonly health: LobbyPlayer['health'];
   readonly isHost: boolean;
+  /** Has declared "last card" for the single card they are holding. */
+  readonly declaredLastCard: boolean;
 }
 
 /**
@@ -171,6 +196,7 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
         isCurrent: publicState.currentPlayerId === player.id,
         health: lobbyPlayer?.health ?? 'connected',
         isHost: lobbyPlayer?.isHost ?? false,
+        declaredLastCard: publicState.declaredLastCard.includes(player.id),
       };
     });
 }

@@ -11,6 +11,7 @@ import {
   statusRegions,
 } from './helpers.tsx';
 import { getPlayableCardIds } from '../../src/features/game/engine/rules.ts';
+import { useAppStore } from '../../src/features/game/state/store.ts';
 import { playContextFromPublic } from '../../src/features/game/engine/views.ts';
 import type { Card } from '../../src/features/game/engine/cards.ts';
 
@@ -74,7 +75,7 @@ function expectRefused(name: string): void {
 
 const red5: Card = { id: 'c1', kind: 'number', color: 'red', value: 5 };
 const blue5: Card = { id: 'c2', kind: 'number', color: 'blue', value: 5 };
-const blue2: Card = { id: 'c3', kind: 'number', color: 'blue', value: 2 };
+const blue3: Card = { id: 'c3', kind: 'number', color: 'blue', value: 3 };
 const redStop: Card = { id: 'c4', kind: 'stop', color: 'red' };
 const superTaki: Card = { id: 'c5', kind: 'superTaki' };
 const colorChange: Card = { id: 'c6', kind: 'colorChange' };
@@ -119,19 +120,19 @@ describe('table layout', () => {
 
 describe('legal card highlighting', () => {
   it('enables only the legal cards on your turn', () => {
-    situation({ hand: [red5, blue2, colorChange], discardTop: red9, activeColor: 'red' });
+    situation({ hand: [red5, blue3, colorChange], discardTop: red9, activeColor: 'red' });
     renderApp();
 
     expectPlayable('הנחת אדום 5');
     expectPlayable('הנחת שינוי צבע');
-    expectRefused('הנחת כחול 2');
+    expectRefused('הנחת כחול 3');
   });
 
   it('accepts a symbol match across colours', () => {
-    situation({ hand: [blue5, blue2], discardTop: red5, activeColor: 'red' });
+    situation({ hand: [blue5, blue3], discardTop: red5, activeColor: 'red' });
     renderApp();
     expectPlayable('הנחת כחול 5');
-    expectRefused('הנחת כחול 2');
+    expectRefused('הנחת כחול 3');
   });
 
   it('blocks the whole hand when it is not your turn, and says why', async () => {
@@ -156,7 +157,7 @@ describe('legal card highlighting', () => {
   });
 
   it('agrees with the engine about which cards are legal', () => {
-    const hand = [red5, blue2, colorChange, redStop];
+    const hand = [red5, blue3, colorChange, redStop];
     situation({ hand, discardTop: red9, activeColor: 'red' });
     const { publicState } = {
       publicState: { activeColor: 'red' as const, discardTop: red9, takiMode: null },
@@ -181,7 +182,7 @@ describe('legal card highlighting', () => {
 
   it('plays a coloured card straight away', async () => {
     const playCard = vi.fn();
-    situation({ hand: [red5, blue2], discardTop: red9, activeColor: 'red' });
+    situation({ hand: [red5, blue3], discardTop: red9, activeColor: 'red' });
     setState({ playCard });
     const { user } = renderApp();
 
@@ -192,14 +193,14 @@ describe('legal card highlighting', () => {
 
 describe('the draw pile', () => {
   it('is interactive on your turn and announces the count', () => {
-    situation({ hand: [blue2], discardTop: red9, activeColor: 'red' });
+    situation({ hand: [blue3], discardTop: red9, activeColor: 'red' });
     renderApp();
     const pile = screen.getByRole('button', { name: /חבילת משיכה, \d+ קלפים/ });
     expect(pile).toBeEnabled();
   });
 
   it('is disabled when it is not your turn', () => {
-    situation({ hand: [blue2], discardTop: red9, activeColor: 'red', myTurn: false });
+    situation({ hand: [blue3], discardTop: red9, activeColor: 'red', myTurn: false });
     renderApp();
     expect(screen.getByRole('button', { name: /חבילת משיכה/ })).toBeDisabled();
   });
@@ -216,14 +217,14 @@ describe('the draw pile', () => {
   });
 
   it('tells the player to draw when nothing is legal', () => {
-    situation({ hand: [blue2], discardTop: red9, activeColor: 'red' });
+    situation({ hand: [blue3], discardTop: red9, activeColor: 'red' });
     renderApp();
     expect(screen.getByText('אין קלף חוקי. יש למשוך קלף מהחבילה.')).toBeInTheDocument();
   });
 
   it('draws when clicked', async () => {
     const drawCard = vi.fn();
-    situation({ hand: [blue2], discardTop: red9, activeColor: 'red' });
+    situation({ hand: [blue3], discardTop: red9, activeColor: 'red' });
     setState({ drawCard });
     const { user } = renderApp();
     await user.click(screen.getByRole('button', { name: /חבילת משיכה/ }));
@@ -316,7 +317,7 @@ describe('Taki mode', () => {
   it('announces an open sequence and offers an explicit close control', async () => {
     const closeTaki = vi.fn();
     situation({
-      hand: [red5, blue2],
+      hand: [red5, blue3],
       discardTop: redTaki,
       activeColor: 'red',
       takiMode: { color: 'red' },
@@ -360,7 +361,7 @@ describe('Taki mode', () => {
 
 describe('outstanding Plus', () => {
   it('tells the player another card is owed', () => {
-    situation({ hand: [red5, blue2], discardTop: red9, activeColor: 'red', pendingPlus: true });
+    situation({ hand: [red5, blue3], discardTop: red9, activeColor: 'red', pendingPlus: true });
     renderApp();
     expect(screen.getByText('הונח פלוס — חייבים להניח עוד קלף.')).toBeInTheDocument();
   });
@@ -515,5 +516,73 @@ describe('leaving a game', () => {
     setState({ screen: 'game', role: 'client', phase: 'connected', publicState: null });
     renderApp();
     expect(statusRegions()[0]).toHaveTextContent('ממתינים לשולחן…');
+  });
+});
+
+describe('the last card declaration', () => {
+  /** One card in hand, nobody having declared anything yet. */
+  function oneCardLeft(options: { myTurn?: boolean; declared?: readonly string[] } = {}): void {
+    const fixture = enterGame({ myTurn: options.myTurn ?? true });
+    setState({
+      hand: [red5],
+      publicState: {
+        ...fixture.publicState,
+        currentPlayerId: (options.myTurn ?? true) ? HOST_ID : GUEST_ID,
+        discardTop: red9,
+        activeColor: 'red',
+        declaredLastCard: options.declared ?? [],
+        players: [
+          { id: HOST_ID, name: 'דנה', cardCount: 1 },
+          { id: GUEST_ID, name: 'אלי', cardCount: 5 },
+        ],
+      },
+    });
+  }
+
+  it('offers the declaration the moment the hand comes down to one card', async () => {
+    const declareLastCard = vi.fn();
+    oneCardLeft();
+    setState({ declareLastCard });
+    const { user } = renderApp();
+
+    const button = screen.getByRole('button', { name: /אחרון בידי/ });
+    expect(button).toHaveTextContent('2 קלפים');
+    await user.click(button);
+    expect(declareLastCard).toHaveBeenCalled();
+  });
+
+  it('offers it out of turn too, since that is when the card is usually laid down', () => {
+    oneCardLeft({ myTurn: false });
+    renderApp();
+    expect(screen.getByRole('button', { name: /אחרון בידי/ })).toBeInTheDocument();
+  });
+
+  it('replaces the button with confirmation once the declaration lands', () => {
+    oneCardLeft({ declared: [HOST_ID] });
+    renderApp();
+    expect(screen.queryByRole('button', { name: /אחרון בידי/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/הקלף האחרון שלך יכול לסגור את הסבב/)).toBeInTheDocument();
+  });
+
+  it('says nothing at all while the hand is bigger than one card', () => {
+    situation({ hand: [red5, blue3], discardTop: red9, activeColor: 'red' });
+    renderApp();
+    expect(screen.queryByRole('button', { name: /אחרון בידי/ })).not.toBeInTheDocument();
+  });
+
+  it("shows at the opponent's seat whether they declared", () => {
+    oneCardLeft({ declared: [GUEST_ID] });
+    setState({
+      publicState: {
+        ...useAppStore.getState().publicState!,
+        players: [
+          { id: HOST_ID, name: 'דנה', cardCount: 1 },
+          { id: GUEST_ID, name: 'אלי', cardCount: 1 },
+        ],
+      },
+    });
+    renderApp();
+    const opponents = screen.getByRole('region', { name: 'שאר השחקנים' });
+    expect(within(opponents).getByText('הכריז/ה')).toBeInTheDocument();
   });
 });

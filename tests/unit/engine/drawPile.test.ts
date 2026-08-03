@@ -4,7 +4,7 @@ import { cards, eventTypes, expectOk, makeState } from '../helpers/engineFixture
 
 describe('draw pile recycling', () => {
   it('recycles the discard pile, keeping the visible top card', () => {
-    const discard = cards('red:9', 'red:2', 'blue:2', 'green:2', 'yellow:2');
+    const discard = cards('red:9', 'red:3', 'blue:3', 'green:3', 'yellow:3');
     const state = makeState({
       hands: { 'p-alice': cards('blue:8'), 'p-bob': cards('red:1') },
       drawPile: [],
@@ -26,7 +26,7 @@ describe('draw pile recycling', () => {
     const state = makeState({
       hands: { 'p-alice': cards('blue:8'), 'p-bob': cards('red:1') },
       drawPile: [],
-      discardPile: cards('red:9', 'red:2', 'blue:3'),
+      discardPile: cards('red:9', 'red:3', 'blue:3'),
     });
     const before = new Set(
       [
@@ -53,7 +53,7 @@ describe('draw pile recycling', () => {
       makeState({
         hands: { 'p-alice': cards('blue:8'), 'p-bob': cards('red:1') },
         drawPile: [],
-        discardPile: cards('red:9', 'red:2', 'blue:3', 'green:4', 'yellow:5'),
+        discardPile: cards('red:9', 'red:3', 'blue:3', 'green:4', 'yellow:5'),
       });
     const a = expectOk(applyCommand(build(), { type: 'drawCard', playerId: 'p-alice' })).state;
     const b = expectOk(applyCommand(build(), { type: 'drawCard', playerId: 'p-alice' })).state;
@@ -66,7 +66,7 @@ describe('draw pile recycling', () => {
     const state = makeState({
       hands: { 'p-alice': cards('blue:8'), 'p-bob': cards('red:1') },
       drawPile: [],
-      discardPile: cards('red:9', 'red:2', 'blue:3'),
+      discardPile: cards('red:9', 'red:3', 'blue:3'),
     });
     const next = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' })).state;
     expect(next.rng.seed).not.toBe(state.rng.seed);

@@ -1,5 +1,6 @@
 import {
   CARDS_DEALT_PER_PLAYER,
+  LAST_CARD_PENALTY,
   PLUS_THREE_PENALTY,
   PLUS_TWO_PENALTY,
   buildDeck,
@@ -46,6 +47,7 @@ interface Draft {
   pendingDraw: number;
   freePlay: boolean;
   plusThree: GameState['plusThree'];
+  declaredLastCard: PlayerId[];
   rng: RngState;
   winnerId: PlayerId | null;
   seed: number;
@@ -71,13 +73,29 @@ function toDraft(state: GameState): Draft {
     pendingDraw: state.pendingDraw,
     freePlay: state.freePlay,
     plusThree: state.plusThree,
+    declaredLastCard: state.declaredLastCard.slice(),
     rng: state.rng,
     winnerId: state.winnerId,
     seed: state.seed,
   };
 }
 
+/**
+ * Drops declarations that no longer describe a hand of one card.
+ *
+ * A declaration belongs to the single card a player is holding, not to the
+ * player: whoever draws back up owes a fresh declaration next time they come
+ * down to one. Applied at the end of every command, so no code path can leave a
+ * stale declaration behind for the win check to honour.
+ */
+function syncDeclarations(draft: Draft): void {
+  draft.declaredLastCard = draft.declaredLastCard.filter(
+    (playerId) => (draft.hands[playerId] ?? []).length === 1,
+  );
+}
+
 function freeze(draft: Draft): GameState {
+  syncDeclarations(draft);
   return {
     version: draft.version,
     phase: draft.phase,
@@ -93,6 +111,7 @@ function freeze(draft: Draft): GameState {
     pendingDraw: draft.pendingDraw,
     freePlay: draft.freePlay,
     plusThree: draft.plusThree,
+    declaredLastCard: draft.declaredLastCard,
     rng: draft.rng,
     winnerId: draft.winnerId,
     seed: draft.seed,
@@ -193,6 +212,7 @@ export function createGame(
     pendingDraw: 0,
     freePlay: false,
     plusThree: null,
+    declaredLastCard: [],
     rng,
     winnerId: null,
     seed,
@@ -419,16 +439,43 @@ function applyPlayCard(
     events.push({ type: 'colorChosen', playerId, color: resultingColor });
   }
 
+  /*
+   * The hand is empty, so this is either the win or the one moment the "last
+   * card" declaration is checked. An undeclared last card is not a win: the
+   * player takes the penalty and the round carries on, with the card they just
+   * put down still resolving normally.
+   */
   if ((draft.hands[playerId] ?? []).length === 0) {
-    draft.phase = 'finished';
-    draft.winnerId = playerId;
-    draft.takiMode = null;
-    draft.pendingPlus = false;
-    draft.pendingDraw = 0;
-    draft.plusThree = null;
-    events.push({ type: 'playerWon', playerId });
-    draft.version += 1;
-    return { ok: true, state: freeze(draft), events };
+    if (draft.declaredLastCard.includes(playerId)) {
+      draft.phase = 'finished';
+      draft.winnerId = playerId;
+      draft.takiMode = null;
+      draft.pendingPlus = false;
+      draft.pendingDraw = 0;
+      draft.plusThree = null;
+      events.push({ type: 'playerWon', playerId });
+      draft.version += 1;
+      return { ok: true, state: freeze(draft), events };
+    }
+
+    // Drawn into a side list so the log reads "forgot to declare" and then
+    // "drew two", rather than the other way round.
+    const penaltyEvents: GameEvent[] = [];
+    const penalty = drawCards(draft, playerId, LAST_CARD_PENALTY, penaltyEvents);
+    events.push({ type: 'lastCardMissed', playerId, penalty }, ...penaltyEvents);
+    // Nothing left anywhere to draw: awarding the round is the only coherent
+    // outcome, since play cannot continue against an empty hand.
+    if (penalty === 0) {
+      draft.phase = 'finished';
+      draft.winnerId = playerId;
+      draft.takiMode = null;
+      draft.pendingPlus = false;
+      draft.pendingDraw = 0;
+      draft.plusThree = null;
+      events.push({ type: 'playerWon', playerId });
+      draft.version += 1;
+      return { ok: true, state: freeze(draft), events };
+    }
   }
 
   if (answeringPlusThree) {
@@ -475,6 +522,28 @@ function applyPassBreak(state: GameState, playerId: PlayerId): CommandResult {
 
   draft.version += 1;
   return { ok: true, state: freeze(draft), events };
+}
+
+/**
+ * Declares "last card".
+ *
+ * Legal from any seat and at any moment, exactly as it is at a real table: the
+ * declaration goes with the card in your hand, not with your turn. It is only
+ * ever legal while the declaring player holds exactly one card, and only once
+ * per card.
+ */
+function applyDeclareLastCard(state: GameState, playerId: PlayerId): CommandResult {
+  if ((state.hands[playerId] ?? []).length !== 1) {
+    return reject('nothingToDeclare');
+  }
+  if (state.declaredLastCard.includes(playerId)) {
+    return reject('alreadyDeclared');
+  }
+
+  const draft = toDraft(state);
+  draft.declaredLastCard.push(playerId);
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events: [{ type: 'lastCardDeclared', playerId }] };
 }
 
 function applyCloseTaki(state: GameState, playerId: PlayerId): CommandResult {
@@ -535,6 +604,12 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   const actor = state.players.find((player) => player.id === command.playerId);
   if (!actor) {
     return reject('unknownPlayer');
+  }
+
+  // A declaration is a shout, not a move: it belongs to whoever is holding the
+  // card and is legal from any seat, whatever else the table is waiting for.
+  if (command.type === 'declareLastCard') {
+    return applyDeclareLastCard(state, command.playerId);
   }
 
   // While a +3 is waiting for an answer the table is frozen for everyone, and

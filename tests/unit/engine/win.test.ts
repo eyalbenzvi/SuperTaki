@@ -12,10 +12,18 @@ function playOnly(state: ReturnType<typeof makeState>, playerId: string, chosenC
   );
 }
 
+/*
+ * Every win below is on a *declared* last card. An undeclared hand of one cannot
+ * win at all — it draws the penalty and the round goes on. That half of the rule
+ * lives in `lastCard.test.ts`.
+ */
+const declared = { declaredLastCard: ['p-alice'] } as const;
+
 describe('win detection', () => {
   it('ends the game when the last card is played', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:2') },
+      ...declared,
+      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
     });
     const { state: next, events } = expectOk(playOnly(state, 'p-alice'));
@@ -26,7 +34,8 @@ describe('win detection', () => {
 
   it('wins on a plus card without granting an extra turn', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1', 'blue:2') },
+      ...declared,
+      hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
     });
     const { state: next, events } = expectOk(playOnly(state, 'p-alice'));
@@ -37,7 +46,8 @@ describe('win detection', () => {
 
   it('wins on a taki card without leaving the sequence open', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:taki'), 'p-bob': cards('red:1', 'blue:2') },
+      ...declared,
+      hands: { 'p-alice': cards('red:taki'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
     });
     const { state: next } = expectOk(playOnly(state, 'p-alice'));
@@ -47,8 +57,9 @@ describe('win detection', () => {
 
   it('wins on the final card of an open taki sequence', () => {
     const state = makeState({
+      ...declared,
       takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 1, openedWithSuperTaki: false },
-      hands: { 'p-alice': cards('red:6'), 'p-bob': cards('red:1', 'blue:2') },
+      hands: { 'p-alice': cards('red:6'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:taki'),
       activeColor: 'red',
     });
@@ -60,7 +71,8 @@ describe('win detection', () => {
 
   it('wins on a wild card after choosing a colour', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('colorChange'), 'p-bob': cards('red:1', 'blue:2') },
+      ...declared,
+      hands: { 'p-alice': cards('colorChange'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
     });
     const { state: next } = expectOk(playOnly(state, 'p-alice', 'blue'));
@@ -70,12 +82,14 @@ describe('win detection', () => {
 
   it('locks the game after a win', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:2') },
+      ...declared,
+      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
     });
     const finished = expectOk(playOnly(state, 'p-alice')).state;
     expectRejected(applyCommand(finished, { type: 'drawCard', playerId: 'p-bob' }), 'gameFinished');
     expectRejected(applyCommand(finished, { type: 'closeTaki', playerId: 'p-alice' }), 'gameFinished');
+    expectRejected(applyCommand(finished, { type: 'declareLastCard', playerId: 'p-bob' }), 'gameFinished');
   });
 
   it('does not end the game while cards remain', () => {

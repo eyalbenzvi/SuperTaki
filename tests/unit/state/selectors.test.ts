@@ -22,7 +22,7 @@ import type { PublicGameState } from '../../../src/features/game/engine/views.ts
 import type { LobbySnapshot } from '../../../src/features/game/network/protocol.ts';
 
 const red5: Card = { id: 'c1', kind: 'number', color: 'red', value: 5 };
-const blue2: Card = { id: 'c2', kind: 'number', color: 'blue', value: 2 };
+const blue3: Card = { id: 'c2', kind: 'number', color: 'blue', value: 3 };
 const wild: Card = { id: 'c3', kind: 'colorChange' };
 
 const lobby: LobbySnapshot = {
@@ -58,6 +58,7 @@ const publicState: PublicGameState = {
   pendingDraw: 0,
   freePlay: false,
   plusThree: null,
+  declaredLastCard: [],
   winnerId: null,
 };
 
@@ -76,7 +77,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     localPlayerId: 'b',
     lobby,
     publicState,
-    hand: [red5, blue2, wild],
+    hand: [red5, blue3, wild],
     feed: [],
     playAgain: null,
     error: null,
@@ -212,7 +213,7 @@ describe('hand display order', () => {
       { id: 'b', kind: 'number', color: 'blue', value: 3 },
       { id: 'c', kind: 'number', color: 'red', value: 9 },
       { id: 'd', kind: 'stop', color: 'red' },
-      { id: 'e', kind: 'number', color: 'red', value: 2 },
+      { id: 'e', kind: 'number', color: 'red', value: 1 },
       { id: 'f', kind: 'number', color: 'yellow', value: 5 },
       { id: 'g', kind: 'king' },
     ];

@@ -1,10 +1,26 @@
-import { memo, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  memo,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Icon } from '../../../../components/Icon.tsx';
 import { countLabel, type Translator } from '../../../../i18n/index.ts';
 import type { Card, CardColor } from '../../engine/cards.ts';
 import type { ConnectionHealth } from '../../network/protocol.ts';
 import type { OpponentView } from '../../state/selectors.ts';
 import { colorName } from '../cardText.ts';
+import {
+  EDGE_MARGIN_PX,
+  UNMEASURED,
+  handCardScale,
+  solveHandLayout,
+  type HandLayout,
+} from '../handLayout.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
 
 /**
@@ -90,7 +106,16 @@ const OpponentSeat = memo(function OpponentSeat({
       <span className={`seat__count ${lastCard ? 'seat__count--low' : ''}`.trim()}>
         {countLabel(t, 'game.cardsLeft', opponent.cardCount)}
       </span>
-      {lastCard ? <span className="sr-only">{t('game.lastCard')}</span> : null}
+      {/* Who has declared is the difference between a player one card from the
+          win and a player one card from a two-card penalty. */}
+      {opponent.declaredLastCard ? (
+        <span className="seat__declared">
+          <Icon name="check" size={0.85} />
+          {t('game.declaredLastCard')}
+        </span>
+      ) : lastCard ? (
+        <span className="sr-only">{t('game.lastCard')}</span>
+      ) : null}
       <HealthBadge health={opponent.health} t={t} />
       {opponent.isCurrent ? (
         <>
@@ -196,19 +221,57 @@ export interface HandProps {
   readonly locked?: boolean;
 }
 
-/** Below this many cards the hand is spread out; above it the cards overlap. */
-const FAN_FROM = 6;
+/**
+ * Measures the hand and keeps the solved layout in state.
+ *
+ * The width comes from the area around the row, never from the row itself: the
+ * row's own width is a function of the layout being solved, and measuring it
+ * would feed back into the next measurement.
+ */
+function useHandLayout(count: number): {
+  readonly layout: HandLayout;
+  readonly areaRef: RefObject<HTMLElement | null>;
+  readonly listRef: RefObject<HTMLUListElement | null>;
+} {
+  const areaRef = useRef<HTMLElement | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const [layout, setLayout] = useState<HandLayout>(UNMEASURED);
+
+  useLayoutEffect(() => {
+    const area = areaRef.current;
+    if (!area || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const measure = (): void => {
+      const first = listRef.current?.querySelector<HTMLElement>('.card');
+      const card = first?.getBoundingClientRect().width ?? 0;
+      const next = solveHandLayout(area.clientWidth - EDGE_MARGIN_PX * 2, card, count);
+      setLayout((previous) =>
+        previous.perRow === next.perRow && previous.strip === next.strip && previous.card === next.card
+          ? previous
+          : next,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(area);
+    return () => {
+      observer.disconnect();
+    };
+  }, [count]);
+
+  return { layout, areaRef, listRef };
+}
 
 /**
  * The player's own cards.
  *
- * Two things make this work on a phone. The cards overlap once there are more
- * than a handful, so a big hand still shows most of itself at a glance — but
- * never by more than half a card, so every card keeps a strip wider than a
- * fingertip, and the focused or hovered card lifts clear of its neighbours. And
- * the whole row is one keyboard widget: a single tab stop, arrow keys along the
- * fan in the reading direction, Home and End to the ends. Twelve cards would
- * otherwise be twelve tab stops between the table and everything below it.
+ * Every card in the hand is on screen: the row overlaps as it fills up and then
+ * wraps onto a second row, so nothing is ever hidden behind a swipe. A card never
+ * gives up more than half of itself, the focused or hovered card lifts clear of
+ * its neighbours, and the whole hand is one keyboard widget — a single tab stop,
+ * arrows along the row and across rows, Home and End to the ends. Fourteen cards
+ * would otherwise be fourteen tab stops between the table and everything below.
  */
 export function Hand({
   cards,
@@ -220,7 +283,7 @@ export function Hand({
   locked = false,
 }: HandProps): ReactNode {
   const playable = new Set(playableIds);
-  const listRef = useRef<HTMLUListElement>(null);
+  const { layout, areaRef, listRef } = useHandLayout(cards.length);
 
   /** The roving tab stop starts on the first legal card, or on the first card. */
   const firstPlayable = cards.findIndex((card) => playable.has(card.id));
@@ -246,6 +309,9 @@ export function Hand({
     const rtl = document.documentElement.dir === 'rtl';
     const forwards = rtl ? 'ArrowLeft' : 'ArrowRight';
     const backwards = rtl ? 'ArrowRight' : 'ArrowLeft';
+    // A row's worth of cards, so Up and Down land on the card directly above or
+    // below rather than walking the whole hand.
+    const stride = Math.max(1, layout.perRow || buttons.length);
 
     switch (event.key) {
       case forwards:
@@ -255,6 +321,14 @@ export function Hand({
       case backwards:
         event.preventDefault();
         focusCard(current - 1);
+        return;
+      case 'ArrowDown':
+        event.preventDefault();
+        focusCard(current + stride);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        focusCard(current - stride);
         return;
       case 'Home':
         event.preventDefault();
@@ -269,20 +343,32 @@ export function Hand({
     }
   };
 
+  /*
+   * Handed to the stylesheet rather than applied here: the row is laid out as a
+   * grid of `--hand-strip` tracks holding cards a full `--hand-card` wide, so
+   * each card laps over the one before it by exactly the solved amount, and the
+   * last card of every row overhangs into the row's trailing padding.
+   */
+  const style = {
+    // Set first, and independently of any measurement: the measured card width
+    // below is the *scaled* one, which is what the layout has to be solved from.
+    '--hand-scale': handCardScale(cards.length),
+    ...(layout.perRow > 0
+      ? {
+          '--hand-per-row': layout.perRow,
+          '--hand-strip': `${layout.strip}px`,
+          '--hand-card': `${layout.card}px`,
+        }
+      : {}),
+  } as CSSProperties;
+
   return (
-    <section className="hand-area" aria-label={t('game.yourHand')}>
+    <section className="hand-area" aria-label={t('game.yourHand')} ref={areaRef}>
       <div className="hand-area__head">
         <h2 className="hand-area__title">{t('game.yourHand')}</h2>
         <span className="hand-area__count">{countLabel(t, 'game.handCount', cards.length)}</span>
       </div>
-      <ul
-        className={`hand ${cards.length > FAN_FROM ? 'hand--fanned' : ''}`.trim()}
-        // The number of overlaps, so the stylesheet can solve the fan's spacing
-        // from the row's real width instead of guessing at a fixed offset.
-        style={{ '--hand-gaps': Math.max(1, cards.length - 1) } as CSSProperties}
-        ref={listRef}
-        onKeyDown={onKeyDown}
-      >
+      <ul className="hand" style={style} ref={listRef} onKeyDown={onKeyDown}>
         {cards.map((card, index) => (
           <li key={card.id} className="hand__slot">
             <PlayableCard

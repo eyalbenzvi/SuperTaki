@@ -19,17 +19,22 @@ import { REJECTION_CODES } from '../engine/state.ts';
  * See `docs/protocol.md` for the human-readable specification.
  */
 
-/** Bumped on any breaking change to message shapes or semantics. */
-export const PROTOCOL_VERSION = 2;
+/**
+ * Bumped on any breaking change to message shapes or semantics.
+ *
+ * 3 — the plain number 2 left the deck, and "last card" became a declared move
+ * with its own action, public state and events.
+ */
+export const PROTOCOL_VERSION = 3;
 
 /** Hard cap on a single decoded message, to bound memory from a hostile peer. */
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 
 const colorSchema = z.enum(['red', 'blue', 'green', 'yellow']);
 const cardIdSchema = z.string().min(1).max(40);
+// No plain 2: the only 2 in the deck is the +2. See `NUMBER_VALUES`.
 const numberValueSchema = z.union([
   z.literal(1),
-  z.literal(2),
   z.literal(3),
   z.literal(4),
   z.literal(5),
@@ -95,6 +100,7 @@ export const publicGameStateSchema = z.object({
   pendingDraw: z.number().int().min(0).max(200),
   freePlay: z.boolean(),
   plusThree: z.object({ playerId: playerIdSchema }).nullable(),
+  declaredLastCard: z.array(playerIdSchema).max(6).readonly(),
   winnerId: playerIdSchema.nullable(),
 });
 
@@ -142,6 +148,12 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     playerId: playerIdSchema,
     targetId: playerIdSchema,
   }),
+  z.object({ type: z.literal('lastCardDeclared'), playerId: playerIdSchema }),
+  z.object({
+    type: z.literal('lastCardMissed'),
+    playerId: playerIdSchema,
+    penalty: z.number().int().min(0).max(200),
+  }),
   z.object({ type: z.literal('directionChanged'), direction: directionSchema }),
   z.object({ type: z.literal('extraTurn'), playerId: playerIdSchema }),
   z.object({ type: z.literal('turnChanged'), playerId: playerIdSchema }),
@@ -182,6 +194,7 @@ export const gameActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('drawCard') }),
   z.object({ type: z.literal('closeTaki') }),
   z.object({ type: z.literal('passBreak') }),
+  z.object({ type: z.literal('declareLastCard') }),
 ]);
 export type GameAction = z.infer<typeof gameActionSchema>;
 
