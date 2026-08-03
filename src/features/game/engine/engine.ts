@@ -109,8 +109,16 @@ export function playContextFromState(state: GameState): PlayContext {
  * The opening card is the first *number* card drawn from the shuffled deck;
  * any action/wild card met on the way is moved to the bottom of the draw pile.
  * This keeps the first turn unambiguous without discarding cards.
+ *
+ * `initialVersion` lets a second round continue the version sequence of the
+ * first. Clients drop snapshots older than the newest one they applied, so a
+ * new round must never restart numbering.
  */
-export function createGame(players: readonly EnginePlayer[], seed: number): CommandResult {
+export function createGame(
+  players: readonly EnginePlayer[],
+  seed: number,
+  initialVersion = 1,
+): CommandResult {
   if (players.length < MIN_PLAYERS) {
     return reject('notEnoughPlayers');
   }
@@ -156,7 +164,7 @@ export function createGame(players: readonly EnginePlayer[], seed: number): Comm
 
   const drawPile = pile.concat(buried);
   const state: GameState = {
-    version: 1,
+    version: initialVersion,
     phase: 'playing',
     players,
     hands,

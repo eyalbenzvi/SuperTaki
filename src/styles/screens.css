@@ -1,0 +1,229 @@
+/* Home --------------------------------------------------------------------- */
+
+.hero {
+  text-align: center;
+  padding-block: var(--space-5) var(--space-4);
+}
+
+.hero__title {
+  font-size: clamp(2.2rem, 11vw, 3.4rem);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-block-end: var(--space-1);
+}
+
+.hero__letters {
+  display: inline-flex;
+  gap: 0.08em;
+}
+
+.hero__letter {
+  display: inline-block;
+}
+
+.hero__letter:nth-child(4n + 1) {
+  color: var(--card-red);
+}
+.hero__letter:nth-child(4n + 2) {
+  color: var(--card-blue);
+}
+.hero__letter:nth-child(4n + 3) {
+  color: var(--card-green);
+}
+.hero__letter:nth-child(4n) {
+  color: var(--card-yellow);
+}
+
+.hero__subtitle {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+}
+
+.home-actions {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* Lobby ------------------------------------------------------------------- */
+
+.invite-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.max-players {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Game -------------------------------------------------------------------- */
+
+.game {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  width: 100%;
+  max-width: 60rem;
+  margin-inline: auto;
+  flex: 1;
+}
+
+.opponents {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-block-end: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding-inline: 0;
+}
+
+.opponent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  min-inline-size: 8.5rem;
+  flex: none;
+}
+
+.opponent--current {
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+
+.opponent__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.opponent__name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opponent__cards {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.table-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.turn-banner {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-weight: 800;
+  text-align: center;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+
+.turn-banner--mine {
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+
+.taki-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+  flex-wrap: wrap;
+}
+
+.taki-banner__text {
+  font-weight: 700;
+  min-width: 0;
+}
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 8.5rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.feed__item {
+  padding-block: 2px;
+}
+
+.feed__item--latest {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.game-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Rules ------------------------------------------------------------------- */
+
+.rules section {
+  margin-block-end: var(--space-4);
+}
+
+.rules h2 {
+  border-block-end: 2px solid var(--accent);
+  padding-block-end: var(--space-1);
+  margin-block-end: var(--space-2);
+}
+
+/* Responsive -------------------------------------------------------------- */
+
+@media (min-width: 640px) {
+  .home-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-actions .btn--block:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .color-picker {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 359px) {
+  .card {
+    --card-width: 3.6rem;
+  }
+
+  .card--xl {
+    --card-width: 5.5rem;
+  }
+
+  .piles {
+    gap: var(--space-3);
+  }
+}

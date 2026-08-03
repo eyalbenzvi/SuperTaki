@@ -180,6 +180,14 @@ export class ClientSession implements Session {
       this.attempt = 0;
     } catch (error) {
       log.warn('connect attempt failed', this.attempt, error);
+      // "No such peer" before joining means the room code is wrong or the host
+      // has closed the page. Retrying cannot change that, and silently backing
+      // off would just delay an answer the player needs now.
+      if (!this.joined && error instanceof TransportError && error.code === 'peerUnavailable') {
+        this.autoRetryDisabled = true;
+        this.fail(error);
+        return;
+      }
       this.attempt += 1;
       if (this.attempt >= this.maxAttempts) {
         this.fail(error);

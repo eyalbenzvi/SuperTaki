@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Color Rush - a private, zero-cost peer-to-peer colour-card game that runs entirely in the browser."
+    />
+    <!--
+      Content Security Policy.
+
+      - `connect-src` allows the free public PeerJS signalling service, WebSocket
+        signalling and STUN/TURN candidates. Add your own PeerServer or TURN host
+        here if you configure one.
+      - No `unsafe-inline` for scripts; Vite emits external modules only.
+      - Styles need `unsafe-inline` because the app sets `color-scheme` on the
+        root element at runtime and Vite injects a style tag in dev.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               base-uri 'self';
+               object-src 'none';
+               frame-ancestors 'none';
+               form-action 'none';
+               img-src 'self' data:;
+               style-src 'self' 'unsafe-inline';
+               font-src 'self';
+               script-src 'self';
+               connect-src 'self' https://0.peerjs.com wss://0.peerjs.com https://*.peerjs.com wss://*.peerjs.com stun: turn: turns:;
+               manifest-src 'self'"
+    />
+    <link rel="icon" href="data:," />
+    <title>Color Rush</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>Color Rush needs JavaScript to run.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

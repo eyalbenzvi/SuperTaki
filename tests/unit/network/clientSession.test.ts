@@ -88,6 +88,26 @@ describe('client join handshake', () => {
     harness.destroy();
   });
 
+  it('does not retry when the room does not exist', async () => {
+    const network = new MemoryNetwork();
+    const recorder = createRecorder();
+    const session = new ClientSession({
+      transport: network.create('client-nobody'),
+      roomCode: TEST_ROOM,
+      hostPeerId: 'nobody-here',
+      displayName: 'Bob',
+      observer: recorder.observer,
+      // Would allow five attempts; an absent host must still fail immediately.
+      maxAttempts: 5,
+    });
+    await session.start();
+    await flush();
+
+    expect(recorder.last('phase')?.phase).toBe('failed');
+    expect(recorder.ofType('error')).toHaveLength(1);
+    session.destroy('leftVoluntarily');
+  });
+
   it('fails cleanly when the host peer does not exist', async () => {
     const network = new MemoryNetwork();
     const recorder = createRecorder();

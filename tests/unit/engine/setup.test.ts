@@ -86,6 +86,11 @@ describe('createGame', () => {
     expect(new Set([...handA, ...handB].map((card) => card.id)).size).toBe(16);
   });
 
+  it('can continue an existing version sequence', () => {
+    const { state } = expectOk(createGame(players('A', 'B'), 7, 42));
+    expect(state.version).toBe(42);
+  });
+
   it('survives a JSON round trip', () => {
     const { state } = expectOk(createGame(players('A', 'B'), 3));
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);

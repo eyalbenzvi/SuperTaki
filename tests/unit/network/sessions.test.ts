@@ -8,6 +8,7 @@ import { playContextFromPublic } from '../../../src/features/game/engine/views.t
 import { TEST_ROOM, createRecorder, createScriptedPeer, flush } from '../helpers/net.ts';
 import type { Card } from '../../../src/features/game/engine/cards.ts';
 import type { PublicGameState } from '../../../src/features/game/engine/views.ts';
+import type { GameAction } from '../../../src/features/game/network/protocol.ts';
 
 const HOST_PEER_ID = hostPeerIdForRoom(TEST_ROOM);
 
@@ -340,6 +341,115 @@ describe('starting and playing a game', () => {
     const late = await harness.addClient('Eli');
     await flush();
     expect(late.recorder.last('error')?.error.code).toBe('gameInProgress');
+    harness.destroy();
+  });
+});
+
+/**
+ * Drives a full round through the real host/client stack: whoever is on turn
+ * plays its first legal card, closes an open Taki sequence when nothing else is
+ * legal, and otherwise draws. Deterministic thanks to the fixed seed.
+ */
+async function playUntilFinished(
+  harness: Harness,
+  client: { session: ClientSession; recorder: ReturnType<typeof createRecorder> },
+  maxSteps = 600,
+): Promise<PublicGameState> {
+  for (let step = 0; step < maxSteps; step += 1) {
+    const state = currentState(harness.hostRecorder);
+    if (!state) {
+      throw new Error('no public state');
+    }
+    if (state.phase === 'finished') {
+      return state;
+    }
+
+    const hostIsOnTurn = state.currentPlayerId === harness.host.localPlayerId;
+    const recorder = hostIsOnTurn ? harness.hostRecorder : client.recorder;
+    const hand = currentHand(recorder);
+    const context = playContextFromPublic(state);
+    const card = hand.find((candidate) => isCardPlayable(candidate, context));
+
+    let action: GameAction;
+    if (card) {
+      action =
+        card.kind === 'colorChange' || card.kind === 'superTaki'
+          ? { type: 'playCard', cardId: card.id, chosenColor: 'green' }
+          : { type: 'playCard', cardId: card.id };
+    } else if (state.takiMode) {
+      action = { type: 'closeTaki' };
+    } else {
+      action = { type: 'drawCard' };
+    }
+
+    if (hostIsOnTurn) {
+      harness.host.submitLocalAction(action);
+    } else {
+      client.session.submitAction(action);
+    }
+    await flush(1);
+  }
+  throw new Error('round did not finish within the step budget');
+}
+
+describe('a full round through the session stack', () => {
+  it('reaches a winner and reports final standings', async () => {
+    const harness = await createHarness();
+    const client = await harness.addClient('Dana');
+    harness.host.startGame();
+    await flush();
+
+    const finished = await playUntilFinished(harness, client);
+    expect(finished.phase).toBe('finished');
+    expect(finished.winnerId).not.toBeNull();
+    expect(finished.players.filter((player) => player.cardCount === 0)).toHaveLength(1);
+
+    // Both sides agree on the outcome.
+    await flush();
+    expect(currentState(client.recorder)?.winnerId).toBe(finished.winnerId);
+    harness.destroy();
+  });
+
+  it('starts a new round when every connected player agrees, without restarting versions', async () => {
+    const harness = await createHarness();
+    const client = await harness.addClient('Dana');
+    harness.host.startGame();
+    await flush();
+
+    const finished = await playUntilFinished(harness, client);
+    expect(harness.hostRecorder.last('playAgain')).toMatchObject({ required: 2 });
+
+    harness.host.votePlayAgain(true);
+    await flush();
+    expect(currentState(harness.hostRecorder)?.phase).toBe('finished');
+    expect(client.recorder.last('playAgain')?.agreed).toHaveLength(1);
+
+    client.session.votePlayAgain(true);
+    await flush();
+
+    const fresh = currentState(harness.hostRecorder);
+    expect(fresh?.phase).toBe('playing');
+    expect(fresh!.version).toBeGreaterThan(finished.version);
+    expect(currentHand(harness.hostRecorder)).toHaveLength(8);
+
+    // The client must accept the new deal rather than dropping it as stale.
+    const clientState = currentState(client.recorder);
+    expect(clientState?.version).toBe(fresh?.version);
+    expect(currentHand(client.recorder)).toHaveLength(8);
+    harness.destroy();
+  });
+
+  it('ignores play-again votes while a round is still running', async () => {
+    const harness = await createHarness();
+    const client = await harness.addClient('Dana');
+    harness.host.startGame();
+    await flush();
+
+    harness.host.votePlayAgain(true);
+    client.session.votePlayAgain(true);
+    await flush();
+
+    expect(currentState(harness.hostRecorder)?.phase).toBe('playing');
     harness.destroy();
   });
 });

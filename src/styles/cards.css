@@ -1,0 +1,261 @@
+/*
+ * Card visuals — original CSS/SVG shapes only, no external assets.
+ * Information is never conveyed by colour alone: every card also shows a
+ * symbol and a text label, and carries an explicit accessible name.
+ */
+
+.card {
+  --card-width: 4.5rem;
+  --card-bg: var(--surface-raised);
+  --card-ink: var(--text);
+
+  position: relative;
+  inline-size: var(--card-width);
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-md);
+  border: 2px solid rgb(0 0 0 / 0.18);
+  background: var(--card-bg);
+  color: var(--card-ink);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--space-1);
+  flex: none;
+  overflow: hidden;
+}
+
+.card--red {
+  --card-bg: var(--card-red);
+  --card-ink: var(--card-red-ink);
+}
+.card--blue {
+  --card-bg: var(--card-blue);
+  --card-ink: var(--card-blue-ink);
+}
+.card--green {
+  --card-bg: var(--card-green);
+  --card-ink: var(--card-green-ink);
+}
+.card--yellow {
+  --card-bg: var(--card-yellow);
+  --card-ink: var(--card-yellow-ink);
+}
+.card--wild {
+  --card-ink: var(--card-wild-ink);
+  background: linear-gradient(140deg, var(--card-wild-a) 0%, var(--card-wild-b) 100%);
+}
+
+.card--back {
+  --card-ink: #ffffff;
+  background:
+    repeating-linear-gradient(45deg, transparent 0 6px, rgb(255 255 255 / 0.08) 6px 12px),
+    linear-gradient(140deg, var(--card-back-a) 0%, var(--card-back-b) 100%);
+}
+
+.card__glyph {
+  font-size: calc(var(--card-width) * 0.42);
+  font-weight: 800;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card__glyph svg {
+  width: calc(var(--card-width) * 0.46);
+  height: calc(var(--card-width) * 0.46);
+  display: block;
+}
+
+.card__label {
+  font-size: calc(var(--card-width) * 0.15);
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.1;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+
+.card__corner {
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-start: 5px;
+  font-size: calc(var(--card-width) * 0.16);
+  font-weight: 800;
+  opacity: 0.85;
+}
+
+/* Sizes -------------------------------------------------------------------- */
+
+.card--sm {
+  --card-width: 3rem;
+}
+.card--lg {
+  --card-width: 6rem;
+}
+.card--xl {
+  --card-width: 7.5rem;
+}
+
+/* Interactive cards -------------------------------------------------------- */
+
+button.card {
+  cursor: pointer;
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+button.card:disabled {
+  cursor: not-allowed;
+}
+
+.card--playable {
+  outline: 3px solid var(--focus-color);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-md);
+}
+
+.card--dimmed {
+  opacity: 0.5;
+  filter: saturate(0.6);
+}
+
+button.card--playable:hover,
+button.card--playable:focus-visible {
+  transform: translateY(-8px);
+}
+
+/* Hand --------------------------------------------------------------------- */
+
+.hand {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: var(--space-3) var(--space-2) var(--space-4);
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  list-style: none;
+  margin: 0;
+}
+
+.hand__slot {
+  scroll-snap-align: center;
+  display: flex;
+}
+
+/* Piles -------------------------------------------------------------------- */
+
+.piles {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--table-felt);
+  border: 1px solid var(--border);
+}
+
+.pile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pile__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.pile__stack {
+  position: relative;
+}
+
+.pile__count {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Colour swatch / picker --------------------------------------------------- */
+
+.color-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-sunken);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.color-swatch__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgb(0 0 0 / 0.3);
+  flex: none;
+}
+
+.color-dot--red {
+  background: var(--card-red);
+}
+.color-dot--blue {
+  background: var(--card-blue);
+}
+.color-dot--green {
+  background: var(--card-green);
+}
+.color-dot--yellow {
+  background: var(--card-yellow);
+}
+
+.color-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.color-picker__option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 88px;
+  border-radius: var(--radius-md);
+  border: 2px solid rgb(0 0 0 / 0.2);
+  color: var(--text-inverse);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.color-picker__option--red {
+  background: var(--card-red);
+  color: var(--card-red-ink);
+}
+.color-picker__option--blue {
+  background: var(--card-blue);
+  color: var(--card-blue-ink);
+}
+.color-picker__option--green {
+  background: var(--card-green);
+  color: var(--card-green-ink);
+}
+.color-picker__option--yellow {
+  background: var(--card-yellow);
+  color: var(--card-yellow-ink);
+}
+
+.color-picker__glyph {
+  font-size: 1.5rem;
+  line-height: 1;
+}

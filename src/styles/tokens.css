@@ -1,0 +1,118 @@
+/*
+ * Design tokens.
+ *
+ * Every colour used anywhere in the app is declared here so light and dark
+ * themes stay in sync and card colours can be reused by both the table and the
+ * UI chrome. Contrast ratios for text on surfaces are at least 4.5:1.
+ */
+
+:root {
+  /* Card colours: the same hues in both themes so cards stay recognisable. */
+  --card-red: #d92b3f;
+  --card-red-ink: #ffffff;
+  --card-blue: #1f5fd0;
+  --card-blue-ink: #ffffff;
+  --card-green: #17794a;
+  --card-green-ink: #ffffff;
+  --card-yellow: #e3a008;
+  --card-yellow-ink: #1a1206;
+  --card-wild-a: #4b3f9e;
+  --card-wild-b: #8e3fa0;
+  --card-wild-ink: #ffffff;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans Hebrew', Arial, sans-serif;
+
+  --tap-target: 44px;
+  --transition-fast: 120ms ease;
+  --transition-medium: 220ms ease;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.16);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.18);
+  --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.24);
+
+  --focus-ring: 3px;
+}
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-base: #eef1f7;
+  --bg-gradient: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #e6eaf3 55%, #dbe1ee 100%);
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #e9edf5;
+  --surface-translucent: rgb(255 255 255 / 0.82);
+  --border: #c3cad9;
+  --border-strong: #8d97ab;
+
+  --text: #171b26;
+  --text-muted: #4c556b;
+  --text-inverse: #ffffff;
+
+  --accent: #2b4bd8;
+  --accent-ink: #ffffff;
+  --accent-soft: #dfe5ff;
+
+  --danger: #b3261e;
+  --danger-ink: #ffffff;
+  --danger-soft: #fbe3e1;
+
+  --success: #14663f;
+  --success-soft: #dcf1e6;
+  --warning: #8a5300;
+  --warning-soft: #fdefd4;
+
+  --focus-color: #10265f;
+  --card-back-a: #3a4a72;
+  --card-back-b: #23304d;
+  --table-felt: linear-gradient(160deg, #dfe5f1 0%, #cdd6e8 100%);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-base: #0e1118;
+  --bg-gradient: radial-gradient(120% 90% at 50% 0%, #1d2434 0%, #131824 55%, #0c0f16 100%);
+  --surface: #1a202e;
+  --surface-raised: #222a3b;
+  --surface-sunken: #141926;
+  --surface-translucent: rgb(26 32 46 / 0.86);
+  --border: #384259;
+  --border-strong: #5b6884;
+
+  --text: #f2f5fb;
+  --text-muted: #b3bdd2;
+  --text-inverse: #0e1118;
+
+  --accent: #8ba4ff;
+  --accent-ink: #101632;
+  --accent-soft: #26315a;
+
+  --danger: #ff8f85;
+  --danger-ink: #2a0d0a;
+  --danger-soft: #4a1f1c;
+
+  --success: #7bd6a5;
+  --success-soft: #17392a;
+  --warning: #f3c26b;
+  --warning-soft: #3d2f10;
+
+  --focus-color: #bcd0ff;
+  --card-back-a: #2c3550;
+  --card-back-b: #1a2136;
+  --table-felt: linear-gradient(160deg, #1c2333 0%, #141a28 100%);
+}

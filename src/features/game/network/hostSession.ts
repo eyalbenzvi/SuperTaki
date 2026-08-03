@@ -88,6 +88,8 @@ export class HostSession implements Session {
   private maxPlayers: number;
   private tableLanguage: 'he' | 'en';
   private game: GameState | null = null;
+  /** Highest state version this room has ever broadcast. */
+  private versionFloor = 0;
   private playAgainVotes = new Set<string>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private destroyed = false;
@@ -512,12 +514,13 @@ export class HostSession implements Session {
       .sort((a, b) => a.seat - b.seat)
       .map((seat) => ({ id: seat.playerId, name: seat.name }));
 
-    const result = createGame(enginePlayers, this.seedFactory());
+    const result = createGame(enginePlayers, this.seedFactory(), this.versionFloor + 1);
     if (!result.ok) {
       this.observer({ type: 'error', error: sessionError('unknown', result.rejection.code) });
       return;
     }
     this.game = result.state;
+    this.versionFloor = result.state.version;
     this.phase = 'inGame';
     this.playAgainVotes.clear();
     this.emitLobby();
@@ -591,6 +594,7 @@ export class HostSession implements Session {
     }
 
     this.game = result.state;
+    this.versionFloor = result.state.version;
     if (this.game.phase === 'finished') {
       this.phase = 'finished';
       this.playAgainVotes.clear();
