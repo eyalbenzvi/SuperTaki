@@ -27,10 +27,31 @@ describe('arranging a hand', () => {
     expect(layout.strip).toBeGreaterThanOrEqual(CARD * MIN_STRIP_RATIO);
   });
 
-  it('never overlaps a card by more than half of it', () => {
-    for (let count = 1; count <= 20; count += 1) {
-      const layout = solveHandLayout(PHONE, CARD, count);
-      expect(layout.strip).toBeGreaterThanOrEqual(CARD * MIN_STRIP_RATIO);
+  /*
+   * The whole point, and the one thing that has to hold for *every* hand size: no
+   * count spills off the screen, and no count overlaps a card past its own centre.
+   * A player reported a hand of five spreading wider than the screen while a hand
+   * of seven fitted, which is what a per-size rule gets you.
+   */
+  it('fits every hand size from one card to twenty, at any card size', () => {
+    for (const [available, card] of [
+      [PHONE, CARD],
+      [306, 60],
+      [760, 52],
+      [1000, 88],
+    ] as const) {
+      for (let count = 1; count <= 20; count += 1) {
+        const layout = solveHandLayout(available, card, count);
+        const widest = card + (layout.perRow - 1) * layout.strip;
+        expect(widest, `${count} cards of ${card}px in ${available}px`).toBeLessThanOrEqual(
+          available + 0.001,
+        );
+        expect(layout.strip, `${count} cards of ${card}px`).toBeGreaterThanOrEqual(card * MIN_STRIP_RATIO);
+        // Never wider apart than a card plus a gap, however much room there is.
+        expect(layout.strip).toBeLessThanOrEqual(card + 8);
+        // Every card has a place on some row.
+        expect(rowCount(layout, count) * layout.perRow).toBeGreaterThanOrEqual(count);
+      }
     }
   });
 

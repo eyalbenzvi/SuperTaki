@@ -119,6 +119,38 @@ describe('playing inside a taki sequence', () => {
     expect(eventTypes(result.events)).toEqual(['cardPlayed']);
     expect(currentPlayer(next)?.id).toBe('p-alice');
   });
+
+  it('carries the sequence into a new colour when the taki is a different colour', () => {
+    const state = makeState({
+      hands: {
+        'p-alice': cards('red:taki', 'blue:taki', 'blue:3', 'red:3'),
+        'p-bob': cards('red:1'),
+      },
+      discardPile: cards('red:9'),
+    });
+    let next = expectOk(play(state, 'p-alice', 'red:taki')).state;
+    // Taki on Taki is the one card inside a sequence that need not match colour.
+    const result = expectOk(play(next, 'p-alice', 'blue:taki'));
+    next = result.state;
+
+    expect(next.takiMode?.color).toBe('blue');
+    expect(next.activeColor).toBe('blue');
+    expect(next.takiMode?.cardsPlayed).toBe(2);
+    expect(currentPlayer(next)?.id).toBe('p-alice');
+    expect(eventTypes(result.events)).toEqual(['cardPlayed', 'takiColorChanged']);
+
+    // From here it is a blue sequence: blue continues it, red does not.
+    expect(
+      getPlayableCardIds(next.hands['p-alice'] ?? [], {
+        activeColor: 'blue',
+        topCard: topCard(next),
+        openTakiColor: 'blue',
+        pendingDraw: 0,
+        freePlay: false,
+      }),
+    ).toEqual([(next.hands['p-alice'] ?? []).find((card) => card.id.startsWith('blue:3#'))?.id]);
+    expectRejected(play(next, 'p-alice', 'red:3'), 'wrongTakiColor');
+  });
 });
 
 describe('closing a taki sequence', () => {

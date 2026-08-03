@@ -546,7 +546,7 @@ describe('the last card declaration', () => {
     const { user } = renderApp();
 
     const button = screen.getByRole('button', { name: /אחרון בידי/ });
-    expect(button).toHaveTextContent('2 קלפים');
+    expect(button).toHaveTextContent('4 קלפים');
     await user.click(button);
     expect(declareLastCard).toHaveBeenCalled();
   });
@@ -561,7 +561,7 @@ describe('the last card declaration', () => {
     oneCardLeft({ declared: [HOST_ID] });
     renderApp();
     expect(screen.queryByRole('button', { name: /אחרון בידי/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/הקלף האחרון שלך יכול לסגור את הסבב/)).toBeInTheDocument();
+    expect(screen.getByText(/אף אחד לא יכול לתפוס אותך/)).toBeInTheDocument();
   });
 
   it('says nothing at all while the hand is bigger than one card', () => {

@@ -385,16 +385,15 @@ function applyPlayCard(
     return reject('cardNotInHand');
   }
 
-  // A +3 Breaker is only ever an answer to an open +3, and while a +3 is open
-  // nothing else may be played — not even by the player whose turn it is.
+  // While a +3 is open nothing may be played but a breaker, and only by somebody
+  // being waited for — not even by the player whose turn it is.
   const answeringPlusThree = state.plusThree !== null && card.kind === 'breakPlusThree';
-  if (state.plusThree !== null) {
-    if (!answeringPlusThree || !state.plusThree.awaiting.includes(playerId)) {
-      return reject('awaitingBreak');
-    }
-  } else if (card.kind === 'breakPlusThree') {
-    return reject('noPlusThreeOpen');
+  if (state.plusThree !== null && (!answeringPlusThree || !state.plusThree.awaiting.includes(playerId))) {
+    return reject('awaitingBreak');
   }
+  // A breaker with no +3 to break is a legal card, and an expensive one — see
+  // the penalty below.
+  const spendingBreaker = state.plusThree === null && card.kind === 'breakPlusThree';
 
   if (requiresColorChoice(card)) {
     if (chosenColor === undefined) {
@@ -412,7 +411,9 @@ function applyPlayCard(
       if (isWildCard(card)) {
         return reject('wildNotAllowedInTaki');
       }
-      if (card.color !== state.takiMode.color) {
+      // Taki on Taki carries the sequence on in the new colour, so it is the one
+      // card inside a sequence that does not have to match its colour.
+      if (card.color !== state.takiMode.color && card.kind !== 'taki') {
         return reject('wrongTakiColor');
       }
     } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
@@ -440,49 +441,44 @@ function applyPlayCard(
   }
 
   /*
-   * The hand is empty, so this is either the win or the one moment the "last
-   * card" declaration is checked. An undeclared last card is not a win: the
-   * player takes the penalty and the round carries on, with the card they just
-   * put down still resolving normally.
+   * A breaker with nothing to break costs its owner the three cards it would
+   * have sent back — charged here, before the win check, so it cannot be used as
+   * a free way out of a last card.
    */
-  if ((draft.hands[playerId] ?? []).length === 0) {
-    if (draft.declaredLastCard.includes(playerId)) {
-      draft.phase = 'finished';
-      draft.winnerId = playerId;
-      draft.takiMode = null;
-      draft.pendingPlus = false;
-      draft.pendingDraw = 0;
-      draft.plusThree = null;
-      events.push({ type: 'playerWon', playerId });
-      draft.version += 1;
-      return { ok: true, state: freeze(draft), events };
-    }
-
-    // Drawn into a side list so the log reads "forgot to declare" and then
-    // "drew two", rather than the other way round.
+  if (spendingBreaker) {
     const penaltyEvents: GameEvent[] = [];
-    const penalty = drawCards(draft, playerId, LAST_CARD_PENALTY, penaltyEvents);
-    events.push({ type: 'lastCardMissed', playerId, penalty }, ...penaltyEvents);
-    // Nothing left anywhere to draw: awarding the round is the only coherent
-    // outcome, since play cannot continue against an empty hand.
-    if (penalty === 0) {
-      draft.phase = 'finished';
-      draft.winnerId = playerId;
-      draft.takiMode = null;
-      draft.pendingPlus = false;
-      draft.pendingDraw = 0;
-      draft.plusThree = null;
-      events.push({ type: 'playerWon', playerId });
-      draft.version += 1;
-      return { ok: true, state: freeze(draft), events };
-    }
+    const penalty = drawCards(draft, playerId, PLUS_THREE_PENALTY, penaltyEvents);
+    events.push({ type: 'breakerSpent', playerId, penalty }, ...penaltyEvents);
+  }
+
+  if ((draft.hands[playerId] ?? []).length === 0) {
+    draft.phase = 'finished';
+    draft.winnerId = playerId;
+    draft.takiMode = null;
+    draft.pendingPlus = false;
+    draft.pendingDraw = 0;
+    draft.plusThree = null;
+    events.push({ type: 'playerWon', playerId });
+    draft.version += 1;
+    return { ok: true, state: freeze(draft), events };
   }
 
   if (answeringPlusThree) {
     resolvePlusThree(draft, playerId, events);
   } else if (draft.takiMode) {
-    // Inside a sequence: accumulate; effects are resolved when the Taki closes.
-    draft.takiMode = { ...draft.takiMode, cardsPlayed: draft.takiMode.cardsPlayed + 1 };
+    /*
+     * Inside a sequence: accumulate; effects are resolved when the Taki closes.
+     * A Taki played on a Taki re-locks the sequence to its own colour, so the
+     * cards that follow have to match the new one.
+     */
+    draft.takiMode = {
+      ...draft.takiMode,
+      cardsPlayed: draft.takiMode.cardsPlayed + 1,
+      ...(card.kind === 'taki' ? { color: resultingColor } : {}),
+    };
+    if (card.kind === 'taki' && resultingColor !== state.takiMode?.color) {
+      events.push({ type: 'takiColorChanged', playerId, color: resultingColor });
+    }
   } else if (card.kind === 'taki' || card.kind === 'superTaki') {
     draft.takiMode = {
       color: resultingColor,
@@ -546,6 +542,36 @@ function applyDeclareLastCard(state: GameState, playerId: PlayerId): CommandResu
   return { ok: true, state: freeze(draft), events: [{ type: 'lastCardDeclared', playerId }] };
 }
 
+/**
+ * Catches a player sitting silently on a single card.
+ *
+ * The declaration is not what wins the round — putting the last card down is.
+ * What silence costs is being caught: any other player may call it, in or out of
+ * turn, for as long as the hand stays at one undeclared card. Drawing the penalty
+ * ends the exposure by itself, since the hand is no longer a single card.
+ */
+function applyCatchLastCard(state: GameState, playerId: PlayerId, targetId: PlayerId): CommandResult {
+  const target = state.players.find((player) => player.id === targetId);
+  if (!target || targetId === playerId) {
+    return reject('nothingToCatch');
+  }
+  if ((state.hands[targetId] ?? []).length !== 1 || state.declaredLastCard.includes(targetId)) {
+    return reject('nothingToCatch');
+  }
+
+  const draft = toDraft(state);
+  const events: GameEvent[] = [];
+  const penaltyEvents: GameEvent[] = [];
+  const penalty = drawCards(draft, targetId, LAST_CARD_PENALTY, penaltyEvents);
+  events.push(
+    { type: 'lastCardCaught', playerId: targetId, caughtById: playerId, penalty },
+    ...penaltyEvents,
+  );
+
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events };
+}
+
 function applyCloseTaki(state: GameState, playerId: PlayerId): CommandResult {
   if (!state.takiMode || state.takiMode.playerId !== playerId) {
     return reject('noTakiOpen');
@@ -606,10 +632,14 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     return reject('unknownPlayer');
   }
 
-  // A declaration is a shout, not a move: it belongs to whoever is holding the
-  // card and is legal from any seat, whatever else the table is waiting for.
+  // Declaring, and calling out somebody who did not, are shouts rather than
+  // moves: they belong to the cards in hand and are legal from any seat, whatever
+  // else the table happens to be waiting for.
   if (command.type === 'declareLastCard') {
     return applyDeclareLastCard(state, command.playerId);
+  }
+  if (command.type === 'catchLastCard') {
+    return applyCatchLastCard(state, command.playerId, command.targetId);
   }
 
   // While a +3 is waiting for an answer the table is frozen for everyone, and

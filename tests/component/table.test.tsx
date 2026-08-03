@@ -134,13 +134,15 @@ describe('the other players', () => {
     expect(within(seats).queryByText('תור שלך')).not.toBeInTheDocument();
   });
 
-  it('calls out an opponent down to their last card', () => {
+  /** Both players down to a single card, with the guest not having declared. */
+  function lastCards(declared: readonly string[] = []): void {
     const fixture = enterGame({ myTurn: true });
     setState({
       hand: [red5],
       publicState: {
         ...fixture.publicState,
         currentPlayerId: HOST_ID,
+        declaredLastCard: declared,
         players: [
           { id: HOST_ID, name: 'דנה', cardCount: 1 },
           { id: GUEST_ID, name: 'אלי', cardCount: 1 },
@@ -148,10 +150,26 @@ describe('the other players', () => {
       },
       lobby: lobbyFixture({ phase: 'inGame' }),
     });
-    renderApp();
+  }
+
+  it('offers to call out an opponent sitting silently on their last card', async () => {
+    const catchLastCard = vi.fn();
+    lastCards();
+    setState({ catchLastCard });
+    const { user } = renderApp();
+
     const seats = screen.getByRole('region', { name: 'שאר השחקנים' });
     expect(within(seats).getByText('קלף אחד')).toBeInTheDocument();
-    expect(within(seats).getByText('קלף אחרון!')).toBeInTheDocument();
+    await user.click(within(seats).getByRole('button', { name: 'תפיסת אלי' }));
+    expect(catchLastCard).toHaveBeenCalledWith(GUEST_ID);
+  });
+
+  it('shows the declaration instead, once it has been made', () => {
+    lastCards([GUEST_ID]);
+    renderApp();
+    const seats = screen.getByRole('region', { name: 'שאר השחקנים' });
+    expect(within(seats).getByText('הכריז/ה')).toBeInTheDocument();
+    expect(within(seats).queryByRole('button', { name: 'תפיסת אלי' })).not.toBeInTheDocument();
   });
 });
 

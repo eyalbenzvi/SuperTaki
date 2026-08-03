@@ -26,19 +26,17 @@ export interface PlayContext {
  * Outside a Taki sequence a card is playable when it is colourless, matches the
  * active colour, or matches the top card's symbol (number value or action kind).
  * Inside a Taki sequence only cards of the sequence colour are playable, and
- * colourless cards are never allowed.
+ * colourless cards are never allowed — with one exception: **a Taki card of any
+ * colour may be played on a Taki**, which carries the sequence on in the new
+ * colour. Taki on Taki is a colour change, not a colour mismatch.
  *
  * Two situations override all of that: a pending +2 run can only be answered
  * with another +2 or a King, and the free play a King grants accepts anything.
- * A +3 Breaker is never playable this way — it is only ever an answer to an
- * open +3. See `docs/rules.md`.
+ * See `docs/rules.md`.
  */
 export function isCardPlayable(card: Card, context: PlayContext): boolean {
-  if (card.kind === 'breakPlusThree') {
-    return false;
-  }
   if (context.openTakiColor !== null) {
-    return cardColor(card) === context.openTakiColor;
+    return cardColor(card) === context.openTakiColor || card.kind === 'taki';
   }
   if (context.pendingDraw > 0) {
     return card.kind === 'plusTwo' || card.kind === 'king';

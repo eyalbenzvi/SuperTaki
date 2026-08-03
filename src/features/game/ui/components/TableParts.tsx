@@ -90,9 +90,11 @@ export function HealthBadge({
 const OpponentSeat = memo(function OpponentSeat({
   opponent,
   t,
+  onCatch,
 }: {
   readonly opponent: OpponentView;
   readonly t: Translator;
+  readonly onCatch?: (playerId: string) => void;
 }): ReactNode {
   const lastCard = opponent.cardCount === 1;
   return (
@@ -106,13 +108,28 @@ const OpponentSeat = memo(function OpponentSeat({
       <span className={`seat__count ${lastCard ? 'seat__count--low' : ''}`.trim()}>
         {countLabel(t, 'game.cardsLeft', opponent.cardCount)}
       </span>
-      {/* Who has declared is the difference between a player one card from the
-          win and a player one card from a two-card penalty. */}
+      {/*
+       * The declaration is the difference between a seat that is safe on one card
+       * and a seat that can be called out for it. Calling it out is the other
+       * player's job, so it is a button, and it lives here — on the seat the claim
+       * is about — rather than in a prompt somewhere else on the screen.
+       */}
       {opponent.declaredLastCard ? (
         <span className="seat__declared">
           <Icon name="check" size={0.85} />
           {t('game.declaredLastCard')}
         </span>
+      ) : opponent.catchable && onCatch ? (
+        <button
+          type="button"
+          className="seat__catch"
+          onClick={() => {
+            onCatch(opponent.id);
+          }}
+          aria-label={t('game.catchLastCard', { name: opponent.name })}
+        >
+          {t('game.catchLastCardShort')}
+        </button>
       ) : lastCard ? (
         <span className="sr-only">{t('game.lastCard')}</span>
       ) : null}
@@ -138,15 +155,17 @@ const OpponentSeat = memo(function OpponentSeat({
 export function OpponentList({
   opponents,
   t,
+  onCatch,
 }: {
   readonly opponents: readonly OpponentView[];
   readonly t: Translator;
+  readonly onCatch?: (playerId: string) => void;
 }): ReactNode {
   return (
     <section className="seats" aria-label={t('game.opponents')}>
       <ul className="seats__list">
         {opponents.map((opponent) => (
-          <OpponentSeat key={opponent.id} opponent={opponent} t={t} />
+          <OpponentSeat key={opponent.id} opponent={opponent} t={t} {...(onCatch ? { onCatch } : {})} />
         ))}
       </ul>
     </section>

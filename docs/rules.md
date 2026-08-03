@@ -64,8 +64,8 @@ A card is legal when any of these holds:
   kind (Stop on Stop, +2 on +2, Plus on Plus, and so on), or
 - it is a **colourless card** (Change Colour, Super Taki, King, +3), which is always legal.
 
-A **+3 Breaker is never legal as an ordinary play**; it exists only to answer an open +3,
-and the engine rejects it with `noPlusThreeOpen` at any other moment.
+A **+3 Breaker is legal as an ordinary play, and it is expensive**: with no +3 to break, the
+three cards it would have sent back are drawn by the player who spent it. See below.
 
 Note the consequence of symbol matching: a Blue Stop is legal on a Red Stop, because the
 _symbols_ match even though the colours do not. The same is what lets any +2 answer any +2.
@@ -73,23 +73,23 @@ _symbols_ match even though the colours do not. The same is what lets any +2 ans
 **Drawing ends your turn.** A card you just drew may not be played in the same turn, even
 if it is legal. (Chosen for clarity; some variants allow it.)
 
-**Playing your last card wins the round — if you declared it first.** See "Last card"
-below: an undeclared final card costs two cards instead.
+**Playing your last card wins the round**, declared or not. What an undeclared last card
+risks is being caught before you get to play it — see "Last card" below.
 
 ### Special cards
 
-| Card                 | Effect                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Stop**             | The next player loses their turn. With two players the turn comes straight back to you.                                                    |
-| **Plus**             | You must play one more card. If you hold nothing legal, you draw one card and your turn ends. A second Plus repeats the obligation.        |
-| **+2**               | The next player owes two cards — unless they add a +2 of their own, which raises the run by two and passes it on. See below.               |
-| **Change Direction** | The play order reverses. With two players the turn still passes to your opponent.                                                          |
-| **Change Colour**    | Playable on anything. You choose the next colour, and your turn ends.                                                                      |
-| **Taki**             | Opens a sequence in that card's colour — see below.                                                                                        |
-| **Super Taki**       | Playable on anything. Opens a sequence in the colour already leading.                                                                      |
-| **King**             | Playable on anything, including an open +2 run. Cancels every pending penalty and obligation, then gives you a free turn with no matching. |
-| **+3**               | Every other player draws three cards — unless somebody breaks it. See below.                                                               |
-| **+3 Breaker**       | Playable **out of turn**, only in answer to a +3. The player who played the +3 draws three cards instead, and nobody else draws.           |
+| Card                 | Effect                                                                                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Stop**             | The next player loses their turn. With two players the turn comes straight back to you.                                                                                                                       |
+| **Plus**             | You must play one more card. If you hold nothing legal, you draw one card and your turn ends. A second Plus repeats the obligation.                                                                           |
+| **+2**               | The next player owes two cards — unless they add a +2 of their own, which raises the run by two and passes it on. See below.                                                                                  |
+| **Change Direction** | The play order reverses. With two players the turn still passes to your opponent.                                                                                                                             |
+| **Change Colour**    | Playable on anything. You choose the next colour, and your turn ends.                                                                                                                                         |
+| **Taki**             | Opens a sequence in that card's colour — see below.                                                                                                                                                           |
+| **Super Taki**       | Playable on anything. Opens a sequence in the colour already leading.                                                                                                                                         |
+| **King**             | Playable on anything, including an open +2 run. Cancels every pending penalty and obligation, then gives you a free turn with no matching.                                                                    |
+| **+3**               | Every other player draws three cards — unless somebody breaks it. See below.                                                                                                                                  |
+| **+3 Breaker**       | Playable **out of turn** in answer to a +3: the player who played the +3 draws three instead, and nobody else draws. Played with no +3 open, it is an ordinary colourless card and its owner draws the three. |
 
 While a Plus obligation is outstanding you **must play if you can**: the draw pile is
 disabled, and the engine rejects a draw with `mustPlayAfterPlus`. The card you owe follows
@@ -98,7 +98,8 @@ normal matching rules — it does not have to be the same colour as the Plus.
 ### "Last card"
 
 A player down to a single card must declare it. This is the one rule in Taki that is a
-_shout_ rather than a move, and it is implemented as one:
+_shout_ rather than a move, and it is implemented as one — including the part where the
+other players are the ones who enforce it.
 
 1. **Who may declare, and when.** Anybody holding **exactly one card**, at any moment,
    in or out of turn — even while a +3 has the rest of the table frozen. Declaring is not
@@ -108,18 +109,16 @@ _shout_ rather than a move, and it is implemented as one:
    back down to one card needs a fresh one.
 3. **One declaration per card.** A second is rejected with `alreadyDeclared`; declaring on
    any other hand size is rejected with `nothingToDeclare`.
-4. **The penalty.** Playing your final card _without_ having declared does not win the
-   round. The card is played and its effect resolves exactly as normal, and then you draw
-   **two cards** and play carries on. If the pile cannot pay the penalty at all — nothing
-   to draw and nothing to recycle — the round is awarded, because play cannot continue
-   against an empty hand.
-5. **It is public.** Who has declared is part of the table state everyone sees, the same
-   way a shout at a real table is heard by everyone. It is what tells the others whether the
-   player on one card is about to win or about to pay.
-
-The declaration is checked when the last card is played, not on a timer, so there is no
-window to police and nobody has to "catch" anybody: the button is on screen from the moment
-it is needed, and the penalty is the rule enforcing itself.
+4. **The declaration is not what wins the round.** Putting your last card down is. A player
+   who never declared still wins by playing it, exactly as one who did.
+5. **What silence costs is being caught.** While a player sits on a single undeclared card,
+   **any other player** may call it out, in or out of turn, and the silent player draws
+   **four cards**. Drawing them closes the window by itself, because the hand is no longer a
+   single card. Calling out a player who declared, who is not on one card, or yourself, is
+   rejected with `nothingToCatch`.
+6. **It is public.** Who has declared is part of the table state everyone sees, the same
+   way a shout at a real table is heard by everyone. That is what makes catching possible at
+   all, and it is why every seat on one card shows either "declared" or a button to call it.
 
 ### +2 runs
 
@@ -159,6 +158,11 @@ The +3 is the one card that suspends the turn order.
    draws. If every holder declines, the +3 resolves as in step 2.
 5. Either way, play then continues from the seat after the +3 player.
 
+**A breaker with nothing to break.** It is still a legal card — colourless, so playable on
+anything — but the three cards go to the player who spent it, and they are drawn _before_ the
+win check, so it can never be a free way out of a last card. Passing (`passBreak`) with no +3
+open is still rejected with `noPlusThreeOpen`: there is nothing to decline.
+
 **Who holds a breaker is never published.** The public table state says only that a +3 is
 open and who played it; the list of players being waited for stays on the host. A client
 works out whether it may answer by looking at its own hand, which it already knows.
@@ -170,8 +174,12 @@ works out whether it may answer by looking at its own hand, which it already kno
   including other special cards and further Taki cards.
 - **Colourless cards cannot enter a sequence.** Change Colour, Super Taki, King, +3 and the
   +3 Breaker have no colour, so the engine rejects them with `wildNotAllowedInTaki`.
-- A card of a different colour is rejected with `wrongTakiColor`, even if its symbol
-  matches the top card. Inside a sequence, colour is the only rule.
+- **A Taki of any colour may be played on a Taki**, and it carries the sequence on in its
+  own colour: the cards after it have to match the new colour, not the old one. Taki on Taki
+  is a colour change, not a colour mismatch — it is the one card inside a sequence that does
+  not have to match.
+- Any _other_ card of a different colour is rejected with `wrongTakiColor`, even if its
+  symbol matches the top card. Inside a sequence, colour is otherwise the only rule.
 - **You cannot draw while a sequence is open.** Close it first (`cannotDrawDuringTaki`).
 - Close the sequence with the explicit **Close Taki** button. You may close it at any time,
   and you must close it when you have no more cards of that colour.
@@ -242,21 +250,23 @@ turn simply passes. No player is ever stuck.
 
 Each of these is a genuine fork. We picked one, implemented it, and tested it.
 
-| Question                                          | Our rule                                                                                               | Why                                                                                                                                      |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| May a card drawn this turn be played immediately? | **No.** Drawing ends the turn.                                                                         | Simplest to explain and to see on screen; no "you could have played that" ambiguity.                                                     |
-| Does Super Taki change the colour?                | **No.** It takes the leading colour.                                                                   | The reading that came in with the King, and the one the current edition prints.                                                          |
-| Does the +3 change the colour?                    | **No.**                                                                                                | Same principle: Change Colour is the only card that repaints the table.                                                                  |
-| Who may answer a +3, and when?                    | **Any holder of a breaker, out of turn**, in a window that closes on the first answer.                 | This is the card's whole point; restricting it to the next player would make it an ordinary defensive card.                              |
-| Change Direction with two players                 | **Turn passes to the opponent.**                                                                       | Follows directly from the modular next-player calculation instead of adding a special case.                                              |
-| Can you win on a Plus, +2, +3 or Taki card?       | **Yes.** Any outstanding obligation is void.                                                           | An empty hand ends the round; requiring a further card from an empty hand is incoherent.                                                 |
-| Colourless cards inside a Taki sequence           | **Not allowed.**                                                                                       | A sequence is defined by a colour, and a colourless card has none.                                                                       |
-| Which effects apply when a sequence closes?       | **Only the last card's.**                                                                              | Otherwise a long sequence could chain several Stops, which no edition intends.                                                           |
-| Does a +2 run stack?                              | **Yes, by two per card, with no cap.**                                                                 | This is the printed rule, and the King is the release valve.                                                                             |
-| "Last card" declaration and a penalty for silence | **Declared with a button, any time you hold one card; two cards for playing a final card in silence.** | Checking it when the final card is played needs no timing rule and no "catching" — the button is on screen from the moment it is needed. |
-| Is there a plain number 2?                        | **No.** The only 2 in the deck is the +2.                                                              | It is what the printed deck contains; a bare 2 read as a +2 that had lost its plus.                                                      |
-| Opening card is a special card                    | **It is buried at the bottom and the next card is drawn** until a number card appears.                 | Keeps the first turn unambiguous without discarding cards.                                                                               |
-| Point scoring                                     | **None.** Standings show remaining cards.                                                              | Scoring systems vary wildly; card counts are unambiguous.                                                                                |
+| Question                                          | Our rule                                                                                                                       | Why                                                                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| May a card drawn this turn be played immediately? | **No.** Drawing ends the turn.                                                                                                 | Simplest to explain and to see on screen; no "you could have played that" ambiguity.                                              |
+| Does Super Taki change the colour?                | **No.** It takes the leading colour.                                                                                           | The reading that came in with the King, and the one the current edition prints.                                                   |
+| Does the +3 change the colour?                    | **No.**                                                                                                                        | Same principle: Change Colour is the only card that repaints the table.                                                           |
+| Who may answer a +3, and when?                    | **Any holder of a breaker, out of turn**, in a window that closes on the first answer.                                         | This is the card's whole point; restricting it to the next player would make it an ordinary defensive card.                       |
+| Change Direction with two players                 | **Turn passes to the opponent.**                                                                                               | Follows directly from the modular next-player calculation instead of adding a special case.                                       |
+| Can you win on a Plus, +2, +3 or Taki card?       | **Yes.** Any outstanding obligation is void.                                                                                   | An empty hand ends the round; requiring a further card from an empty hand is incoherent.                                          |
+| Colourless cards inside a Taki sequence           | **Not allowed.**                                                                                                               | A sequence is defined by a colour, and a colourless card has none.                                                                |
+| Which effects apply when a sequence closes?       | **Only the last card's.**                                                                                                      | Otherwise a long sequence could chain several Stops, which no edition intends.                                                    |
+| Does a +2 run stack?                              | **Yes, by two per card, with no cap.**                                                                                         | This is the printed rule, and the King is the release valve.                                                                      |
+| "Last card" declaration and a penalty for silence | **Declared with a button; the win does not depend on it, but any other player may catch a silent single card for four cards.** | This is how it is played at a table: the declaration is enforced by the other players, not by the deal.                           |
+| A +3 Breaker with no +3 open                      | **Legal, and its owner draws the three.**                                                                                      | Refusing it left a card that could be unplayable all round. Charging its owner keeps it a defensive card rather than a second +3. |
+| A Taki of another colour on a Taki                | **Legal; the sequence carries on in the new colour.**                                                                          | Taki on Taki is a symbol match, and a sequence is defined by a colour — so the new card's colour is the one that binds.           |
+| Is there a plain number 2?                        | **No.** The only 2 in the deck is the +2.                                                                                      | It is what the printed deck contains; a bare 2 read as a +2 that had lost its plus.                                               |
+| Opening card is a special card                    | **It is buried at the bottom and the next card is drawn** until a number card appears.                                         | Keeps the first turn unambiguous without discarding cards.                                                                        |
+| Point scoring                                     | **None.** Standings show remaining cards.                                                                                      | Scoring systems vary wildly; card counts are unambiguous.                                                                         |
 
 ### Worked examples
 
@@ -356,30 +366,30 @@ draws one of them; two remain in the draw pile.
   קח 2, פלוס על פלוס וכן הלאה), או
 - הוא קלף ללא צבע (שינוי צבע, סופר טאקי, מלך, פלוס 3), שתמיד חוקי.
 
-**שבירת פלוס 3 לעולם אינה הנחה רגילה**: היא קיימת רק כתשובה לפלוס 3 פתוח, ובכל רגע אחר
-המנוע דוחה אותה בקוד `noPlusThreeOpen`.
+**שבירת פלוס 3 היא הנחה חוקית לגמרי, ויקרה**: כשאין פלוס 3 לשבור, שלושת הקלפים שהיא הייתה
+מחזירה נמשכים בידי מי שהניח אותה. ראו למטה.
 
 מהתאמת הסמלים נובע שעצור כחול חוקי על עצור אדום, וגם שכל קח 2 עונה לכל קח 2.
 
 **משיכה מסיימת את התור.** קלף שנמשך עכשיו לא נכנס לשולחן באותו תור, גם אם הוא חוקי.
 
-**הנחת הקלף האחרון מנצחת בסבב — אם הכרזת קודם.** ראו "אחרון בידי" למטה: קלף אחרון בלי
-הכרזה עולה שני קלפים במקום לנצח.
+**הנחת הקלף האחרון מנצחת בסבב**, עם הכרזה או בלעדיה. מה שקלף אחרון בלי הכרזה מסכן הוא
+להיתפס לפני שמספיקים להניח אותו — ראו "אחרון בידי" למטה.
 
 ### קלפים מיוחדים
 
-| קלף              | השפעה                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| **עצור**         | השחקן הבא מפסיד את תורו. בשני שחקנים התור חוזר מיד אליך.                                       |
-| **פלוס**         | חייבים להניח עוד קלף. מי שאין לו קלף חוקי מושך קלף והתור עובר. פלוס נוסף מחדש את החובה.        |
-| **קח 2**         | השחקן הבא חייב שני קלפים — אלא אם יניח קח 2 משלו, שמעלה את הקנס בשניים ומעביר אותו הלאה.       |
-| **שינוי כיוון**  | סדר המשחק מתהפך. בשני שחקנים התור עובר בכל מקרה ליריב.                                         |
-| **שינוי צבע**    | אפשר להניח על כל קלף. בוחרים את הצבע הבא והתור עובר.                                           |
-| **טאקי**         | פותח רצף בצבע של הקלף — ראו למטה.                                                              |
-| **סופר טאקי**    | אפשר להניח על כל קלף. פותח רצף בצבע שכבר מוביל.                                                |
-| **מלך**          | אפשר להניח על כל קלף, גם על קנס קח־2 פתוח. מבטל כל קנס וכל חובה, ואז נותן תור חופשי בלי התאמה. |
-| **פלוס 3**       | כל שאר השחקנים מושכים שלושה קלפים — אלא אם מישהו שובר.                                         |
-| **שבירת פלוס 3** | מונחת **שלא בתור**, רק כתשובה לפלוס 3. מי שהניח את הפלוס 3 מושך שלושה במקום, ואף אחד אחר לא.   |
+| קלף              | השפעה                                                                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **עצור**         | השחקן הבא מפסיד את תורו. בשני שחקנים התור חוזר מיד אליך.                                                                                                                    |
+| **פלוס**         | חייבים להניח עוד קלף. מי שאין לו קלף חוקי מושך קלף והתור עובר. פלוס נוסף מחדש את החובה.                                                                                     |
+| **קח 2**         | השחקן הבא חייב שני קלפים — אלא אם יניח קח 2 משלו, שמעלה את הקנס בשניים ומעביר אותו הלאה.                                                                                    |
+| **שינוי כיוון**  | סדר המשחק מתהפך. בשני שחקנים התור עובר בכל מקרה ליריב.                                                                                                                      |
+| **שינוי צבע**    | אפשר להניח על כל קלף. בוחרים את הצבע הבא והתור עובר.                                                                                                                        |
+| **טאקי**         | פותח רצף בצבע של הקלף — ראו למטה.                                                                                                                                           |
+| **סופר טאקי**    | אפשר להניח על כל קלף. פותח רצף בצבע שכבר מוביל.                                                                                                                             |
+| **מלך**          | אפשר להניח על כל קלף, גם על קנס קח־2 פתוח. מבטל כל קנס וכל חובה, ואז נותן תור חופשי בלי התאמה.                                                                              |
+| **פלוס 3**       | כל שאר השחקנים מושכים שלושה קלפים — אלא אם מישהו שובר.                                                                                                                      |
+| **שבירת פלוס 3** | מונחת **שלא בתור** כתשובה לפלוס 3: מי שהניח את הפלוס 3 מושך שלושה במקום, ואף אחד אחר לא. כשמניחים אותה בלי פלוס 3 פתוח היא קלף חסר צבע רגיל, ומי שהניח אותה מושך את השלושה. |
 
 כל עוד יש חובת פלוס פתוחה **חייבים להניח אם אפשר**: חבילת המשיכה חסומה, והמנוע דוחה משיכה
 בקוד `mustPlayAfterPlus`. הקלף שחייבים להניח נבחן לפי כללי ההתאמה הרגילים, ולא חייב להיות
@@ -388,7 +398,7 @@ draws one of them; two remain in the draw pile.
 ### "אחרון בידי"
 
 שחקן שנשאר עם קלף אחד חייב להכריז. זה הכלל היחיד בטאקי שהוא **הכרזה** ולא מהלך, וכך הוא גם
-מיושם:
+מיושם — כולל החלק שבו שאר השחקנים הם אלה שאוכפים אותו.
 
 1. **מי מכריז ומתי.** כל מי שמחזיק **בדיוק קלף אחד**, בכל רגע, בתור או שלא בתור — גם כששאר
    השולחן קפוא בגלל פלוס 3. הכרזה אינה הנחה: היא לא נוגעת בתור, בצבע או בערמה.
@@ -396,14 +406,14 @@ draws one of them; two remain in the draw pile.
    פלוס 3 שנפל עליך — ההכרזה מתבטלת. חזרה לקלף אחד דורשת הכרזה חדשה.
 3. **הכרזה אחת לכל קלף.** הכרזה נוספת נדחית בקוד `alreadyDeclared`, והכרזה על יד בגודל אחר
    נדחית בקוד `nothingToDeclare`.
-4. **הקנס.** הנחת הקלף האחרון **בלי** הכרזה אינה מנצחת. הקלף מונח והשפעתו חלה כרגיל, ואז
-   מושכים **שני קלפים** והמשחק ממשיך. אם אין מה למשוך בכלל — לא בחבילה ולא לאחר עירבוב —
-   הסבב נגמר בניצחון, כי אי אפשר להמשיך לשחק מול יד ריקה.
-5. **ההכרזה פומבית.** מי שהכריז מופיע במצב השולחן שכולם רואים, בדיוק כמו הכרזה בקול בשולחן
-   אמיתי. זה מה שמראה לשאר אם השחקן שנשאר עם קלף אחד עומד לנצח או עומד לשלם.
-
-ההכרזה נבדקת ברגע שמונח הקלף האחרון, ולא לפי שעון, ולכן אין חלון זמן לאכוף ואף אחד לא צריך
-"לתפוס" אף אחד: הכפתור על המסך מהרגע שהוא נחוץ, והקנס הוא הכלל שאוכף את עצמו.
+4. **ההכרזה אינה מה שמנצח את הסבב.** הנחת הקלף האחרון היא מה שמנצח. שחקן שלא הכריז מנצח
+   בהנחת הקלף האחרון בדיוק כמו שחקן שהכריז.
+5. **מה ששתיקה עולה הוא להיתפס.** כל עוד שחקן יושב על קלף בודד בלי שהכריז, **כל שחקן אחר**
+   יכול לתפוס אותו, בתור או שלא בתור, והשותק לוקח **4 קלפים**. הלקיחה סוגרת את החלון מעצמה,
+   כי היד כבר לא קלף בודד. תפיסה של מי שהכריז, של מי שלא נשאר לו קלף בודד, או של עצמך, נדחית
+   בקוד `nothingToCatch`.
+6. **ההכרזה פומבית.** מי שהכריז מופיע במצב השולחן שכולם רואים, בדיוק כמו הכרזה בקול בשולחן
+   אמיתי. זה מה שמאפשר לתפוס בכלל, ולכן כל מושב עם קלף בודד מציג או "הכריז/ה" או כפתור לתפוס.
 
 ### רצפי קח 2
 
@@ -441,6 +451,11 @@ draws one of them; two remain in the draw pile.
    בשלב 2.
 5. בכל מקרה המשחק ממשיך מהמושב שאחרי מי שהניח את הפלוס 3.
 
+**שבירה בלי מה לשבור.** היא עדיין קלף חוקי — חסר צבע, ולכן אפשר להניח אותו על כל דבר — אבל
+שלושת הקלפים הולכים למי שהניח אותה, והם נמשכים **לפני** בדיקת הניצחון, כך שהיא לא יכולה
+לשמש דרך חינם להיפטר מקלף אחרון. ויתור (`passBreak`) בלי פלוס 3 פתוח עדיין נדחה בקוד
+`noPlusThreeOpen`: אין על מה לוותר.
+
 **אף פעם לא מפרסמים מי מחזיק שבירה.** מצב השולחן הציבורי אומר רק שפלוס 3 פתוח ומי הניח
 אותו; רשימת הממתינים נשארת אצל המנחה. כל לקוח מסיק אם הוא יכול לענות מהיד שלו, שאותה הוא
 כבר יודע.
@@ -452,8 +467,11 @@ draws one of them; two remain in the draw pile.
   טאקי נוספים.
 - **קלפים ללא צבע לא נכנסים לרצף.** שינוי צבע, סופר טאקי, מלך, פלוס 3 ושבירת פלוס 3 נדחים
   בקוד `wildNotAllowedInTaki`.
-- קלף בצבע אחר נדחה בקוד `wrongTakiColor`, גם אם הסמל שלו מתאים לקלף העליון. בתוך רצף,
-  הצבע הוא הכלל היחיד.
+- **על טאקי מותר להניח טאקי בכל צבע**, והרצף ממשיך בצבע החדש: הקלפים שאחריו צריכים להתאים
+  לצבע החדש ולא לישן. טאקי על טאקי הוא שינוי צבע, לא אי־התאמה — זה הקלף היחיד בתוך רצף
+  שלא חייב להתאים בצבע.
+- כל קלף **אחר** בצבע אחר נדחה בקוד `wrongTakiColor`, גם אם הסמל שלו מתאים לקלף העליון.
+  מלבד זאת, בתוך רצף הצבע הוא הכלל היחיד.
 - **אי אפשר למשוך קלף כשרצף פתוח.** קודם סוגרים אותו (`cannotDrawDuringTaki`).
 - סוגרים את הרצף בכפתור **סגירת טאקי**. אפשר לסגור בכל רגע, וחייבים לסגור כשנגמרו הקלפים
   באותו צבע.

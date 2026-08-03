@@ -83,10 +83,10 @@ export const PLUS_TWO_PENALTY = 2;
 export const PLUS_THREE_PENALTY = 3;
 
 /**
- * How many cards a player draws for putting down their last card without having
- * declared "last card" first. See `docs/rules.md`.
+ * How many cards a player draws when another player catches them holding a
+ * single undeclared card. See `docs/rules.md`.
  */
-export const LAST_CARD_PENALTY = 2;
+export const LAST_CARD_PENALTY = 4;
 
 export function isWildCard(card: Card): card is WildCard {
   return (WILD_KINDS as readonly string[]).includes(card.kind);

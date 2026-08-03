@@ -11,8 +11,8 @@ to each other over WebRTC data channels.
 The interface is Hebrew by default (right-to-left), with English one tap away in Settings. The deck is the
 full Super Taki deck — numbers 1 and 3–9, Stop, Plus, +2, Change Direction and Taki in four
 colours, plus Change Colour, Super Taki, King, +3 and the +3 Breaker. There is no plain 2:
-the only 2 in Taki is the +2. "Last card" is declared with a button, and playing your final
-card without declaring costs you two cards instead of the round. The exact rules the engine
+the only 2 in Taki is the +2. "Last card" is declared with a button, and a player who stays
+silent on a single card can be caught by anybody else for four cards. The exact rules the engine
 implements are in [docs/rules.md](docs/rules.md); the app has no rules page, so read that
 if a card's behaviour is not what you expected.
 

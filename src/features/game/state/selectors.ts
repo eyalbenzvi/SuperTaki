@@ -92,7 +92,7 @@ export function hasDeclaredLastCard(state: Pick<TableSnapshot, 'publicState'>, p
  * True from the moment their hand comes down to one card until they declare.
  * Deliberately not conditioned on the turn: the declaration is legal at any
  * moment, and the whole point of showing it early is that a player is never
- * ambushed by the penalty on their next turn.
+ * caught out on somebody else's turn.
  */
 export function mustDeclareLastCard(
   state: Pick<TableSnapshot, 'publicState' | 'localPlayerId' | 'hand'>,
@@ -167,6 +167,8 @@ export interface OpponentView {
   readonly isHost: boolean;
   /** Has declared "last card" for the single card they are holding. */
   readonly declaredLastCard: boolean;
+  /** On one card and still silent, so this seat can be called out. */
+  readonly catchable: boolean;
 }
 
 /**
@@ -197,6 +199,10 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
         health: lobbyPlayer?.health ?? 'connected',
         isHost: lobbyPlayer?.isHost ?? false,
         declaredLastCard: publicState.declaredLastCard.includes(player.id),
+        catchable:
+          publicState.phase === 'playing' &&
+          player.cardCount === 1 &&
+          !publicState.declaredLastCard.includes(player.id),
       };
     });
 }

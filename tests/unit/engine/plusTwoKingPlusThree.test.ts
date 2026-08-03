@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, currentPlayer } from '../../../src/features/game/engine/engine.ts';
-import type { CardColor } from '../../../src/features/game/engine/cards.ts';
+import { PLUS_THREE_PENALTY, type CardColor } from '../../../src/features/game/engine/cards.ts';
 import type { GameState } from '../../../src/features/game/engine/state.ts';
 import { toPublicGameState } from '../../../src/features/game/engine/views.ts';
 import {
@@ -181,6 +181,12 @@ describe('+3 and the breaker', () => {
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'plusThree')).state;
+    // Nobody has drawn yet, and it is still Alice's turn: the breaker is played
+    // out of turn, in the window before the +3 takes effect.
+    expect(currentPlayer(state)?.id).toBe('p-alice');
+    expect(handOf(state, 'p-bob')).toHaveLength(2);
+    expect(handOf(state, 'p-carol')).toHaveLength(1);
+
     const { state: next, events } = expectOk(play(state, 'p-bob', 'breakPlusThree'));
 
     expect(next.plusThree).toBeNull();
@@ -216,12 +222,41 @@ describe('+3 and the breaker', () => {
     expect(currentPlayer(next)?.id).toBe('p-bob');
   });
 
-  it('never lets a breaker be played on its own', () => {
+  it('charges a breaker played with no +3 to break to the player who spent it', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('breakPlusThree', 'red:3'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+      drawPile: cards('green:4', 'green:5', 'green:6', 'green:7'),
+    });
+    const { state: next, events } = expectOk(play(state, 'p-alice', 'breakPlusThree'));
+
+    // The card is playable — it is colourless — and the three cards it would have
+    // sent back are drawn by its owner instead.
+    expect(handOf(next, 'p-alice')).toHaveLength(1 + PLUS_THREE_PENALTY);
+    expect(handOf(next, 'p-bob')).toHaveLength(1);
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'breakerSpent', 'cardDrawn', 'turnChanged']);
+    // The colour is untouched, like every other colourless card.
+    expect(next.activeColor).toBe('red');
+    expect(currentPlayer(next)?.id).toBe('p-bob');
+  });
+
+  it('does not let a spent breaker be a free way out of a last card', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('breakPlusThree'), 'p-bob': cards('red:1', 'blue:3') },
+      discardPile: cards('red:9'),
+      drawPile: cards('green:4', 'green:5', 'green:6'),
+    });
+    const { state: next } = expectOk(play(state, 'p-alice', 'breakPlusThree'));
+    // The penalty is charged before the win check, so the hand is not empty.
+    expect(next.phase).toBe('playing');
+    expect(handOf(next, 'p-alice')).toHaveLength(PLUS_THREE_PENALTY);
+  });
+
+  it('still refuses a pass with no +3 open', () => {
     const state = makeState({
       hands: { 'p-alice': cards('breakPlusThree', 'red:3'), 'p-bob': cards('red:1') },
       discardPile: cards('red:9'),
     });
-    expectRejected(play(state, 'p-alice', 'breakPlusThree'), 'noPlusThreeOpen');
     expectRejected(applyCommand(state, { type: 'passBreak', playerId: 'p-alice' }), 'noPlusThreeOpen');
   });
 

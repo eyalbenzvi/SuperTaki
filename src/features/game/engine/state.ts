@@ -106,7 +106,12 @@ export type GameCommand =
    * Declares "last card". Legal from any seat, in or out of turn, and only while
    * the declaring player holds exactly one card.
    */
-  | { readonly type: 'declareLastCard'; readonly playerId: PlayerId };
+  | { readonly type: 'declareLastCard'; readonly playerId: PlayerId }
+  /**
+   * Catches `targetId` holding a single card they never declared. Legal from any
+   * seat but their own, in or out of turn, for as long as they stay silent.
+   */
+  | { readonly type: 'catchLastCard'; readonly playerId: PlayerId; readonly targetId: PlayerId };
 
 export type GameCommandType = GameCommand['type'];
 
@@ -126,6 +131,8 @@ export type GameEvent =
       readonly superTaki: boolean;
     }
   | { readonly type: 'takiClosed'; readonly playerId: PlayerId; readonly cardsPlayed: number }
+  /** A Taki played on a Taki carried the open sequence into a new colour. */
+  | { readonly type: 'takiColorChanged'; readonly playerId: PlayerId; readonly color: CardColor }
   | { readonly type: 'colorChosen'; readonly playerId: PlayerId; readonly color: CardColor }
   | { readonly type: 'playerSkipped'; readonly playerId: PlayerId }
   /** A +2 was added to the run; `total` is what the next player now owes. */
@@ -139,10 +146,20 @@ export type GameEvent =
   /** A player declared "last card" while holding their final card. */
   | { readonly type: 'lastCardDeclared'; readonly playerId: PlayerId }
   /**
-   * A player emptied their hand without having declared "last card". They drew
-   * the penalty instead of winning; `penalty` is how many cards they actually got.
+   * `caughtById` caught `playerId` sitting silently on a single card. `penalty`
+   * is how many cards they actually drew.
    */
-  | { readonly type: 'lastCardMissed'; readonly playerId: PlayerId; readonly penalty: number }
+  | {
+      readonly type: 'lastCardCaught';
+      readonly playerId: PlayerId;
+      readonly caughtById: PlayerId;
+      readonly penalty: number;
+    }
+  /**
+   * A +3 Breaker was played with no +3 to break, so it cost its owner the three
+   * cards instead. `penalty` is how many they actually drew.
+   */
+  | { readonly type: 'breakerSpent'; readonly playerId: PlayerId; readonly penalty: number }
   | { readonly type: 'directionChanged'; readonly direction: TurnDirection }
   | { readonly type: 'extraTurn'; readonly playerId: PlayerId }
   | { readonly type: 'turnChanged'; readonly playerId: PlayerId }
@@ -171,6 +188,7 @@ export const REJECTION_CODES = [
   'wrongTakiColor',
   'nothingToDeclare',
   'alreadyDeclared',
+  'nothingToCatch',
   'notEnoughPlayers',
   'tooManyPlayers',
   'duplicatePlayerId',

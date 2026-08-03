@@ -116,4 +116,80 @@ test.describe('the table fits the screen', () => {
     // All that width is one row's worth.
     expect(report.handRows).toBe(1);
   });
+
+  /*
+   * Every hand size, not a sample of them. A player reported a hand of five
+   * spreading wider than the screen while a hand of seven fitted — the sort of
+   * thing a rule written per size gets you, and the sort of thing only a sweep
+   * catches. The arithmetic is unit-tested for 1 to 20 cards; this checks the real
+   * layout against whatever sizes a real round happens to produce.
+   */
+  test('holds every hand size a round throws at it', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+
+    await openApp(host, `/${BROADCAST}`);
+    const roomCode = await createRoom(host, 'Dana', 2);
+    await openApp(guest, `/${BROADCAST}`);
+    await joinRoom(guest, 'Eli', roomCode);
+    await expect(host.getByText('2 of 2 players')).toBeVisible();
+    await host.bringToFront();
+    await host.getByRole('button', { name: 'Start game' }).click();
+    await expect(host.locator('.hand .card')).toHaveCount(8);
+    await host.setViewportSize({ width: 390, height: 664 });
+
+    const seen = new Set<number>();
+    const deadline = Date.now() + 25_000;
+    while (Date.now() < deadline) {
+      const report = await measure(host);
+      seen.add(report.handCards);
+      expect(report.cardsOutsideViewport, `hand of ${report.handCards}`).toBe(0);
+      expect(report.panelOverflow, `pile panel under a hand of ${report.handCards}`).toBeLessThanOrEqual(0);
+      if (!(await playOrDraw(host)) && !(await playOrDraw(guest))) {
+        break;
+      }
+      if (
+        await host
+          .getByRole('heading', { name: 'Round finished' })
+          .isVisible()
+          .catch(() => false)
+      ) {
+        break;
+      }
+    }
+
+    // A single hand size would pass the loop above without testing anything.
+    expect(seen.size, `hand sizes seen: ${[...seen].join(', ')}`).toBeGreaterThan(3);
+  });
 });
+
+/** One legal move, or `false` if this page has nothing to do. */
+async function playOrDraw(page: Page): Promise<boolean> {
+  await page.bringToFront();
+  await awaitSettled(page);
+  for (const name of [/Last card!/, 'Let it through', 'Close Taki', /^Take \d+ cards?$/]) {
+    const button = page.getByRole('button', { name });
+    if (await button.isVisible().catch(() => false)) {
+      await button.click().catch(() => undefined);
+      return true;
+    }
+  }
+  if (!(await onTurn(page))) {
+    return false;
+  }
+  const playable = page.locator('.hand .card--playable').first();
+  if (await playable.count()) {
+    await playable.click().catch(() => undefined);
+    const picker = page.getByRole('dialog');
+    if (await picker.isVisible().catch(() => false)) {
+      await picker.getByRole('button', { name: 'Green', exact: true }).click();
+    }
+    return true;
+  }
+  const pile = page.locator('.pile button.card--back');
+  if (await pile.isEnabled().catch(() => false)) {
+    await pile.click().catch(() => undefined);
+    return true;
+  }
+  return false;
+}

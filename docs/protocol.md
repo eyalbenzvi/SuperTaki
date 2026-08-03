@@ -89,6 +89,7 @@ loudly, allocate memory or tear down the room.
 | { type: 'closeTaki' }
 | { type: 'passBreak' }
 | { type: 'declareLastCard' }
+| { type: 'catchLastCard'; targetId: string }
 ```
 
 `chosenColor` is required for Change Colour and forbidden on every other card, including
@@ -100,10 +101,13 @@ accepted **from a player whose turn it is not** — and only while a +3 is open.
 else from another seat is `notYourTurn`, and everything at all while a +3 is open is
 `awaitingBreak`.
 
-`declareLastCard` is the other out-of-turn action, and it is unconditional: it is accepted
-from any seat at any moment, including while a +3 has the table frozen, and only requires
-that the sender holds exactly one card (`nothingToDeclare`) and has not already declared it
-(`alreadyDeclared`). It changes nothing but `declaredLastCard`. See `docs/rules.md`.
+`declareLastCard` and `catchLastCard` are the other out-of-turn actions, and they are
+unconditional on the turn: both are accepted from any seat at any moment, including while a
++3 has the table frozen. `declareLastCard` requires that the sender holds exactly one card
+(`nothingToDeclare`) and has not already declared it (`alreadyDeclared`), and changes nothing
+but `declaredLastCard`. `catchLastCard` requires that `targetId` is somebody else who is on a
+single undeclared card (`nothingToCatch`), and makes them draw the penalty. See
+`docs/rules.md`.
 
 ## Host → client messages
 

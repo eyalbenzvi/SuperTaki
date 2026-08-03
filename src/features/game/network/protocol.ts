@@ -22,8 +22,9 @@ import { REJECTION_CODES } from '../engine/state.ts';
 /**
  * Bumped on any breaking change to message shapes or semantics.
  *
- * 3 — the plain number 2 left the deck, and "last card" became a declared move
- * with its own action, public state and events.
+ * 3 — the plain number 2 left the deck; "last card" became a declaration anyone
+ * can call out; Taki on Taki changes the colour of an open sequence; and a +3
+ * Breaker with nothing to break is a legal, expensive card.
  */
 export const PROTOCOL_VERSION = 3;
 
@@ -134,6 +135,7 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     playerId: playerIdSchema,
     cardsPlayed: z.number().int().min(1).max(200),
   }),
+  z.object({ type: z.literal('takiColorChanged'), playerId: playerIdSchema, color: colorSchema }),
   z.object({ type: z.literal('colorChosen'), playerId: playerIdSchema, color: colorSchema }),
   z.object({ type: z.literal('playerSkipped'), playerId: playerIdSchema }),
   z.object({
@@ -150,7 +152,13 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('lastCardDeclared'), playerId: playerIdSchema }),
   z.object({
-    type: z.literal('lastCardMissed'),
+    type: z.literal('lastCardCaught'),
+    playerId: playerIdSchema,
+    caughtById: playerIdSchema,
+    penalty: z.number().int().min(0).max(200),
+  }),
+  z.object({
+    type: z.literal('breakerSpent'),
     playerId: playerIdSchema,
     penalty: z.number().int().min(0).max(200),
   }),
@@ -195,6 +203,7 @@ export const gameActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('closeTaki') }),
   z.object({ type: z.literal('passBreak') }),
   z.object({ type: z.literal('declareLastCard') }),
+  z.object({ type: z.literal('catchLastCard'), targetId: playerIdSchema }),
 ]);
 export type GameAction = z.infer<typeof gameActionSchema>;
 

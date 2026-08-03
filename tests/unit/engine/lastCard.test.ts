@@ -21,6 +21,10 @@ function declare(state: ReturnType<typeof makeState>, playerId: string) {
   return applyCommand(state, { type: 'declareLastCard', playerId });
 }
 
+function catchOut(state: ReturnType<typeof makeState>, playerId: string, targetId: string) {
+  return applyCommand(state, { type: 'catchLastCard', playerId, targetId });
+}
+
 describe('declaring the last card', () => {
   it('is legal exactly while the hand is one card', () => {
     const state = makeState({
@@ -95,102 +99,85 @@ describe('declaring the last card', () => {
   });
 });
 
-describe('playing the last card without declaring', () => {
-  it('draws the penalty instead of winning the round', () => {
+describe('being caught on a silent last card', () => {
+  it('makes the silent player draw the penalty, called from any seat', () => {
     const state = makeState({
       hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
-      drawPile: cards('green:4', 'green:5', 'green:6'),
+      drawPile: cards('green:4', 'green:5', 'green:6', 'green:7', 'green:8'),
+      currentPlayerIndex: 0,
     });
-    const { state: next, events } = expectOk(play(state, 'p-alice'));
+    // Bob calls it out on Alice's turn, which is the usual way it happens.
+    const { state: next, events } = expectOk(catchOut(state, 'p-bob', 'p-alice'));
 
-    expect(next.phase).toBe('playing');
-    expect(next.winnerId).toBeNull();
-    expect(next.hands['p-alice']).toHaveLength(LAST_CARD_PENALTY);
-    expect(eventTypes(events)).toEqual(['cardPlayed', 'lastCardMissed', 'cardDrawn', 'turnChanged']);
-    // The card itself still counts: it is on the pile and it set the colour.
-    expect(next.activeColor).toBe('red');
-    expect(next.discardPile).toHaveLength(2);
+    expect(next.hands['p-alice']).toHaveLength(1 + LAST_CARD_PENALTY);
+    expect(eventTypes(events)).toEqual(['lastCardCaught', 'cardDrawn']);
+    expect(events[0]).toMatchObject({
+      type: 'lastCardCaught',
+      playerId: 'p-alice',
+      caughtById: 'p-bob',
+      penalty: LAST_CARD_PENALTY,
+    });
+    // Nothing else about the table moves: it is a call, not a move.
+    expect(next.currentPlayerIndex).toBe(0);
+    expect(next.discardPile).toHaveLength(1);
   });
 
-  it('still resolves the effect of the card that was played', () => {
+  it('cannot be called on a player who declared, or on a bigger hand, or on yourself', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
+      discardPile: cards('red:9'),
+    });
+    expectRejected(catchOut(state, 'p-alice', 'p-bob'), 'nothingToCatch');
+    expectRejected(catchOut(state, 'p-alice', 'p-alice'), 'nothingToCatch');
+    expectRejected(catchOut(state, 'p-bob', 'p-nobody'), 'nothingToCatch');
+
+    const declared = expectOk(declare(state, 'p-alice')).state;
+    expectRejected(catchOut(declared, 'p-bob', 'p-alice'), 'nothingToCatch');
+  });
+
+  it('closes the window by itself: the penalty ends the single-card hand', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
+      discardPile: cards('red:9'),
+      drawPile: cards('green:4', 'green:5', 'green:6', 'green:7'),
+    });
+    const caught = expectOk(catchOut(state, 'p-bob', 'p-alice')).state;
+    expectRejected(catchOut(caught, 'p-bob', 'p-alice'), 'nothingToCatch');
+  });
+
+  it('is legal while a +3 has the rest of the table frozen', () => {
     const state = makeState({
       players: players('Alice', 'Bob', 'Carol'),
       hands: {
-        'p-alice': cards('red:stop'),
-        'p-bob': cards('red:1'),
-        'p-carol': cards('red:4'),
+        'p-alice': cards('red:1', 'red:4'),
+        'p-bob': cards('breakPlusThree'),
+        'p-carol': cards('red:5', 'red:6'),
       },
-      discardPile: cards('red:9'),
-      drawPile: cards('green:4', 'green:5', 'green:6'),
+      discardPile: cards('plusThree'),
+      drawPile: cards('green:4', 'green:5', 'green:6', 'green:7'),
+      plusThree: { playerId: 'p-alice', awaiting: ['p-bob'] },
     });
-    const { state: next, events } = expectOk(play(state, 'p-alice'));
-    expect(eventTypes(events)).toContain('playerSkipped');
-    // Bob is skipped by the Stop, so it is Carol's turn.
-    expect(next.currentPlayerIndex).toBe(2);
-    expect(next.hands['p-alice']).toHaveLength(LAST_CARD_PENALTY);
+    const { state: next } = expectOk(catchOut(state, 'p-carol', 'p-bob'));
+    expect(next.hands['p-bob']).toHaveLength(1 + LAST_CARD_PENALTY);
+    // The +3 is still waiting: catching somebody out did not settle it.
+    expect(next.plusThree).not.toBeNull();
   });
+});
 
-  it('wins after declaring, on the very same hand', () => {
-    const state = makeState({
+describe('the last card itself', () => {
+  it('wins the round whether or not it was declared', () => {
+    const silent = makeState({
       hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:9'),
+      drawPile: cards('green:4', 'green:5'),
     });
-    const declared = expectOk(declare(state, 'p-alice')).state;
-    const { state: next } = expectOk(play(declared, 'p-alice'));
+    const { state: next, events } = expectOk(play(silent, 'p-alice'));
     expect(next.phase).toBe('finished');
     expect(next.winnerId).toBe('p-alice');
-  });
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'playerWon']);
 
-  it('keeps a taki sequence going rather than ending the round', () => {
-    const state = makeState({
-      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 1, openedWithSuperTaki: false },
-      hands: { 'p-alice': cards('red:6'), 'p-bob': cards('red:1', 'blue:3') },
-      discardPile: cards('red:taki'),
-      activeColor: 'red',
-      drawPile: cards('red:4', 'green:5', 'green:6'),
-    });
-    const { state: next } = expectOk(play(state, 'p-alice'));
-    expect(next.phase).toBe('playing');
-    expect(next.takiMode).not.toBeNull();
-    expect(next.hands['p-alice']).toHaveLength(LAST_CARD_PENALTY);
-  });
-
-  it('pays what it can when the pile has to be recycled to find it', () => {
-    const state = makeState({
-      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
-      discardPile: cards('red:9'),
-      drawPile: [],
-    });
-    const { state: next, events } = expectOk(play(state, 'p-alice'));
-    // Nothing to draw, so the discard is recycled: the card just played stays
-    // face up and the red 9 under it becomes the whole draw pile — one card of
-    // the two owed.
-    expect(next.phase).toBe('playing');
-    expect(next.hands['p-alice']).toHaveLength(1);
-    expect(eventTypes(events)).toEqual([
-      'cardPlayed',
-      'lastCardMissed',
-      'drawPileRecycled',
-      'drawPileExhausted',
-      'cardDrawn',
-      'turnChanged',
-    ]);
-  });
-
-  it('awards the round when there is nothing at all left to draw', () => {
-    const state = makeState({
-      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },
-      // No discard under the played card either, so recycling finds nothing.
-      discardPile: [],
-      drawPile: [],
-      activeColor: 'red',
-    });
-    const { state: next, events } = expectOk(play(state, 'p-alice'));
-    // Play cannot continue against an empty hand, so the round is the only
-    // coherent outcome — the penalty simply could not be paid.
-    expect(next.phase).toBe('finished');
-    expect(next.winnerId).toBe('p-alice');
-    expect(eventTypes(events)).toEqual(['cardPlayed', 'lastCardMissed', 'drawPileExhausted', 'playerWon']);
+    const declared = expectOk(declare(silent, 'p-alice')).state;
+    expect(expectOk(play(declared, 'p-alice')).state.winnerId).toBe('p-alice');
   });
 });

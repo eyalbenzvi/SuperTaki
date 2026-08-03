@@ -68,6 +68,7 @@ export function GameScreen(): ReactNode {
   const closeTaki = useAppStore((state) => state.closeTaki);
   const passBreak = useAppStore((state) => state.passBreak);
   const declareLastCard = useAppStore((state) => state.declareLastCard);
+  const catchLastCard = useAppStore((state) => state.catchLastCard);
   const announce = useAppStore((state) => state.announce);
 
   const [pendingWild, setPendingWild] = useState<Card | null>(null);
@@ -185,7 +186,7 @@ export function GameScreen(): ReactNode {
        * stack of notices from pushing it off the bottom of the screen.
        */}
       <div className="game__info">
-        <OpponentList opponents={seats} t={t} />
+        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} />
 
         {/* Outside the scrollable region below: on a short screen, whose turn it is
             is the last thing that should ever scroll out of sight. */}
