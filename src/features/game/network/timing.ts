@@ -197,6 +197,22 @@ export const NUDGE_NOTICE_MS = 12_000;
  */
 export const CAUGHT_NOTICE_MS = 8_000;
 
+/**
+ * The head start a player gets on their own last card.
+ *
+ * From the moment a hand comes down to a single card, nobody may call that player
+ * out for not having declared until this has passed. At a real table the shout and
+ * the card that caused it happen together; on a screen the player has to *see* the
+ * card land and then find a button, while everybody else is already looking at a
+ * seat that says "1 card". Without a head start the honest declaration loses to a
+ * fast thumb every time, and the rule stops being about declaring at all.
+ *
+ * Half a second: long enough to cover the gap between the card landing and the
+ * button being reachable, short enough that a genuinely silent player is still
+ * exposed for as long as they stay silent.
+ */
+export const LAST_CARD_GRACE_MS = 500;
+
 /** Entries kept in the local diagnostics ring. */
 export const DIAGNOSTICS_CAPACITY = 500;
 

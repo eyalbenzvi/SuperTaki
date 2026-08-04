@@ -22,6 +22,7 @@ import {
 import { useAppStore, type FeedEntry } from '../../state/store.ts';
 import { colorName } from '../cardText.ts';
 import { describeEvent } from '../eventText.ts';
+import { useCatchGrace } from '../useCatchGrace.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 import { CaughtNotice, NudgeButton, NudgeNotice } from '../components/TableControls.tsx';
@@ -87,7 +88,7 @@ export function GameScreen(): ReactNode {
     table.localPlayerId !== null &&
     hasDeclaredLastCard(table, table.localPlayerId);
   const cards = useMemo(() => sortHandForDisplay(table.hand), [table.hand]);
-  const seats = useMemo(() => opponents(table), [table]);
+  const seats = useCatchGrace(useMemo(() => opponents(table), [table]));
   const turnName = currentPlayerName(table);
 
   useEffect(
@@ -454,8 +455,22 @@ function ActionPrompt({
   }
 
   if (pendingPlus) {
+    /*
+     * The card owed after a Plus may be paid from the pile, so the way out is a
+     * button here as well as a lit draw pile. Without it the prompt reads as an
+     * instruction with no alternative, which is what the rule used to be.
+     */
     return (
-      <Callout tone="action" urgent role="status">
+      <Callout
+        tone="action"
+        urgent
+        role="status"
+        actions={
+          <Button variant="ghost" onClick={onTakeCards}>
+            {t('game.plusTakeInstead')}
+          </Button>
+        }
+      >
         {t('game.pendingPlus')}
       </Callout>
     );

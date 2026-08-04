@@ -34,6 +34,7 @@ import {
   HANDOFF_TIMEOUT_MS,
   HOST_SELF_DEMOTE_MS,
   IDLE_TURN_NUDGE_MS,
+  LAST_CARD_GRACE_MS,
   LOBBY_GRACE_MS,
   RESUME_ATTEMPT_SUPPRESSES_SKIP_MS,
   SEAT_GRACE_MS,
@@ -222,6 +223,16 @@ export class HostSession implements Session {
   private lateTickAt: number | null = null;
   private handoffTo: string | null = null;
   private handoffTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Host clock at which each seat's hand became a single card.
+   *
+   * Kept here rather than in {@link GameState} because it is a clock reading, and
+   * the engine is a pure function of its inputs — a timestamp inside it would make
+   * a replayed command produce a different game. It is the host's, not the
+   * caller's: a client that measured its own half second would be measuring from
+   * whenever its snapshot happened to arrive.
+   */
+  private readonly lastCardSince = new Map<string, number>();
 
   constructor(
     readonly roomCode: string,
@@ -255,6 +266,10 @@ export class HostSession implements Session {
       this.maxPlayers = restore.maxPlayers;
       this.tableLanguage = restore.tableLanguage;
       this.game = restore.game;
+      // A restored table starts everyone's half second again. The host that took
+      // the reading is gone, and a stale one would either expose a player who has
+      // been on one card all along or protect one for ever.
+      this.trackLastCard();
       // Restoring the floor is what stops the returning host from broadcasting
       // versions every client will discard as stale.
       this.versionFloor = restore.versionFloor;
@@ -867,6 +882,7 @@ export class HostSession implements Session {
       return;
     }
     this.game = result.state;
+    this.trackLastCard();
     this.versionFloor = result.state.version;
     this.round += 1;
     this.phase = 'inGame';
@@ -885,6 +901,42 @@ export class HostSession implements Session {
     this.broadcastGameState();
     this.emitEvents(result.events);
     this.persist();
+  }
+
+  /**
+   * Stamps the moment each seat came down to a single card, and forgets the ones
+   * that did not.
+   *
+   * Called after every accepted command rather than on an event, because a hand
+   * reaches one card from four different directions — a card played, a Taki
+   * sequence closing on the last one, a +3 or a catch settling on somebody else —
+   * and the reading has to be of the hand itself, not of the move that produced
+   * it. Forgetting matters as much as stamping: a player who draws back up and
+   * later returns to one card gets a fresh half second, exactly as they get a
+   * fresh declaration.
+   */
+  private trackLastCard(): void {
+    const game = this.game;
+    if (!game) {
+      this.lastCardSince.clear();
+      return;
+    }
+    const now = this.now();
+    for (const player of game.players) {
+      if ((game.hands[player.id] ?? []).length === 1) {
+        if (!this.lastCardSince.has(player.id)) {
+          this.lastCardSince.set(player.id, now);
+        }
+      } else {
+        this.lastCardSince.delete(player.id);
+      }
+    }
+  }
+
+  /** Whether `playerId` is still inside the head start their last card bought them. */
+  private withinLastCardGrace(playerId: string): boolean {
+    const since = this.lastCardSince.get(playerId);
+    return since !== undefined && this.now() - since < LAST_CARD_GRACE_MS;
   }
 
   private broadcastGameState(): void {
@@ -1013,14 +1065,25 @@ export class HostSession implements Session {
       return;
     }
     /*
+     * Two reasons a catch is refused before the engine ever sees it, both of them
+     * host policy rather than engine rules: the engine knows nothing about
+     * connections, and nothing about clocks.
+     *
      * An absent player cannot shout, so they cannot be caught out for silence.
      * Without this, absence turns a social rule into free farming — four cards an
-     * orbit off somebody whose phone is rebooting. Host policy rather than an
-     * engine rule, because the engine knows nothing about connections.
+     * orbit off somebody whose phone is rebooting.
+     *
+     * And a player who has just come down to one card gets their half second to
+     * declare it. Both answer `nothingToCatch`: from the caller's side there is
+     * nothing to catch *yet*, and the code is one every client already knows.
      */
     if (action.type === 'catchLastCard') {
       const target = this.seatFor(action.targetId);
       if (target && target.health !== 'connected') {
+        this.rejectAction(entry, 'nothingToCatch', requestId);
+        return;
+      }
+      if (this.withinLastCardGrace(action.targetId)) {
         this.rejectAction(entry, 'nothingToCatch', requestId);
         return;
       }
@@ -1035,6 +1098,7 @@ export class HostSession implements Session {
     }
 
     this.game = result.state;
+    this.trackLastCard();
     this.versionFloor = result.state.version;
     const seat = this.seatFor(playerId);
     if (seat && requestId !== undefined) {
@@ -1104,6 +1168,7 @@ export class HostSession implements Session {
       return false;
     }
     this.game = result.state;
+    this.trackLastCard();
     this.versionFloor = result.state.version;
     this.broadcastGameState();
     this.emitEvents(result.events);
@@ -1281,6 +1346,7 @@ export class HostSession implements Session {
     this.playAgainVotes.clear();
     this.phase = 'lobby';
     this.game = null;
+    this.trackLastCard();
     this.startGame();
   }
 
@@ -1639,6 +1705,7 @@ export class HostSession implements Session {
       return;
     }
     this.game = { ...this.game, ...patch, version: this.game.version + 1 };
+    this.trackLastCard();
     this.versionFloor = this.game.version;
     this.broadcastGameState();
   }

@@ -87,17 +87,18 @@ describe('skipping the turn of a player who is away', () => {
   it("forfeits a King's free turn without a penalty", () => {
     // A King cancels everything and hands its player an unrestricted turn. That
     // turn is a gift; charging a card for an unused gift is a penalty the rules
-    // do not contain. This is also the state where a skip built out of `drawCard`
-    // would simply be rejected: `freePlay` makes every card playable, so the
-    // engine insists a card be played.
+    // do not contain — which is exactly why a skip cannot be built out of
+    // `drawCard`, whose whole job is to take a card.
     const state = makeState({
       players: players('Alice', 'Bob'),
       hands: { 'p-alice': cards('red:1', 'blue:7'), 'p-bob': cards('blue:5') },
       discardPile: cards('king'),
       pendingPlus: true,
       freePlay: true,
+      drawPile: cards('green:8'),
     });
-    expectRejected(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' }), 'mustPlayAfterPlus');
+    const drawn = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' })).state;
+    expect(drawn.hands['p-alice']).toHaveLength(3);
 
     const { state: next } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
     expect(next.hands['p-alice']).toHaveLength(2);
@@ -113,9 +114,12 @@ describe('skipping the turn of a player who is away', () => {
       hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:5') },
       discardPile: cards('red:plus'),
       pendingPlus: true,
+      drawPile: cards('green:8'),
     });
-    // Same trap as the King: the engine refuses to draw here.
-    expectRejected(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' }), 'mustPlayAfterPlus');
+    // Same as the King: a present player may pay the obligation from the pile,
+    // and that costs a card. An absent one is charged nothing at all.
+    const drawn = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' })).state;
+    expect(drawn.hands['p-alice']).toHaveLength(2);
 
     const { state: next } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
     expect(next.hands['p-alice']).toHaveLength(1);

@@ -13,7 +13,7 @@ import {
   type CardColor,
 } from './cards.ts';
 import { createRng, shuffle, type RngState } from './prng.ts';
-import { hasPlayableCard, isCardPlayable, stepIndex, type PlayContext } from './rules.ts';
+import { isCardPlayable, stepIndex, type PlayContext } from './rules.ts';
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -647,10 +647,9 @@ function applyCloseTaki(state: GameState, playerId: PlayerId): CommandResult {
  * Passes the turn of a player who is not there.
  *
  * This is its own transition rather than a `drawCard` issued on somebody's behalf,
- * and it has to be: the engine *refuses* to draw during an open Taki, and refuses
- * again while a Plus obligation stands and the hand holds anything legal — which
- * after a King is every card in it. A skip built out of `drawCard` would therefore
- * be rejected in exactly the states where a table is most likely to be stuck.
+ * and it has to be: the engine refuses to draw during an open Taki, so a skip
+ * built out of `drawCard` would be rejected in exactly the state where a table is
+ * most likely to be stuck. It also has to be free, and `drawCard` never is.
  *
  * The order below matters and each step re-reads the state the previous one left:
  *
@@ -809,16 +808,18 @@ function applyDrawCard(state: GameState, playerId: PlayerId): CommandResult {
   if (state.takiMode) {
     return reject('cannotDrawDuringTaki');
   }
-  // A pending +2 run must be paid in full; otherwise the usual single card,
-  // which a Plus (or a King's free turn) only allows once nothing is playable.
+  /*
+   * A pending +2 run must be paid in full; otherwise the usual single card.
+   *
+   * A Plus obligation — and the free turn a King grants, which is the same flag —
+   * no longer forces a play. The card you owe after a Plus may be paid from the
+   * pile instead, exactly like any other turn, and drawing ends the turn as it
+   * always does. The old rule made the obligation the one place in the game where
+   * the pile was disabled while the player still held something legal, which is
+   * both a rule nobody at a real table enforces and the only screen where a lit
+   * draw pile could refuse a tap.
+   */
   const owed = state.pendingDraw;
-  if (
-    owed === 0 &&
-    state.pendingPlus &&
-    hasPlayableCard(state.hands[playerId] ?? [], playContextFromState(state))
-  ) {
-    return reject('mustPlayAfterPlus');
-  }
 
   const draft = toDraft(state);
   const events: GameEvent[] = [];

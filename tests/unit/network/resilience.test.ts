@@ -7,6 +7,8 @@ import {
 } from '../../../src/features/game/network/hostSession.ts';
 import { MemoryNetwork } from '../../../src/features/game/network/memoryTransport.ts';
 import { hostPeerIdForRoom } from '../../../src/features/game/network/roomCode.ts';
+import { LAST_CARD_GRACE_MS } from '../../../src/features/game/network/timing.ts';
+import { LAST_CARD_PENALTY } from '../../../src/features/game/engine/cards.ts';
 import { __resetLifecycleForTests } from '../../../src/lib/lifecycle.ts';
 import { __resetDiagnosticsForTests } from '../../../src/lib/diagnostics.ts';
 import { TEST_ROOM, createRecorder, flush } from '../helpers/net.ts';
@@ -41,7 +43,7 @@ interface Room {
   destroy(): void;
 }
 
-async function openRoom(): Promise<Room> {
+async function openRoom(options: { now?: () => number } = {}): Promise<Room> {
   const network = new MemoryNetwork();
   const hostRecorder = createRecorder();
   const snapshots: HostRestoreState[] = [];
@@ -55,6 +57,7 @@ async function openRoom(): Promise<Room> {
     seedFactory: () => 4242,
     heartbeatIntervalMs: 100_000,
     onSnapshot: (state) => snapshots.push(state),
+    ...(options.now ? { now: options.now } : {}),
   });
   return {
     network,
@@ -873,7 +876,8 @@ describe('the table can decide for itself', () => {
   });
 
   it('will not let an absent player be caught on last card', async () => {
-    const room = await openRoom();
+    let clock = 1_700_000_000_000;
+    const room = await openRoom({ now: () => clock });
     const client = await joinRoom(room, 'client-1', 'Dana');
     room.host.startGame();
     await flush();
@@ -884,10 +888,12 @@ describe('the table can decide for itself', () => {
     /*
      * The target has to be genuinely catchable, or the engine refuses on its own
      * and the host's policy is never consulted — which is how a test of this can
-     * pass with the policy deleted.
+     * pass with the policy deleted. Past the head start, too, or the *other*
+     * policy answers first and this proves nothing either.
      */
     room.host.forceHandForTests(guest!.id, 1);
     await flush();
+    clock += LAST_CARD_GRACE_MS;
     room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
     await flush();
     expect(room.hostRecorder.last('actionRejected')).toBeUndefined();
@@ -898,9 +904,88 @@ describe('the table can decide for itself', () => {
     room.host.forceHandForTests(guest!.id, 1);
     client.session.destroy('leftVoluntarily');
     await flush();
+    clock += LAST_CARD_GRACE_MS;
     room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
     await flush();
     expect(room.hostRecorder.last('actionRejected')?.code).toBe('nothingToCatch');
+    room.destroy();
+  });
+
+  /**
+   * The half second a last card buys its owner.
+   *
+   * Enforced on the host rather than in the engine, because it is a reading of a
+   * clock: a timestamp inside the engine would make a replayed command produce a
+   * different game. And enforced on the host rather than in the client, because a
+   * client measuring its own window is measuring from whenever its snapshot
+   * happened to arrive — and from a modified client, from whenever it liked.
+   */
+  it('gives a player half a second on their last card before anyone may call it', async () => {
+    let clock = 1_700_000_000_000;
+    const room = await openRoom({ now: () => clock });
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    room.host.startGame();
+    await flush();
+
+    const guest = room.hostRecorder.last('lobby')?.lobby.players.find((player) => !player.isHost);
+    room.host.forceHandForTests(guest!.id, 1);
+    await flush();
+
+    // Straight away, and again a moment before the window closes.
+    room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
+    await flush();
+    expect(room.hostRecorder.last('actionRejected')?.code).toBe('nothingToCatch');
+
+    clock += LAST_CARD_GRACE_MS - 1;
+    room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
+    await flush();
+    expect(room.hostRecorder.last('actionRejected')?.code).toBe('nothingToCatch');
+    // Still on one card: nothing was drawn, so nothing was charged.
+    expect(
+      room.hostRecorder.last('publicState')?.state.players.find((player) => player.id === guest!.id)
+        ?.cardCount,
+    ).toBe(1);
+
+    // A silent player stays exposed for as long as they stay silent.
+    clock += 1;
+    room.hostRecorder.clear();
+    room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
+    await flush();
+    expect(room.hostRecorder.last('actionRejected')).toBeUndefined();
+    expect(
+      room.hostRecorder.last('publicState')?.state.players.find((player) => player.id === guest!.id)
+        ?.cardCount,
+    ).toBe(1 + LAST_CARD_PENALTY);
+
+    client.session.destroy('leftVoluntarily');
+    room.destroy();
+  });
+
+  /** Coming back down to one card buys a fresh half second, exactly as it buys a fresh declaration. */
+  it('starts the head start again each time a hand returns to one card', async () => {
+    let clock = 1_700_000_000_000;
+    const room = await openRoom({ now: () => clock });
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    room.host.startGame();
+    await flush();
+
+    const guest = room.hostRecorder.last('lobby')?.lobby.players.find((player) => !player.isHost);
+    room.host.forceHandForTests(guest!.id, 1);
+    await flush();
+    clock += LAST_CARD_GRACE_MS;
+    room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
+    await flush();
+    expect(room.hostRecorder.last('actionRejected')).toBeUndefined();
+
+    // The catch itself put them back up to five, and now they are down to one
+    // again — a new card, a new window.
+    room.host.forceHandForTests(guest!.id, 1);
+    await flush();
+    room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
+    await flush();
+    expect(room.hostRecorder.last('actionRejected')?.code).toBe('nothingToCatch');
+
+    client.session.destroy('leftVoluntarily');
     room.destroy();
   });
 });

@@ -8,6 +8,7 @@ import {
 } from '../../../src/features/game/network/hostSession.ts';
 import { TransportError } from '../../../src/features/game/network/transport.ts';
 import { hostPeerIdForRoom } from '../../../src/features/game/network/roomCode.ts';
+import { LAST_CARD_GRACE_MS } from '../../../src/features/game/network/timing.ts';
 import { useAppStore } from '../../../src/features/game/state/store.ts';
 import { TEST_ROOM, createRecorder, flush } from '../helpers/net.ts';
 
@@ -56,7 +57,7 @@ function store(): Store {
   return useAppStore.getState();
 }
 
-async function startHost(): Promise<{
+async function startHost(options: { now?: () => number } = {}): Promise<{
   host: HostSession;
   recorder: ReturnType<typeof createRecorder>;
 }> {
@@ -70,6 +71,7 @@ async function startHost(): Promise<{
     observer: recorder.observer,
     seedFactory: () => 31337,
     heartbeatIntervalMs: 100_000,
+    ...(options.now ? { now: options.now } : {}),
   });
   return { host, recorder };
 }
@@ -222,7 +224,8 @@ describe('joining a room through the store', () => {
    * who called it, not just that somebody did.
    */
   it('raises a notice naming who caught whom', async () => {
-    const { host } = await startHost();
+    let clock = 1_700_000_000_000;
+    const { host } = await startHost({ now: () => clock });
     await store().joinRoom({ name: 'אלי', roomCode: TEST_ROOM });
     await flush();
     host.startGame();
@@ -233,6 +236,8 @@ describe('joining a room through the store', () => {
 
     host.forceHandForTests(me, 1);
     await flush();
+    // Past the head start a last card buys, or the host refuses the catch.
+    clock += LAST_CARD_GRACE_MS;
     host.submitLocalAction({ type: 'catchLastCard', targetId: me });
     await flush();
 
