@@ -72,7 +72,20 @@ export type SessionUpdate =
   /** It is this player's turn and another player is waiting on them. */
   | { readonly type: 'nudged'; readonly fromPlayerId: string }
   /** The room is moving to another device; the client should follow. */
-  | { readonly type: 'handover'; readonly successorPeerId: string; readonly generation: number }
+  | { readonly type: 'handover'; readonly generation: number }
+  /**
+   * This device has been offered the room.
+   *
+   * The snapshot travels with the offer, and `accept` is called once the successor
+   * is actually serving — so the old host only steps down when there is somewhere
+   * for the table to go.
+   */
+  | {
+      readonly type: 'handoffOffer';
+      readonly generation: number;
+      readonly snapshot: unknown;
+      readonly accept: () => void;
+    }
   | { readonly type: 'playAgain'; readonly agreed: readonly string[]; readonly required: number }
   | {
       readonly type: 'identity';

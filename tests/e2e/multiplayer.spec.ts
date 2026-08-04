@@ -193,7 +193,9 @@ test.describe('two-player game over the deterministic transport', () => {
     await seatTwoPlayers(host, guest);
 
     await host.getByRole('button', { name: 'Leave' }).click();
-    await host.getByRole('dialog').getByRole('button', { name: 'Leave' }).click();
+    // A host with another player present is offered a handover first; closing the
+    // room for everybody is the explicitly destructive choice.
+    await host.getByRole('dialog').getByRole('button', { name: 'Close the room for everyone' }).click();
 
     await expect(guest.getByText('the room is closed')).toBeVisible();
     await expect(guest.getByText('cannot continue without the host')).toBeVisible();

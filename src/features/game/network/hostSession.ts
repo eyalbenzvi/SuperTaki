@@ -1464,15 +1464,12 @@ export class HostSession implements Session {
     if (entry.playerId === null || entry.playerId !== this.handoffTo) {
       return;
     }
-    const successorPeerId = entry.connection.remoteId;
     record('handover', 'accepted', { by: entry.playerId, generation });
     for (const other of this.connections.values()) {
       if (other.playerId && other.connection.open) {
-        this.send(other.connection, 'hostClosed', {
-          reason: 'handoff',
-          successorPeerId,
-          generation,
-        });
+        // Only the generation travels: the id is derived from it, so there is
+        // nothing to get wrong and nothing to look up.
+        this.send(other.connection, 'hostClosed', { reason: 'handoff', generation });
       }
     }
     this.destroy('leftVoluntarily');

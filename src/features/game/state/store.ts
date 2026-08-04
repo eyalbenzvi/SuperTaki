@@ -27,6 +27,7 @@ import {
   flushHostedRoom,
   loadHostedRoom,
   saveHostedRoom,
+  validateHandoffSnapshot,
   type HostedRoom,
 } from './hostSnapshot.ts';
 import {
@@ -279,6 +280,65 @@ export const useAppStore = create<AppStore>((set, get) => {
     }
   }
 
+  /**
+   * Becomes the host, on the room the previous one just handed over.
+   *
+   * The order matters: this device starts serving on the next generation *before*
+   * telling the old host it accepted. Only then does the old host step down and
+   * point everybody here, so the table never has a moment with nowhere to go. If
+   * anything fails, nothing is accepted and the old host simply carries on.
+   */
+  async function acceptHandoff(generation: number, snapshot: unknown, accept: () => void): Promise<void> {
+    const roomCode = get().roomCode;
+    if (!roomCode) {
+      return;
+    }
+    const restore = validateHandoffSnapshot(snapshot);
+    if (!restore) {
+      log.warn('refusing a handover whose state did not parse');
+      record('handover', 'refused: unreadable state');
+      return;
+    }
+    const peerId = hostPeerIdForRoom(roomCode, generation);
+    let transport: Transport | null = null;
+    try {
+      transport = createTransport({ id: peerId });
+      const hostSession = await createHostSession({
+        transport,
+        roomCode,
+        hostDisplayName: get().displayName || 'Host',
+        maxPlayers: restore.maxPlayers,
+        tableLanguage: restore.tableLanguage,
+        observer: applyUpdate,
+        restore,
+        onSnapshot: persistHostedRoom,
+        generation,
+      });
+      const previous = session;
+      session = hostSession;
+      attachSleepHook();
+      accept();
+      // The old client session has served its purpose; its transport must go, or
+      // this device holds two peers and answers to both.
+      if (previous instanceof ClientSession) {
+        queueMicrotask(() => {
+          previous.destroy('leftVoluntarily');
+        });
+      }
+      set({
+        role: 'host',
+        hostPeerId: peerId,
+        busy: false,
+        inviteUrl: buildInviteUrl({ roomCode, hostPeerId: peerId }, window.location.href),
+      });
+      record('handover', 'took over the room', { generation });
+    } catch (error) {
+      log.warn('could not take the room over', error);
+      record('handover', 'refused: could not claim the id', { generation });
+      transport?.destroy();
+    }
+  }
+
   /** Persists the room whenever the host's authoritative state changes. */
   function persistHostedRoom(restore: HostRestoreState): void {
     const active = session;
@@ -376,6 +436,9 @@ export const useAppStore = create<AppStore>((set, get) => {
         set((state) =>
           state.resumable ? { resumable: { ...state.resumable, generation: update.generation } } : {},
         );
+        return;
+      case 'handoffOffer':
+        void acceptHandoff(update.generation, update.snapshot, update.accept);
         return;
       case 'playAgain':
         set({ playAgain: { agreed: update.agreed, required: update.required } });

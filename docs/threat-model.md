@@ -214,3 +214,38 @@ silently corrupt games. Not implemented, not claimed.
 | Host cheating                  | **Not mitigated** — inherent to a server-free design                          |
 | Blocked by strict NAT          | **Not mitigated** — needs a paid TURN relay; explained in the UI              |
 | Signalling broker misbehaving  | **Not mitigated** — inherent to free public signalling                        |
+
+## The host's saved room
+
+The host writes its room down so a reload does not destroy the game. That record contains
+**every player's hand and the order of the draw pile**, which is the same information the host
+already holds in memory — but written down, it outlives the moment.
+
+The choices that follow from that:
+
+- **`sessionStorage`, never `localStorage`.** It survives a reload, which is the accident worth
+  recovering from, and it is cleared when the tab closes. A persistent copy would cover the
+  rarer crash-with-tab-close, at the price of leaving everybody's cards on a device that may be
+  shared or borrowed. That trade was declined.
+- **A six-hour ceiling** on top of that, so a snapshot from a much earlier session is refused
+  rather than restored.
+- **Nothing is transmitted.** The record never leaves the device, and neither does the
+  diagnostics log beside it.
+
+## Handing the room over
+
+A voluntary handover sends the full state — hands and deck included — to the seat receiving it.
+That player then has exactly the power the host already had, which
+[architecture.md](architecture.md) states plainly and this document has always accepted for a
+private game among people who know each other. Two things bound it:
+
+- It happens only when the host _chooses_ it, so the exposure is a decision rather than a
+  consequence of a bad network.
+- It goes to one named seat, on the channel that seat already holds. There is no continuous
+  distribution of state to anybody, and no seat receives it "just in case".
+
+The thing this deliberately does not attempt is a takeover from a host that has gone silent.
+That would require distributing state before it is needed — putting the deck in somebody else's
+hands for the whole round on the chance the host might vanish — and it still could not
+establish that the successor is not replaying an older state. See the limitation in
+[architecture.md](architecture.md).

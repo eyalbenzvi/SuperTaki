@@ -507,8 +507,9 @@ describe('leaving a game', () => {
 
     await user.click(screen.getByRole('button', { name: 'יציאה' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('יציאה תסיים את המשחק לכולם');
-    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
+    // A host with another player present is offered the handover; closing the room
+    // for everybody is still available, and still the destructive option.
+    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
     expect(leaveRoom).toHaveBeenCalled();
   });
 

@@ -93,8 +93,21 @@ describe('dictionaries', () => {
       'duplicateConnection',
       'leftVoluntarily',
       'transportFailed',
+      // The two reasons that are not the end of anything, plus the one that ends a
+      // round without ending the room. A player who is told "the host is coming
+      // back" and a player who is told "the host left" need different words, and
+      // the whole point of the distinction is lost if they share a string.
+      'restarting',
+      'handoff',
+      'abandoned',
     ]) {
       expect(keys).toContain(`closed.${reason}`);
+    }
+  });
+
+  it('can describe every event the engine emits', () => {
+    for (const type of ['turnSkipped', 'playerLeft', 'roundAbandoned']) {
+      expect(keys).toContain(`event.${type}`);
     }
   });
 

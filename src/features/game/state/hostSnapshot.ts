@@ -134,6 +134,35 @@ function validate(value: unknown, now: number): HostedRoom | null {
   };
 }
 
+/**
+ * Validates a room offered by another device during a handover.
+ *
+ * The same schema as a snapshot of our own, minus the fields that describe *where*
+ * it was stored. It is checked rather than trusted not because the old host is
+ * suspected — it is alive and cooperating on a channel this seat already trusts —
+ * but because an unreadable state must fail here, before we start serving on it,
+ * rather than half-way through the first move.
+ */
+export function validateHandoffSnapshot(value: unknown): HostRestoreState | null {
+  const parsed = snapshotSchema
+    .omit({ roomCode: true, hostPeerId: true, generation: true, savedAt: true })
+    .safeParse(value);
+  if (!parsed.success) {
+    return null;
+  }
+  const data = parsed.data;
+  return {
+    hostPlayerId: data.hostPlayerId,
+    phase: data.phase,
+    maxPlayers: data.maxPlayers,
+    tableLanguage: data.tableLanguage,
+    versionFloor: data.versionFloor,
+    round: data.round,
+    seats: data.seats,
+    game: data.game,
+  };
+}
+
 export function loadHostedRoom(now: number = Date.now()): HostedRoom | null {
   return readSessionJson(STORAGE_KEYS.hostedRoom, (value) => validate(value, now));
 }
@@ -154,6 +183,27 @@ const FULL_WRITE_INTERVAL_MS = 2_000;
 
 let lastFullWriteAt = 0;
 let pending: ReturnType<typeof setTimeout> | null = null;
+let lastShape = '';
+
+/**
+ * A cheap fingerprint of everything except the cards.
+ *
+ * Throttling the whole snapshot was wrong: it delayed the phase and the seat list
+ * as well as the deck, so a reload landing inside the throttle window would
+ * restore a room that still believed it was in the lobby. Structural changes are
+ * rare and small, so they are written at once; only the deck and the hands — which
+ * change on every single move and cost 8-12 KB of synchronous JSON — wait.
+ */
+function shapeOf(args: WriteArgs): string {
+  return [
+    args.restore.phase,
+    args.restore.versionFloor,
+    args.restore.round,
+    args.restore.maxPlayers,
+    args.restore.seats.length,
+    args.restore.seats.map((seat) => `${seat.playerId}:${seat.left === true ? '1' : '0'}`).join(','),
+  ].join('|');
+}
 
 interface WriteArgs {
   readonly roomCode: string;
@@ -182,7 +232,10 @@ function write(args: WriteArgs, now: number): void {
 
 /** Records the room, throttling the expensive part. */
 export function saveHostedRoom(args: WriteArgs, now: number = Date.now()): void {
-  if (now - lastFullWriteAt >= FULL_WRITE_INTERVAL_MS) {
+  const shape = shapeOf(args);
+  const structural = shape !== lastShape;
+  lastShape = shape;
+  if (structural || now - lastFullWriteAt >= FULL_WRITE_INTERVAL_MS) {
     if (pending !== null) {
       clearTimeout(pending);
       pending = null;
@@ -215,6 +268,7 @@ export function flushHostedRoom(args: WriteArgs, now: number = Date.now()): void
 /** Test seam: forgets the throttle. */
 export function __resetHostSnapshotThrottleForTests(): void {
   lastFullWriteAt = 0;
+  lastShape = '';
   if (pending !== null) {
     clearTimeout(pending);
     pending = null;

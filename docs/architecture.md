@@ -220,29 +220,83 @@ checking it is the host's own tab.
 
 ## Known limitations
 
-1. **No TURN, so some networks cannot connect at all.** STUN discovers addresses; it cannot
-   relay. Symmetric NAT (common on corporate, school and some mobile networks) defeats a
-   direct connection. The honest answer, shown in the UI, is: use another network or play on
-   one device. A TURN server would fix it and would cost money.
+1. **Relay is best-effort, not guaranteed.** PeerJS ships two community TURN relays in its
+   default configuration, and `peerTransport.ts` now _merges_ that default rather than
+   replacing it — which it used to, silently discarding the only relay candidates the project
+   has. With them, symmetric NAT, carrier NAT and IPv6-only mobile networks generally work.
+   What is still not covered: the relays are UDP/3478 only, with no `turns:`/443 entry, so a
+   network that blocks outbound UDP entirely cannot connect at all; and they are donated,
+   best-effort, and could go away. `probeConnectivity()` diagnoses which case a player is in
+   _before_ they send invites, rather than leaving them with a spinner.
 2. **Signalling depends on a free public service.** The PeerJS broker is best-effort. If it
    is down, new rooms cannot be created; existing data channels keep working, because
-   signalling is only needed for the handshake.
-3. **No host migration.** If the host leaves permanently the room ends, and the app says so.
-   Migration would require the departing host to hand over state it no longer has, plus a
-   consensus mechanism to pick a successor and a way to prove the successor is not lying
-   about the state it inherited. That is a distributed-consensus problem, not a small
-   feature, and a half-correct version would silently corrupt games. It is not implemented
-   and not claimed.
+   signalling is only needed for the handshake. A host that cannot re-register says so, and
+   the reconnection loop is capped and jittered so a room full of clients stays a good
+   citizen of a shared service.
+3. **No _automatic_ host migration.** A host can hand the room over explicitly, and a host
+   that reloads or crashes can take it back on the same room code (see "Surviving a
+   disconnect"). What is deliberately absent is a silent host being replaced without its
+   consent. It cannot be made safe here: PeerJS's signalling socket and its data channels
+   have independent lifetimes, so a host that has only lost the broker keeps serving everyone
+   already connected while being unable to accept anybody new — and a client that cannot
+   reach it has no way to tell that from death, because clients have no mesh between them and
+   "the host is gone" is a single unverifiable observation. Two live hosts serving divergent
+   games is reachable, and a digest of the state proves authenticity rather than recency, so
+   a successor could take over several moves in the past and be believed. A table that needs
+   to stop can agree to stop instead.
 4. **No spectators.** New players cannot join after the game starts. The protocol has a
    `wantsSpectator` flag reserved, but the behaviour is not implemented and the host rejects
    late joins with `gameInProgress`.
 5. **The host has more power than a server would.** A modified host client could deal itself
    a good hand. This is a private game among people who know each other; see
    [threat-model.md](threat-model.md).
-6. **Nothing is persisted.** Close the room and the game is gone. There is no history, no
-   ranking and no stored replay — by design, and stated on the end-of-round screen.
-7. **Mobile background tabs.** Phones suspend background tabs, which drops connections. The
-   app reconnects on return, but a game needs the tab in the foreground.
+6. **Nothing is persisted beyond the tab.** There is no history, no ranking and no stored
+   replay. The host's room _is_ written down, but to `sessionStorage`: it survives a reload
+   and dies with the tab, because it contains every hand and the deck order.
+7. **A hard-killed host tab cannot be recovered.** A reload is; an operating system closing
+   the tab is not, because that clears `sessionStorage`. Writing everybody's cards to
+   persistent storage on a possibly-shared device is the price of covering it, and it is not
+   worth paying.
+8. **Mobile background tabs still drop connections.** Nothing in a web page can prevent it.
+   What has changed is the response: the page notices it woke, probes at once instead of
+   waiting for a throttled timer, and never mistakes its own sleep for the other side
+   leaving. A screen wake lock keeps the game from sleeping while it is in front of the
+   player.
+
+## Surviving a disconnect
+
+The design principle: **a disconnect is a pause, not the end.** Four mechanisms carry it.
+
+**Liveness is judged by the wall clock, not by timers.** Every heartbeat tick reports how late
+it was. A tick later than three intervals means the local page stopped running, so nobody is
+convicted of anything — but nor is the peer presumed well, because a suspended tab has very
+likely already lost its ICE consent (RFC 7675 gives it 30 s) while `open` stayed true. The
+response is an immediate probe on a short deadline, and a rebuild if it goes unanswered.
+Probes are correlated by nonce, so the evidence is _N unanswered questions_ rather than _N
+quiet milliseconds_ — the latter was satisfied by any unrelated broadcast.
+
+**Seat deadlines have one authority.** The host decides how long a seat is held and broadcasts
+it; the client derives its own give-up deadline by subtraction. Two independent constants
+would eventually disagree, and the countdown a player is shown would be contradicted by the
+timer running underneath it.
+
+**The host can come back.** Its room is written to `sessionStorage` after every change — the
+structural fields at once, the deck throttled, everything flushed on `pagehide`, which also
+sends a `restarting` notice so the silence is never ambiguous. On return it reclaims the _same_
+room code for seventy-five seconds (the broker holds a dropped id for up to a minute, so the
+id being refused is usually its own ghost), and restores its own player id and the version
+floor along with the game. Every guest's credential still fits, so they reconnect unprompted.
+
+**The table keeps moving.** An absent player's turn is passed after a short grace — free,
+except that an outstanding +2 run is still paid, since that is an obligation somebody else
+created. A breaker window waiting on an absent seat is resolved immediately, because it freezes
+every seat and is invisible to any check based on whose turn it is. A seat that leaves for good
+is _marked_, never deleted. Any player can pause the table, and the table can agree to end a
+round with no winner.
+
+Rejected, for the record: a heartbeat inside a Web Worker (Chrome freezes a page's workers
+along with the page, and iOS suspends both), and a `localStorage` mirror of the host snapshot
+(it would put every hand on disk to cover the rare crash-with-tab-close).
 
 ## Why no backend
 

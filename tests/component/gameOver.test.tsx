@@ -98,12 +98,12 @@ describe('end of round', () => {
     const { user } = renderApp();
 
     await user.click(screen.getByRole('button', { name: 'חזרה לדף הבית' }));
-    // The round is over but the room is not: leaving takes the rematch with it.
+    // The round is over but the room is not: leaving takes the rematch with it,
+    // which is why it is still confirmed rather than immediate.
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('יציאה תסגור את החדר לכולם');
     expect(leaveRoom).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
+    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
     expect(leaveRoom).toHaveBeenCalled();
   });
 

@@ -4,6 +4,7 @@ import { onSleep, onWake } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import { probeReachability } from './connectivityProbe.ts';
+import { hostPeerIdForRoom } from './roomCode.ts';
 import { MessageDeduplicator, clientMessage, type MessageContext } from './envelope.ts';
 import {
   parseHostMessage,
@@ -615,11 +616,18 @@ export class ClientSession implements Session {
         this.observer({ type: 'nudged', fromPlayerId: message.payload.fromPlayerId });
         return;
       case 'handoffOffer':
-        // Handled by the store, which is the only place that can start a host.
+        // Only the store can start a host, so the offer is handed up with the
+        // state attached. Nothing is verified here beyond the schema: the offer
+        // arrived from the living host on the channel this seat already trusts,
+        // which is exactly the condition that makes a handover safe and an
+        // automatic takeover from a silent host unsafe.
         this.observer({
-          type: 'handover',
-          successorPeerId: this.transport.localId ?? '',
+          type: 'handoffOffer',
           generation: message.payload.generation,
+          snapshot: message.payload.snapshot,
+          accept: () => {
+            this.send('handoffAccepted', { generation: message.payload.generation });
+          },
         });
         return;
       case 'kicked':
@@ -662,7 +670,6 @@ export class ClientSession implements Session {
 
   private handleHostClosed(payload: {
     readonly reason: 'hostLeft' | 'roomReset' | 'restarting' | 'handoff';
-    readonly successorPeerId?: string;
     readonly generation?: number;
   }): void {
     if (payload.reason === 'restarting') {
@@ -674,14 +681,17 @@ export class ClientSession implements Session {
       this.reconnectingSince = this.now();
       return;
     }
-    if (payload.reason === 'handoff' && payload.successorPeerId) {
-      record('handover', payload.successorPeerId, { generation: payload.generation });
-      this.hostPeerId = payload.successorPeerId;
-      this.observer({
-        type: 'handover',
-        successorPeerId: payload.successorPeerId,
-        generation: payload.generation ?? 0,
-      });
+    if (payload.reason === 'handoff' && payload.generation !== undefined) {
+      /*
+       * The new host's id is *derived* from the room code and the generation, so
+       * there is nothing to look up and nothing to be told: every client can work
+       * out where the room went from a single number. That is also why the room
+       * code never has to change when a room moves.
+       */
+      const generation = payload.generation;
+      this.hostPeerId = hostPeerIdForRoom(this.roomCode, generation);
+      record('handover', this.hostPeerId, { generation });
+      this.observer({ type: 'handover', generation });
       this.setPhase('reconnecting');
       this.attempt = 0;
       this.reconnectingSince = this.now();
