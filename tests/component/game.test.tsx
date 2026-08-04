@@ -440,17 +440,17 @@ describe('the +2 run, the King and the +3', () => {
     setState({ drawCard });
     const { user } = renderApp();
 
-    expect(screen.getByText('מחכים לך 4 קלפים. אפשר לענות בקח 2 או במלך, או לקחת אותם.')).toBeInTheDocument();
+    expect(screen.getByText('מחכים לך 4 קלפים. אפשר לענות בקח 2, או לקחת אותם.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'לקיחת 4 קלפים' }));
     expect(drawCard).toHaveBeenCalled();
   });
 
-  it('offers only the +2 and the King against a pending run', () => {
+  it('offers only the +2 against a pending run — not the King', () => {
     situation({ hand: [redPlusTwo, king, blue5], discardTop: red9, activeColor: 'red', pendingDraw: 2 });
     renderApp();
 
     expectPlayable('הנחת אדום קח 2');
-    expectPlayable('הנחת מלך');
+    expectRefused('הנחת מלך');
     expectRefused('הנחת כחול 5');
   });
 
@@ -458,7 +458,7 @@ describe('the +2 run, the King and the +3', () => {
     situation({ hand: [blue5], discardTop: red9, activeColor: 'red', freePlay: true, pendingPlus: true });
     renderApp();
 
-    expect(screen.getByText('המלך ביטל הכול — משחקים שוב, וכל קלף מותר.')).toBeInTheDocument();
+    expect(screen.getByText('המלך קנה תור חופשי — משחקים שוב, וכל קלף מותר.')).toBeInTheDocument();
     expect(screen.queryByText('הונח פלוס — חייבים להניח עוד קלף.')).not.toBeInTheDocument();
   });
 

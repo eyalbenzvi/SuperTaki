@@ -188,6 +188,15 @@ export const IDLE_TURN_NUDGE_MS = 30_000;
  */
 export const NUDGE_NOTICE_MS = 12_000;
 
+/**
+ * How long the "somebody was caught on their last card" banner stays up.
+ *
+ * Shorter than the nudge: it reports something that has already happened and
+ * needs no answer, so it only has to survive being read. It clears itself for
+ * the same reason the nudge does — nobody should have to dismiss a bulletin.
+ */
+export const CAUGHT_NOTICE_MS = 8_000;
+
 /** Entries kept in the local diagnostics ring. */
 export const DIAGNOSTICS_CAPACITY = 500;
 

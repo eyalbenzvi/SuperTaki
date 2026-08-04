@@ -24,7 +24,7 @@ import { colorName } from '../cardText.ts';
 import { describeEvent } from '../eventText.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
-import { NudgeButton, NudgeNotice } from '../components/TableControls.tsx';
+import { CaughtNotice, NudgeButton, NudgeNotice } from '../components/TableControls.tsx';
 import { WaitingNotice } from '../components/WaitingNotice.tsx';
 import { GameLog } from '../components/GameLog.tsx';
 import { DirectionIndicator, Hand, OpponentList, Piles } from '../components/TableParts.tsx';
@@ -179,6 +179,7 @@ export function GameScreen(): ReactNode {
       <div className="game__notice">
         <ConnectionPhaseNotice />
         <NudgeNotice />
+        <CaughtNotice />
         <WaitingNotice />
       </div>
 

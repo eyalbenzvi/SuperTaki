@@ -111,6 +111,22 @@ export interface AppState {
   pausedBy: string | null;
   /** Set when another player nudges you; the nonce forces a re-announcement. */
   nudge: { readonly fromPlayerId: string; readonly nonce: number } | null;
+  /**
+   * The most recent "last card" catch, for the banner every seat sees.
+   *
+   * The catch is in the log like everything else, but the log's visible line is
+   * the newest one — and a catch is immediately followed by the draw it caused,
+   * so the one line naming who called it was on screen for no time at all. With
+   * three or more players that left the table knowing somebody had been caught
+   * and not by whom. Held as state rather than derived from the feed so only a
+   * catch that actually arrives raises it, never one replayed on reconnection.
+   */
+  caught: {
+    readonly targetId: string;
+    readonly byId: string;
+    readonly penalty: number;
+    readonly nonce: number;
+  } | null;
 
   /** True from the moment a move is submitted until the table answers. */
   actionPending: boolean;
@@ -133,6 +149,7 @@ export interface AppActions {
   readonly forgetResumable: () => void;
   readonly forgetHostable: () => void;
   readonly dismissNudge: () => void;
+  readonly dismissCaught: () => void;
 
   readonly createRoom: (options: {
     name: string;
@@ -199,6 +216,7 @@ let feedCounter = 0;
 let rejectionCounter = 0;
 let announcementCounter = 0;
 let nudgeCounter = 0;
+let caughtCounter = 0;
 let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * The intent currently in flight.
@@ -243,6 +261,7 @@ function initialState(): AppState {
     hostable: loadHostedRoom(),
     pausedBy: null,
     nudge: null,
+    caught: null,
     actionPending: false,
     leaveIntent: false,
     online: typeof navigator === 'undefined' || navigator.onLine !== false,
@@ -266,6 +285,7 @@ const CLEARED_SESSION: Partial<AppState> = {
   actionPending: false,
   leaveIntent: false,
   pausedBy: null,
+  caught: null,
 };
 
 function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
@@ -439,7 +459,28 @@ export const useAppStore = create<AppStore>((set, get) => {
           feedCounter += 1;
           return { id: feedCounter, event };
         });
-        set((state) => ({ feed: [...state.feed, ...entries].slice(-FEED_LIMIT) }));
+        /*
+         * A catch is raised out of the batch as its own notice. Only the last one
+         * in a batch can be shown, and showing the last is right: two catches in
+         * one batch means the older is already answered by the newer.
+         */
+        const lastCatch = [...update.events].reverse().find((event) => event.type === 'lastCardCaught');
+        if (lastCatch !== undefined) {
+          caughtCounter += 1;
+        }
+        set((state) => ({
+          feed: [...state.feed, ...entries].slice(-FEED_LIMIT),
+          ...(lastCatch !== undefined
+            ? {
+                caught: {
+                  targetId: lastCatch.playerId,
+                  byId: lastCatch.caughtById,
+                  penalty: lastCatch.penalty,
+                  nonce: caughtCounter,
+                },
+              }
+            : {}),
+        }));
         return;
       }
       case 'actionRejected':
@@ -613,6 +654,10 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     dismissNudge: () => {
       set({ nudge: null });
+    },
+
+    dismissCaught: () => {
+      set({ caught: null });
     },
 
     createRoom: async ({ name, maxPlayers, tableLanguage }) => {
@@ -856,7 +901,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     startGame: () => {
       if (session instanceof HostSession) {
         clearActionLock();
-        set({ feed: [] });
+        set({ feed: [], caught: null });
         session.startGame();
       }
     },

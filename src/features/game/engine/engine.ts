@@ -393,13 +393,15 @@ function resolveCardEffect(draft: Draft, card: Card, events: GameEvent[]): void 
       return;
     }
     case 'king': {
-      // The King answers anything: it wipes a pending +2 run and any leftover
-      // obligation, then hands the same player a turn with no restrictions.
+      /*
+       * The King buys its owner a turn with no matching at all. It is not an
+       * answer to a +2 run: a run can only be met with another +2, so a King
+       * can never be played while `pendingDraw` is outstanding and there is no
+       * penalty here for it to wipe.
+       */
       const player = draft.players[draft.currentPlayerIndex] as EnginePlayer;
-      draft.pendingDraw = 0;
       draft.pendingPlus = true;
       draft.freePlay = true;
-      events.push({ type: 'effectsCancelled', playerId: player.id });
       events.push({ type: 'extraTurn', playerId: player.id });
       return;
     }
@@ -461,7 +463,7 @@ function applyPlayCard(
       if (card.color !== state.takiMode.color && card.kind !== 'taki') {
         return reject('wrongTakiColor');
       }
-    } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
+    } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo') {
       return reject('mustAnswerDraw');
     } else if (!isCardPlayable(card, playContextFromState(state))) {
       return reject('illegalCard');

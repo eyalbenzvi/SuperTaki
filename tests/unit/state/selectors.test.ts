@@ -87,6 +87,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     hostable: null,
     pausedBy: null,
     nudge: null,
+    caught: null,
     actionPending: false,
     leaveIntent: false,
     online: true,

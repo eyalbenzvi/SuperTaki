@@ -51,14 +51,19 @@ describe('+2', () => {
     expect(events.find((event) => event.type === 'drawStacked')).toMatchObject({ total: 4 });
   });
 
-  it('refuses anything but a +2 or a King while a run is open', () => {
+  it('refuses anything but another +2 while a run is open', () => {
     let state = makeState({
-      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('red:1', 'colorChange') },
+      hands: {
+        'p-alice': cards('red:plusTwo', 'blue:3'),
+        'p-bob': cards('red:1', 'colorChange', 'king'),
+      },
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
     expectRejected(play(state, 'p-bob', 'red:1'), 'mustAnswerDraw');
     expectRejected(play(state, 'p-bob', 'colorChange', 'blue'), 'mustAnswerDraw');
+    // The King is refused like anything else: it is not an answer to a run.
+    expectRejected(play(state, 'p-bob', 'king'), 'mustAnswerDraw');
   });
 
   it('hands the whole run to whoever cannot answer', () => {
@@ -93,19 +98,34 @@ describe('+2', () => {
 });
 
 describe('king', () => {
-  it('cancels a pending run and buys a free turn', () => {
+  it('buys a free turn', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('king', 'blue:3'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+    });
+    const { state: next, events } = expectOk(play(state, 'p-alice', 'king'));
+    expect(next.freePlay).toBe(true);
+    expect(next.pendingPlus).toBe(true);
+    expect(currentPlayer(next)?.id).toBe('p-alice');
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'extraTurn']);
+  });
+
+  it('is no answer to a pending run: the holder pays it like anybody else', () => {
     let state = makeState({
       hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('king', 'blue:3') },
+      drawPile: cards('green:4', 'green:5'),
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
 
-    const { state: next, events } = expectOk(play(state, 'p-bob', 'king'));
+    expectRejected(play(state, 'p-bob', 'king'), 'mustAnswerDraw');
+
+    // Bob holds a King and no +2, so the only way out is the whole run.
+    const { state: next } = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-bob' }));
+    expect(handOf(next, 'p-bob')).toHaveLength(4);
     expect(next.pendingDraw).toBe(0);
-    expect(next.freePlay).toBe(true);
-    expect(next.pendingPlus).toBe(true);
-    expect(currentPlayer(next)?.id).toBe('p-bob');
-    expect(eventTypes(events)).toEqual(['cardPlayed', 'effectsCancelled', 'extraTurn']);
+    expect(next.freePlay).toBe(false);
+    expect(currentPlayer(next)?.id).toBe('p-alice');
   });
 
   it('leaves the leading colour alone and refuses a colour choice', () => {

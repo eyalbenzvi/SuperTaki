@@ -177,7 +177,6 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     playerId: playerIdSchema,
     total: z.number().int().min(2).max(200),
   }),
-  z.object({ type: z.literal('effectsCancelled'), playerId: playerIdSchema }),
   z.object({ type: z.literal('plusThreePlayed'), playerId: playerIdSchema }),
   z.object({
     type: z.literal('plusThreeBroken'),

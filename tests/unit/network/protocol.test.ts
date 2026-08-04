@@ -159,7 +159,6 @@ describe('host message validation', () => {
       { type: 'colorChosen', playerId: 'p-alice', color: 'blue' },
       { type: 'playerSkipped', playerId: 'p-bob' },
       { type: 'drawStacked', playerId: 'p-alice', total: 4 },
-      { type: 'effectsCancelled', playerId: 'p-alice' },
       { type: 'plusThreePlayed', playerId: 'p-alice' },
       { type: 'plusThreeBroken', playerId: 'p-bob', targetId: 'p-alice' },
       { type: 'directionChanged', direction: -1 },

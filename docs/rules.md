@@ -62,7 +62,9 @@ A card is legal when any of these holds:
 - it matches the **current colour**, or
 - it matches the **symbol** of the top card — the same number value, or the same action
   kind (Stop on Stop, +2 on +2, Plus on Plus, and so on), or
-- it is a **colourless card** (Change Colour, Super Taki, King, +3), which is always legal.
+- it is a **colourless card** (Change Colour, Super Taki, King, +3), which is legal on any top
+  card. The one thing that suspends this is an open +2 run: while cards are owed, **only a +2
+  is legal**, colourless or not.
 
 A **+3 Breaker is legal as an ordinary play, and it is expensive**: with no +3 to break, the
 three cards it would have sent back are drawn by the player who spent it. See below.
@@ -87,7 +89,7 @@ risks is being caught before you get to play it — see "Last card" below.
 | **Change Colour**    | Playable on anything. You choose the next colour, and your turn ends.                                                                                                                                         |
 | **Taki**             | Opens a sequence in that card's colour — see below.                                                                                                                                                           |
 | **Super Taki**       | Playable on anything. Opens a sequence in the colour already leading.                                                                                                                                         |
-| **King**             | Playable on anything, including an open +2 run. Cancels every pending penalty and obligation, then gives you a free turn with no matching.                                                                    |
+| **King**             | Playable on any top card, but **not** as an answer to an open +2 run. Gives you a free turn with no matching.                                                                                                 |
 | **+3**               | Every other player draws three cards — unless somebody breaks it. See below.                                                                                                                                  |
 | **+3 Breaker**       | Playable **out of turn** in answer to a +3: the player who played the +3 draws three instead, and nobody else draws. Played with no +3 open, it is an ordinary colourless card and its owner draws the three. |
 
@@ -115,7 +117,8 @@ other players are the ones who enforce it.
    **any other player** may call it out, in or out of turn, and the silent player draws
    **four cards**. Drawing them closes the window by itself, because the hand is no longer a
    single card. Calling out a player who declared, who is not on one card, or yourself, is
-   rejected with `nothingToCatch`.
+   rejected with `nothingToCatch`. **Every seat is told who called it**, in a banner as well
+   as in the log: from three players up, "somebody drew four" does not say whose call it was.
 6. **It is public.** Who has declared is part of the table state everyone sees, the same
    way a shout at a real table is heard by everyone. That is what makes catching possible at
    all, and it is why every seat on one card shows either "declared" or a button to call it.
@@ -125,9 +128,9 @@ other players are the ones who enforce it.
 - Playing a **+2** sets the outstanding penalty to two cards and passes the turn.
 - The player to move may answer with **another +2 of any colour**, which raises the run to
   four, then six, and so on. The colour of the run follows the last +2 played.
-- A **King** also answers a run, and wipes it out entirely.
-- Nothing else is legal while a run is open: the engine rejects any other card with
-  `mustAnswerDraw`.
+- **A King does not answer a run.** Nothing but a +2 is legal while a run is open: the engine
+  rejects every other card — the King included — with `mustAnswerDraw`. A player holding a
+  King and no +2 draws the whole run like anybody else.
 - A player who will not or cannot answer **draws the whole run at once** and loses their
   turn. Drawing two is a single decision, not two separate draws.
 - A +2 played **inside** a Taki sequence does nothing until the sequence closes; then, if
@@ -135,10 +138,13 @@ other players are the ones who enforce it.
 
 ### The King
 
-The King is the answer to everything:
+The King buys you a turn in which nothing has to match:
 
-1. Play it on any top card, at any point in your turn, including against an open +2 run.
-2. Any outstanding +2 run and any Plus obligation are cancelled.
+1. Play it on any top card, at any point in your turn — with one exception, below.
+2. **It is not an answer to an open +2 run.** While cards are owed, only a +2 is legal; a
+   King is rejected with `mustAnswerDraw`, and a player who holds a King but no +2 draws
+   the run. So a King can never be played while a penalty is outstanding, and there is
+   never a penalty for it to cancel.
 3. The leading colour does not change.
 4. You then play again, and on that free turn **every card in your hand is legal** —
    colour and symbol do not apply. Playing it sets the colour as usual.
@@ -260,7 +266,8 @@ Each of these is a genuine fork. We picked one, implemented it, and tested it.
 | Can you win on a Plus, +2, +3 or Taki card?       | **Yes.** Any outstanding obligation is void.                                                                                   | An empty hand ends the round; requiring a further card from an empty hand is incoherent.                                          |
 | Colourless cards inside a Taki sequence           | **Not allowed.**                                                                                                               | A sequence is defined by a colour, and a colourless card has none.                                                                |
 | Which effects apply when a sequence closes?       | **Only the last card's.**                                                                                                      | Otherwise a long sequence could chain several Stops, which no edition intends.                                                    |
-| Does a +2 run stack?                              | **Yes, by two per card, with no cap.**                                                                                         | This is the printed rule, and the King is the release valve.                                                                      |
+| Does a +2 run stack?                              | **Yes, by two per card, with no cap.**                                                                                         | This is the printed rule. There is no release valve: a run is answered with a +2 or paid for.                                     |
+| Does a King answer a +2 run?                      | **No.** Only a +2 answers a +2.                                                                                                | A King that wiped any run made the whole run mechanic optional for whoever happened to hold one of the two in the deck.           |
 | "Last card" declaration and a penalty for silence | **Declared with a button; the win does not depend on it, but any other player may catch a silent single card for four cards.** | This is how it is played at a table: the declaration is enforced by the other players, not by the deal.                           |
 | A +3 Breaker with no +3 open                      | **Legal, and its owner draws the three.**                                                                                      | Refusing it left a card that could be unplayable all round. Charging its owner keeps it a defensive card rather than a second +3. |
 | A Taki of another colour on a Taki                | **Legal; the sequence carries on in the new colour.**                                                                          | Taki on Taki is a symbol match, and a sequence is defined by a colour — so the new card's colour is the one that binds.           |
@@ -286,13 +293,15 @@ Ann presses **Close Taki** → the last card was a Stop, so **Ben is skipped** a
 **3 — A +2 run**
 
 Ann plays Red +2; Ben owes two. Ben plays Green +2; Cat owes four and the colour is green.
-Cat holds no +2 and no King, so she draws four and her turn ends. Play returns to Ann.
+Cat holds no +2, so she draws four and her turn ends — a King in her hand would not help
+her. Play returns to Ann.
 
-**4 — A King against a run**
+**4 — A King is no use against a run**
 
-Ann plays Red +2; Ben owes two. Ben plays the King: the run is cancelled, the colour is
-still red, and Ben plays again — this time he may put down Blue 7, even though nothing
-about it matches.
+Ann plays Red +2; Ben owes two and holds a King but no +2. The King is refused
+(`mustAnswerDraw`), so Ben draws the two and his turn ends. Played on an ordinary top card
+the same King would buy him a free turn: the colour stays as it was, and he may then put
+down Blue 7 even though nothing about it matches.
 
 **5 — A +3 that gets broken**
 
@@ -364,7 +373,8 @@ draws one of them; two remain in the draw pile.
 - הוא בצבע הנוכחי, או
 - הוא באותו **סמל** כמו הקלף העליון — אותו מספר, או אותו סוג פעולה (עצור על עצור, קח 2 על
   קח 2, פלוס על פלוס וכן הלאה), או
-- הוא קלף ללא צבע (שינוי צבע, סופר טאקי, מלך, פלוס 3), שתמיד חוקי.
+- הוא קלף ללא צבע (שינוי צבע, סופר טאקי, מלך, פלוס 3), שחוקי על כל קלף עליון. היוצא מן הכלל
+  היחיד הוא קנס קח־2 פתוח: כל עוד חייבים קלפים, **רק קח 2 חוקי**, עם צבע או בלי.
 
 **שבירת פלוס 3 היא הנחה חוקית לגמרי, ויקרה**: כשאין פלוס 3 לשבור, שלושת הקלפים שהיא הייתה
 מחזירה נמשכים בידי מי שהניח אותה. ראו למטה.
@@ -387,7 +397,7 @@ draws one of them; two remain in the draw pile.
 | **שינוי צבע**    | אפשר להניח על כל קלף. בוחרים את הצבע הבא והתור עובר.                                                                                                                        |
 | **טאקי**         | פותח רצף בצבע של הקלף — ראו למטה.                                                                                                                                           |
 | **סופר טאקי**    | אפשר להניח על כל קלף. פותח רצף בצבע שכבר מוביל.                                                                                                                             |
-| **מלך**          | אפשר להניח על כל קלף, גם על קנס קח־2 פתוח. מבטל כל קנס וכל חובה, ואז נותן תור חופשי בלי התאמה.                                                                              |
+| **מלך**          | אפשר להניח על כל קלף עליון, אבל **לא** כתשובה לקנס קח־2 פתוח. נותן תור חופשי בלי התאמה.                                                                                     |
 | **פלוס 3**       | כל שאר השחקנים מושכים שלושה קלפים — אלא אם מישהו שובר.                                                                                                                      |
 | **שבירת פלוס 3** | מונחת **שלא בתור** כתשובה לפלוס 3: מי שהניח את הפלוס 3 מושך שלושה במקום, ואף אחד אחר לא. כשמניחים אותה בלי פלוס 3 פתוח היא קלף חסר צבע רגיל, ומי שהניח אותה מושך את השלושה. |
 
@@ -411,7 +421,8 @@ draws one of them; two remain in the draw pile.
 5. **מה ששתיקה עולה הוא להיתפס.** כל עוד שחקן יושב על קלף בודד בלי שהכריז, **כל שחקן אחר**
    יכול לתפוס אותו, בתור או שלא בתור, והשותק לוקח **4 קלפים**. הלקיחה סוגרת את החלון מעצמה,
    כי היד כבר לא קלף בודד. תפיסה של מי שהכריז, של מי שלא נשאר לו קלף בודד, או של עצמך, נדחית
-   בקוד `nothingToCatch`.
+   בקוד `nothingToCatch`. **כל השולחן מקבל הודעה מי תפס**, לא רק ביומן: משלושה שחקנים ומעלה
+   "מישהו לקח ארבעה" לא אומר של מי הייתה הקריאה.
 6. **ההכרזה פומבית.** מי שהכריז מופיע במצב השולחן שכולם רואים, בדיוק כמו הכרזה בקול בשולחן
    אמיתי. זה מה שמאפשר לתפוס בכלל, ולכן כל מושב עם קלף בודד מציג או "הכריז/ה" או כפתור לתפוס.
 
@@ -420,18 +431,20 @@ draws one of them; two remain in the draw pile.
 - הנחת **קח 2** קובעת קנס של שני קלפים ומעבירה את התור.
 - מי שתורו יכול לענות ב**קח 2 בכל צבע**, שמעלה את הקנס לארבעה, אחר כך לשישה וכן הלאה. הצבע
   המוביל הוא של הקח 2 האחרון שהונח.
-- גם **מלך** עונה לקנס, ומוחק אותו לגמרי.
-- שום דבר אחר לא חוקי כשקנס פתוח: המנוע דוחה כל קלף אחר בקוד `mustAnswerDraw`.
+- **מלך אינו עונה לקנס.** כשקנס פתוח שום קלף מלבד קח 2 אינו חוקי: המנוע דוחה כל קלף אחר,
+  כולל מלך, בקוד `mustAnswerDraw`. מי שיש לו מלך ואין לו קח 2 מושך את כל הקנס כמו כולם.
 - מי שלא יכול או לא רוצה לענות **מושך את כל הקנס בבת אחת** ומפסיד את תורו.
 - קח 2 שהונח **בתוך** רצף טאקי לא עושה דבר עד שהרצף נסגר; אם הוא הקלף האחרון, נפתח קנס
   כרגיל.
 
 ### המלך
 
-המלך הוא התשובה להכול:
+המלך קונה תור שבו שום דבר לא חייב להתאים:
 
-1. מניחים אותו על כל קלף עליון, בכל שלב בתור, כולל מול קנס קח־2 פתוח.
-2. כל קנס קח־2 וכל חובת פלוס מתבטלים.
+1. מניחים אותו על כל קלף עליון, בכל שלב בתור — למעט מצב אחד, בסעיף הבא.
+2. **הוא אינו תשובה לקנס קח־2 פתוח.** כל עוד חייבים קלפים רק קח 2 חוקי; מלך נדחה בקוד
+   `mustAnswerDraw`, ומי שיש לו מלך ואין לו קח 2 מושך את הקנס. לכן מלך לא יכול להיות מונח
+   כשיש קנס פתוח, ואין לו קנס לבטל.
 3. הצבע המוביל לא משתנה.
 4. משחקים שוב, ובתור החופשי הזה **כל קלף ביד חוקי** — אין התאמת צבע או סמל. ההנחה קובעת את
    הצבע כרגיל.
@@ -541,7 +554,8 @@ draws one of them; two remain in the draw pile.
 | ניצחון בקלף פלוס, קח 2, פלוס 3 או טאקי | **מנצחים.** כל חובה שנותרה מתבטלת.               | יד ריקה מסיימת את הסבב; דרישה לקלף נוסף מיד ריקה חסרת משמעות.     |
 | קלפים ללא צבע בתוך רצף                 | **אסור.**                                        | רצף מוגדר על ידי צבע, ולקלף ללא צבע אין.                          |
 | אילו השפעות חלות בסגירת רצף?           | **רק של הקלף האחרון.**                           | אחרת רצף ארוך היה משרשר כמה קלפי עצור.                            |
-| האם קנס קח־2 מצטבר?                    | **כן, בשניים לכל קלף, בלי תקרה.**                | זה החוק המודפס, והמלך הוא שסתום השחרור.                           |
+| האם קנס קח־2 מצטבר?                    | **כן, בשניים לכל קלף, בלי תקרה.**                | זה החוק המודפס. אין שסתום שחרור: עונים בקח 2 או משלמים.           |
+| האם מלך עונה לקנס קח־2?                | **לא.** רק קח 2 עונה לקח 2.                      | מלך שמוחק כל קנס הופך את כל מנגנון הקנס לרשות מי שהגריל אותו.     |
 | הכרזה על "קלף אחרון" וקנס על שתיקה     | **מיושם.** מי ששותק על קלף בודד נחשף לתפיסה.     | ההכרזה חוקית מכל מושב ובכל רגע, בדיוק כמו צעקה בשולחן אמיתי.      |
 | תפיסה של שחקן שאינו נוכח               | **אסורה.**                                       | מי שלא כאן לא יכול להכריז, ולכן זו לא תפיסה אלא קציר.             |
 | קלף פתיחה מיוחד                        | **עובר לתחתית החבילה** עד שנשלף קלף מספר.        | שומר על תור ראשון חד־משמעי בלי לזרוק קלפים.                       |
@@ -564,12 +578,13 @@ draws one of them; two remain in the draw pile.
 **3 — קנס קח 2 שמצטבר**
 
 אן מניחה קח 2 אדום; בן חייב שניים. בן מניח קח 2 ירוק; קת חייבת ארבעה והצבע ירוק. לקת אין
-קח 2 ואין מלך, ולכן היא מושכת ארבעה ותורה נגמר. התור חוזר לאן.
+קח 2, ולכן היא מושכת ארבעה ותורה נגמר — מלך ביד לא היה עוזר לה. התור חוזר לאן.
 
-**4 — מלך מול קנס**
+**4 — מלך לא עוזר מול קנס**
 
-אן מניחה קח 2 אדום; בן חייב שניים. בן מניח מלך: הקנס מתבטל, הצבע נשאר אדום, ובן משחק
-שוב — והפעם הוא יכול להניח כחול 7, למרות ששום דבר בו לא מתאים.
+אן מניחה קח 2 אדום; בן חייב שניים, ויש לו מלך אבל אין לו קח 2. המלך נדחה
+(`mustAnswerDraw`), ולכן בן מושך את שני הקלפים ותורו נגמר. אותו מלך על קלף עליון רגיל היה
+קונה לו תור חופשי: הצבע נשאר כפי שהיה, והוא יכול להניח כחול 7 למרות ששום דבר בו לא מתאים.
 
 **5 — פלוס 3 שנשבר**
 
