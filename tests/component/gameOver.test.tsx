@@ -27,6 +27,42 @@ function enterGameOver(patch: Parameters<typeof setState>[0] = {}): void {
   });
 }
 
+describe('a round that ended with no winner', () => {
+  it('says so, rather than naming one from nothing', () => {
+    const fixture = gameFixture();
+    setState({
+      screen: 'over',
+      role: 'host',
+      phase: 'connected',
+      localPlayerId: HOST_ID,
+      lobby: lobbyFixture({ phase: 'finished' }),
+      publicState: {
+        ...fixture.publicState,
+        phase: 'finished',
+        // No winner, and an explicit reason. Naming somebody anyway would be a
+        // lie; leaving the line blank would read as a bug.
+        winnerId: null,
+        endReason: 'abandoned',
+        currentPlayerId: null,
+        players: [
+          { id: HOST_ID, name: 'דנה', cardCount: 3 },
+          { id: GUEST_ID, name: 'אלי', cardCount: 5 },
+        ],
+      },
+      playAgain: { agreed: [], required: 2 },
+    });
+    renderApp();
+
+    expect(screen.getByText('הסבב הסתיים בלי מנצח.')).toBeInTheDocument();
+    // Everybody still appears with the hand they were holding: erasing a player
+    // from the standings of a round they might have been winning is not a result.
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('דנה')).toBeInTheDocument();
+    expect(within(table).getByText('אלי')).toBeInTheDocument();
+    expect(table.querySelector('.standings__winner')).toBeNull();
+  });
+});
+
 describe('end of round', () => {
   it('names the winner and lists final standings', () => {
     enterGameOver();
