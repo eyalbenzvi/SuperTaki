@@ -72,6 +72,8 @@ export interface StateOverrides {
   declaredLastCard?: readonly PlayerId[];
   phase?: GameState['phase'];
   winnerId?: PlayerId | null;
+  endReason?: GameState['endReason'];
+  turnSeq?: number;
   version?: number;
 }
 
@@ -104,6 +106,8 @@ export function makeState(overrides: StateOverrides = {}): GameState {
     declaredLastCard: overrides.declaredLastCard ?? [],
     rng: createRng(12345),
     winnerId: overrides.winnerId ?? null,
+    endReason: overrides.endReason ?? null,
+    turnSeq: overrides.turnSeq ?? 0,
     seed: 12345,
   };
 }

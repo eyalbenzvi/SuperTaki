@@ -300,6 +300,87 @@ export const en = {
   'event.drawPileRecycled': 'The discard pile was shuffled back in ({count} cards).',
   'event.drawPileExhausted': 'There are no cards left to draw.',
   'event.playerWon': '{name} has no cards left and wins!',
+  'event.turnSkipped': '{name} was away, so their turn was passed.',
+  'event.turnSkippedDrew': '{name} was away and drew the {count} cards they owed.',
+  'event.playerLeft': '{name} left the round.',
+  'event.roundAbandoned': 'Too few players are left, so the round was abandoned.',
+  'event.nudged': '{name} is waiting for you.',
+
+  'reject.nothingToSkip': 'That player is not the one the table is waiting for.',
+  'reject.alreadyLeft': 'That player has already left the round.',
+
+  'absent.title': 'Waiting for {name}',
+  'absent.holdingSeat': 'Their seat is being held: {time} left.',
+  'absent.skipping': 'Passing their turn in {seconds}s.',
+  'absent.skipNow': 'Pass their turn',
+  'absent.removeFromRound': 'Remove from the round',
+  'absent.returned': '{name} is back.',
+  'absent.left': '{name} left the round. Their cards stay out of play.',
+
+  'pause.request': 'Ask the table to wait',
+  'pause.resume': 'Carry on',
+  'pause.title': 'The table is paused',
+  'pause.body': '{name} asked everyone to wait. Nothing will be skipped while it is paused.',
+  'pause.byYou': 'You asked the table to wait.',
+
+  'abandon.request': 'End this round',
+  'abandon.title': 'End the round?',
+  'abandon.body':
+    'This round ends with no winner and the standings are shown as they are. Everyone still here has to agree.',
+  'abandon.votes': '{count} of {required} agreed',
+  'abandon.confirm': 'End it',
+  'abandon.abandoned': 'The round was ended with no winner.',
+
+  'nudge.send': 'Nudge',
+  'nudge.sent': 'Nudge sent.',
+  'nudge.received': '{name} nudged you — it is your turn.',
+  'nudge.yourTurn': 'It is your turn.',
+
+  'host.resumeTitle': 'You were hosting a room',
+  'host.resumeBody': 'Room {room} is still yours. Take it back and the table can carry on.',
+  'host.resumeAction': 'Carry on hosting',
+  'host.resumeDiscard': 'Forget it',
+  'host.reclaiming': 'Reclaiming the room code…',
+  'host.restarting': 'The host is reloading. Your seat is being held.',
+  'host.selfDemoted':
+    'This device cannot reach the connection service, so nobody new can join. Players already here are unaffected.',
+  'host.handoffTitle': 'Hand the room over?',
+  'host.handoffBody': '{name} takes over as host and the round carries on. You leave as an ordinary player.',
+  'host.handoffAction': 'Hand over and leave',
+  'host.handoffClose': 'Close the room for everyone',
+  'host.handoffMoved': 'The room moved to {name}. Reconnecting…',
+
+  'closed.restarting': 'The host is coming back. Your seat is being held.',
+  'closed.handoff': 'Another player has taken over as host.',
+  'closed.abandoned': 'The round ended because too few players were left.',
+
+  'probe.title': 'Checking this network',
+  'probe.direct': 'This network looks fine for playing together.',
+  'probe.relayNeeded': 'This network needs a relay. It should still work, but it may be slower.',
+  'probe.blocked':
+    'This network blocks the direct connections the game needs. Playing on one device will work.',
+  'probe.unknown': 'This browser could not be checked.',
+  'probe.oneDevice': 'Play on one device instead',
+  'probe.tryAnyway': 'Try anyway',
+
+  'local.title': 'One device',
+  'local.subtitle': 'Everyone plays on this device, passing it around. Nothing can disconnect.',
+  'local.start': 'Play on one device',
+  'local.players': 'Players',
+  'local.addPlayer': 'Add a player',
+  'local.removePlayer': 'Remove {name}',
+  'local.passTo': 'Pass the device to {name}',
+  'local.ready': "I'm {name}",
+  'local.hidden': 'Your cards are hidden until you tap.',
+  'local.breakerPrompt': 'Anyone holding a +3 Breaker may play it now.',
+  'local.breakerNone': 'Nothing to break — pass it on.',
+
+  'diagnostics.title': 'Support information',
+  'diagnostics.body': 'A local record of connection events. It is never sent anywhere.',
+  'diagnostics.copy': 'Copy',
+  'diagnostics.copied': 'Copied.',
+  'diagnostics.clear': 'Clear',
+  'diagnostics.empty': 'Nothing recorded yet.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

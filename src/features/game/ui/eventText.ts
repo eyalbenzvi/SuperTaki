@@ -78,5 +78,15 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
       return t('event.drawPileExhausted');
     case 'playerWon':
       return t('event.playerWon', { name: nameOf(event.playerId) });
+    case 'turnSkipped':
+      // The draw count matters: a skip is free unless the player owed a +2 run,
+      // and a returning player deserves to see which of the two happened.
+      return event.drew > 0
+        ? t('event.turnSkippedDrew', { name: nameOf(event.playerId), count: event.drew })
+        : t('event.turnSkipped', { name: nameOf(event.playerId) });
+    case 'playerLeft':
+      return t('event.playerLeft', { name: nameOf(event.playerId) });
+    case 'roundAbandoned':
+      return t('event.roundAbandoned');
   }
 }
