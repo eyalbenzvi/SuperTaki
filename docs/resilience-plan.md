@@ -92,6 +92,50 @@ game (an absent seat inside a `+3` window is _not_ the current player, so a turn
 never fires), and auto-passing for that seat would have published who holds a breaker — the one
 thing `docs/rules.md` promises never to reveal.
 
+### Found in review of the delivered work, and fixed
+
+The plan survived contact; several of the things built to it did not. What the two code reviews
+and the QA pass turned up, in the order they were fixed:
+
+1. **The reconnect loop died after one attempt.** `connecting` was released only in `finally`,
+   and `scheduleRetry` refuses to arm a timer while a connect is in flight — so the first
+   failure scheduled nothing and the session sat in `reconnecting` for ever, with no attempt, no
+   deadline and nothing said to the player. The worst possible shape for a bug in the machinery
+   whose whole purpose is to keep trying.
+2. **A dead channel was promoted back to healthy after the host slept.** A late watchdog tick
+   clears the probe record — those questions were asked into a gap. But "nothing has convicted
+   them yet" was then read as health, so a black-holed seat became `connected` again on the
+   first ordinary tick after every suspension, and the table froze on a player long gone. Health
+   is now an _answered_ probe, never merely an unrefuted one.
+3. **The fault hooks the memory transport gained were never driven**, and one of them was
+   unfaithful: a `hang` ignored the budget it was passed, so a caller with a deadline bug looked
+   fine in tests and hung on a phone. The transport now honours the budget, the client enforces
+   it a second time on its own side, and both are exercised.
+4. **The nudge shipped dead at both ends.** It is decided from `sentAt - waitingSince`, both the
+   host's own readings so that clock skew cancels — which also meant the only snapshot carrying
+   a new `waitingSince` was built in the tick that set it, so the difference every client ever
+   saw was zero and the button never appeared. And the receiving half wrote to the store and
+   rendered nothing. The host now re-broadcasts once per idle turn, at the threshold, and the
+   player who was nudged is actually told.
+5. **A room could be reinstated after the player let it go.** The reclaim loop checked for
+   abandonment on the way in but not on the way out, and the attempt in flight is the one most
+   likely to succeed — so "forget it" pressed at the wrong moment republished the room a moment
+   later. It also left `busy` set, leaving a spinner for a room nobody was reclaiming.
+6. **Three tests passed for reasons unrelated to what they claimed.** A seat-leak test that
+   closed each channel before opening the next, so the duplicate path it named never ran; a
+   `Peer.connect() === undefined` test that rejected earlier, on the signalling check, and never
+   reached the guard; and a superseded-session test that stood up a second room, adopted
+   nothing, destroyed nothing, and asserted after nothing had happened. All three now drive the
+   path they describe, and the last one covers taking over a room end to end.
+7. **A host who handed the room over was left on a lobby that no longer existed.** Handing over
+   ends this device's session for the most voluntary reason there is, and a voluntary ending
+   draws no dialog — so nothing navigated, and the outgoing host sat on a lobby screen with
+   `lobby: null` behind it and nothing to press.
+8. **The seat-hold countdown was rebuilt several times a minute** — its key included the
+   snapshot time, and the host re-broadcasts on every accepted command — which dropped keyboard
+   focus mid-interaction. As a live region it also read the remaining time aloud once a second,
+   burying every other event at the table. It now anchors once and announces once.
+
 ---
 
 ## The work, in order
@@ -232,8 +276,10 @@ Auto-skip on the timings resolved above, cancelled if the player returns inside 
 granting them a full fresh turn. An absent player is **not catchable** on last card — they
 cannot declare, so absence would otherwise convert a social rule into free farming at four
 cards an orbit. `waitingFor` becomes first-class table state instead of every screen inferring
-it. A pause any player can request and everyone can see, and a majority vote to abandon the
-round — which is what a real table does, and it removes most of the _need_ for failover. A soft
+it. A pause any player can request and everyone can see, and a _unanimous_ vote of the seats
+still present to abandon the round — unanimity rather than a majority because abandoning is
+irreversible and a bare majority would let two players end a four-player game over the other
+two's objection — which is what a real table does, and it removes most of the _need_ for failover. A soft
 nudge for a player who is connected but not looking, which is ten times more common than a
 disconnect and feels identical. And the play-again flow stops silently stalling when the vote
 can no longer pass, stops destroying resume tokens it just preserved, and offers a retired seat

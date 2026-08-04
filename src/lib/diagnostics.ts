@@ -32,6 +32,8 @@ export type DiagnosticKind =
   | 'connectFailed'
   | 'channelClosed'
   | 'channelUnstable'
+  /** What kind of network path was actually in use, sampled while it existed. */
+  | 'path'
   | 'wake'
   | 'sleep'
   | 'suspicion'
@@ -50,6 +52,7 @@ const NEVER_EVICT: ReadonlySet<DiagnosticKind> = new Set<DiagnosticKind>([
   'transportError',
   'connectFailed',
   'connectivityProbe',
+  'path',
   'hostRestart',
   'handover',
   'suspicion',

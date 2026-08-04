@@ -20,10 +20,18 @@ import {
   record,
 } from '../../../src/lib/diagnostics.ts';
 import { __resetLifecycleForTests, isAwake, onSleep, onWake } from '../../../src/lib/lifecycle.ts';
+import {
+  __resetWakeLockForTests,
+  isWakeLockSupported,
+  refreshWakeLock,
+  releaseWakeLock,
+  requestWakeLock,
+} from '../../../src/lib/wakeLock.ts';
 
 beforeEach(() => {
   __resetLifecycleForTests();
   __resetDiagnosticsForTests();
+  __resetWakeLockForTests();
   clearDiagnostics();
 });
 
@@ -291,5 +299,111 @@ describe('diagnostics', () => {
     record('note', 'something');
     clearDiagnostics();
     expect(readDiagnostics()).toHaveLength(0);
+  });
+});
+
+describe('the screen wake lock', () => {
+  interface FakeSentinel {
+    released: boolean;
+    release(): Promise<void>;
+    addEventListener(type: 'release', listener: () => void): void;
+    fire(): void;
+  }
+
+  function sentinel(): FakeSentinel {
+    const listeners: (() => void)[] = [];
+    return {
+      released: false,
+      release(): Promise<void> {
+        this.released = true;
+        return Promise.resolve();
+      },
+      addEventListener(_type: 'release', listener: () => void): void {
+        listeners.push(listener);
+      },
+      fire(): void {
+        for (const listener of listeners) {
+          listener();
+        }
+      },
+    };
+  }
+
+  function install(request: (type: 'screen') => Promise<FakeSentinel>): void {
+    Object.defineProperty(navigator, 'wakeLock', {
+      value: { request },
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  function uninstall(): void {
+    Object.defineProperty(navigator, 'wakeLock', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  afterEach(uninstall);
+
+  it('asks once even when two callers race', async () => {
+    /*
+     * The bug this pins. The guard was `sentinel !== null`, and it sits *before* an
+     * await — so a screen coming back, which fires the game-screen effect and the
+     * wake handler in the same turn, produced two requests. The second overwrote the
+     * first, and the orphan was never released: the phone then stayed awake after the
+     * game had ended.
+     */
+    let asked = 0;
+    const granted = sentinel();
+    install(() => {
+      asked += 1;
+      return Promise.resolve(granted);
+    });
+    expect(isWakeLockSupported()).toBe(true);
+
+    await Promise.all([requestWakeLock(), requestWakeLock()]);
+    expect(asked).toBe(1);
+
+    await releaseWakeLock();
+    expect(granted.released).toBe(true);
+  });
+
+  it('re-acquires after the browser revokes it, but only if it is still wanted', async () => {
+    const first = sentinel();
+    const second = sentinel();
+    let asked = 0;
+    install(() => {
+      asked += 1;
+      return Promise.resolve(asked === 1 ? first : second);
+    });
+
+    await requestWakeLock();
+    // The browser drops the lock whenever the page is hidden; that is not a failure
+    // and not something to retry blindly from inside the release handler.
+    first.fire();
+    await refreshWakeLock();
+    expect(asked).toBe(2);
+
+    await releaseWakeLock();
+    second.fire();
+    await refreshWakeLock();
+    // Nobody wants it any more, so nothing is asked for.
+    expect(asked).toBe(2);
+  });
+
+  it('says nothing to the player when the browser refuses', async () => {
+    install(() => Promise.reject(new Error('not allowed in this context')));
+    await expect(requestWakeLock()).resolves.toBeUndefined();
+    // And a release with no lock held is equally quiet.
+    await expect(releaseWakeLock()).resolves.toBeUndefined();
+  });
+
+  it('is simply absent where the API is not implemented', async () => {
+    uninstall();
+    expect(isWakeLockSupported()).toBe(false);
+    await expect(requestWakeLock()).resolves.toBeUndefined();
+    await expect(refreshWakeLock()).resolves.toBeUndefined();
   });
 });

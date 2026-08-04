@@ -57,6 +57,39 @@ export default defineConfig({
           functions: 90,
           lines: 85,
         },
+        /*
+         * The store is gated for the same reason the sessions are.
+         *
+         * It grew by a third during this work — resuming a host, accepting a handover,
+         * the table controls, the wake hook — and the pipeline could not tell, because
+         * everything it gained was reachable only through a session and none of it was
+         * ever driven. Two of the defects found afterwards lived in exactly those
+         * lines.
+         */
+        'src/features/game/state/store.ts': {
+          statements: 78,
+          branches: 60,
+          functions: 80,
+          lines: 78,
+        },
+        'src/features/game/state/hostSnapshot.ts': {
+          statements: 85,
+          branches: 78,
+          functions: 95,
+          lines: 85,
+        },
+        /*
+         * The small libraries the resilience work introduced. They are short enough
+         * that a gap is always a whole behaviour rather than an edge: the wake lock
+         * sat at 41% while holding a double-request bug, which is precisely the shape
+         * of thing a floor here catches.
+         */
+        'src/lib/{lifecycle,wakeLock,diagnostics}.ts': {
+          statements: 90,
+          branches: 82,
+          functions: 88,
+          lines: 90,
+        },
       },
     },
   },

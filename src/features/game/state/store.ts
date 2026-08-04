@@ -517,6 +517,14 @@ export const useAppStore = create<AppStore>((set, get) => {
           closedReason: update.reason,
           resumable: loadResumableRoom(),
           hostable: loadHostedRoom(),
+          /*
+           * A voluntary ending explains itself, so no dialog is drawn for it — which
+           * left a host who had just handed the room over sitting on a lobby screen
+           * with no lobby behind it and nothing to press. Every other reason keeps the
+           * screen, because the dialog that explains it is drawn on top and offers the
+           * way out.
+           */
+          ...(update.reason === 'leftVoluntarily' ? { screen: 'home' as const } : {}),
         });
         return;
       }
@@ -699,6 +707,9 @@ export const useAppStore = create<AppStore>((set, get) => {
       for (let attempt = 0; attempt < HOST_ID_ATTEMPTS; attempt += 1) {
         if (attemptEpoch !== sessionEpoch || get().hostable === null) {
           record('hostRestart', 'abandoned: the room was let go');
+          // Cleared rather than merely returned from: leaving `busy` set left the
+          // player watching a spinner for a room nobody was going to reclaim.
+          set({ ...CLEARED_SESSION, screen: 'home' });
           return;
         }
         if (attempt > 0) {
@@ -720,8 +731,22 @@ export const useAppStore = create<AppStore>((set, get) => {
             onSnapshot: persistHostedRoom,
             generation: hostable.generation,
           });
-          if (attemptEpoch !== sessionEpoch) {
+          /*
+           * Checked again on the way out, not only on the way in. The attempt that
+           * is in flight is the one most likely to succeed, so a player who gives up
+           * while it is pending — the card offering this also offers "forget it" —
+           * would otherwise have the room reinstated under them a moment later, and
+           * republished to everybody holding an invitation.
+           */
+          if (attemptEpoch !== sessionEpoch || get().hostable === null) {
+            record('hostRestart', 'abandoned: the room was let go');
             hostSession.destroy('leftVoluntarily');
+            if (attemptEpoch === sessionEpoch) {
+              // Only this attempt's own state is cleared. A newer epoch means some
+              // other session owns the store now, and stamping over it would take a
+              // room the player is actually in away from them.
+              set({ ...CLEARED_SESSION, screen: 'home' });
+            }
             return;
           }
           session = hostSession;

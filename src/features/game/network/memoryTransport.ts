@@ -161,6 +161,14 @@ class MemoryTransport implements Transport {
   readonly faults: MemoryFaults = {};
   /** How many times `connect()` has been asked for a channel. */
   connectAttempts = 0;
+  /**
+   * Every channel this end has created or accepted, in order.
+   *
+   * Tests need a handle on the connection itself to model the failure that has no
+   * API — a phone that loses its network drops its own end and tells nobody — and
+   * the session under test owns the only other reference to it.
+   */
+  readonly connections: MemoryConnection[] = [];
 
   constructor(
     readonly localId: string,
@@ -179,18 +187,26 @@ class MemoryTransport implements Transport {
       : Promise.resolve();
   }
 
-  connect(remoteId: string): Promise<TransportConnection> {
+  connect(remoteId: string, timeoutMs?: number): Promise<TransportConnection> {
     this.connectAttempts += 1;
     if (this.destroyed) {
       return Promise.reject(new TransportError('closed', 'Transport destroyed'));
     }
     if (this.connectFault === 'hang') {
-      return new Promise<TransportConnection>(() => {
-        /*
-         * Never settles, like an offer the broker queued and nobody answered.
-         * The caller is expected to impose its own deadline; a transport that
-         * hangs for ever is precisely what makes a missing one visible.
-         */
+      /*
+       * An offer the broker queued and nobody answered — but still bounded by the
+       * budget the caller passed, because that is what the interface promises and
+       * what the real transport does. Ignoring it made this fake unfaithful in the
+       * one direction that matters: a caller with a deadline bug looked fine here
+       * and hung on a phone.
+       */
+      return new Promise<TransportConnection>((_resolve, reject) => {
+        if (timeoutMs === undefined) {
+          return;
+        }
+        setTimeout(() => {
+          reject(new TransportError('timeout', `Connecting to ${remoteId} timed out`));
+        }, timeoutMs);
       });
     }
     if (this.connectFault === 'unavailable') {
@@ -209,6 +225,8 @@ class MemoryTransport implements Transport {
     other.peer = local;
     local.faults = this.faults;
     other.faults = remote.faults;
+    this.connections.push(local);
+    remote.connections.push(other);
     queueMicrotask(() => {
       remote.incoming.emit(other);
     });

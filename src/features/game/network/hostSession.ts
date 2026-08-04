@@ -17,6 +17,7 @@ import {
 import { toPrivateHandView, toPublicGameState } from '../engine/views.ts';
 import { MessageDeduplicator, hostMessage, type MessageContext } from './envelope.ts';
 import {
+  PROTOCOL_VERSION,
   parseClientMessage,
   type ConnectionHealth,
   type GameAction,
@@ -32,6 +33,7 @@ import {
   CHANNEL_DEAD_MS,
   HANDOFF_TIMEOUT_MS,
   HOST_SELF_DEMOTE_MS,
+  IDLE_TURN_NUDGE_MS,
   LOBBY_GRACE_MS,
   RESUME_ATTEMPT_SUPPRESSES_SKIP_MS,
   SEAT_GRACE_MS,
@@ -88,8 +90,26 @@ interface ConnectionRecord {
   connection: TransportConnection;
   playerId: string | null;
   dedup: MessageDeduplicator;
+  /** The protocol version this peer last spoke, so we can answer in it. */
+  protocolVersion: number;
   unsubscribe: () => void;
 }
+
+/**
+ * Rejection codes that did not exist before protocol 4, and what to say instead.
+ *
+ * An optional *field* is safely ignored by an older reader; a new *value* in an
+ * enum is not — it fails the schema and takes the whole message down with it, so
+ * the player's table stays locked until the backstop timer and their action is
+ * replayed on the next reconnect. `notYourTurn` is the closest thing a version-3
+ * vocabulary has to "you cannot act right now", and unlike the alternative it does
+ * not claim the round has ended.
+ */
+const CODES_ADDED_IN_V4: Readonly<Partial<Record<RejectionCode, RejectionCode>>> = {
+  tablePaused: 'notYourTurn',
+  nothingToSkip: 'notYourTurn',
+  alreadyLeft: 'unknownPlayer',
+};
 
 /**
  * Turns a requested action into an engine command.
@@ -196,6 +216,8 @@ export class HostSession implements Session {
   private selfDemoted = false;
   /** When the table started waiting for the seat on turn. */
   private waitingSince: number | null = null;
+  /** The `waitingSince` a nudge-threshold snapshot has already gone out for. */
+  private idleWaitBroadcastFor: number | null = null;
   /** When the watchdog last reported a gap, so the cycle after it is forgiving. */
   private lateTickAt: number | null = null;
   private handoffTo: string | null = null;
@@ -497,6 +519,7 @@ export class HostSession implements Session {
       connection,
       playerId: null,
       dedup: new MessageDeduplicator(),
+      protocolVersion: PROTOCOL_VERSION,
       unsubscribe: () => {},
     };
 
@@ -551,9 +574,19 @@ export class HostSession implements Session {
     this.persist();
   }
 
-  /** Everything that has to be true when a seat is heard from again. */
-  private markPresent(seat: Seat): void {
-    seat.lastSeenAt = this.now();
+  /**
+   * Records a seat as present.
+   *
+   * `heard` is the whole of the distinction. Something actually arrived from them —
+   * a message, a pong — and the silence clock may be restarted. Inferring presence
+   * from the *absence* of contrary evidence must never touch that clock: doing so
+   * fabricates proof of recent contact, and a peer that had been gone the whole
+   * time is then forgiven every occasion the host's own tab slept.
+   */
+  private markPresent(seat: Seat, heard: boolean): void {
+    if (heard) {
+      seat.lastSeenAt = this.now();
+    }
     if (seat.health === 'connected') {
       return;
     }
@@ -595,6 +628,9 @@ export class HostSession implements Session {
       log.debug('duplicate message dropped', message.id);
       return;
     }
+    // Remembered so anything we send back can be phrased in a vocabulary this peer
+    // actually has.
+    entry.protocolVersion = message.protocolVersion;
 
     switch (message.type) {
       case 'joinRequest':
@@ -651,7 +687,8 @@ export class HostSession implements Session {
       return;
     }
     const wasAway = seat.health !== 'connected';
-    this.markPresent(seat);
+    // Heard from: this is called because a message arrived.
+    this.markPresent(seat, true);
     if (wasAway) {
       this.emitLobby();
     }
@@ -1004,25 +1041,32 @@ export class HostSession implements Session {
       seat.lastRequestId = requestId;
       seat.lastRequestVersion = result.state.version;
     }
+    this.waitingSince = this.now();
+    // Send the final table *before* announcing the phase change, so nobody
+    // renders the end-of-round screen against the previous snapshot.
+    this.broadcastGameState();
+    this.emitEvents(result.events);
+    /*
+     * Acknowledged *after* the new table, not before. Acking first opens a window in
+     * which the client's lock is released while its turn counter is still one
+     * behind, and a move made inside it is refused as out of turn although it is
+     * legal.
+     */
     if (entry && requestId !== undefined) {
       this.send(entry.connection, 'actionAccepted', { requestId, version: result.state.version });
     }
     if (!entry && requestId !== undefined) {
       this.observer({ type: 'actionAccepted', requestId, version: result.state.version });
     }
-    this.waitingSince = this.now();
-    // Send the final table *before* announcing the phase change, so nobody
-    // renders the end-of-round screen against the previous snapshot.
-    this.broadcastGameState();
-    this.emitEvents(result.events);
     this.afterCommit();
   }
 
   /** Answers one player, never the table: a rejection is nobody else's business. */
   private rejectAction(entry: ConnectionRecord | null, code: RejectionCode, requestId?: string): void {
     if (entry) {
+      const spoken = entry.protocolVersion < 4 ? (CODES_ADDED_IN_V4[code] ?? code) : code;
       this.send(entry.connection, 'actionRejected', {
-        code,
+        code: spoken,
         ...(requestId !== undefined ? { requestId } : {}),
       });
       return;
@@ -1358,18 +1402,32 @@ export class HostSession implements Session {
       const dead =
         !forgiveSilence &&
         (silence > silentAfterMs(intervalMs) || (oldest !== null && oldest > CHANNEL_DEAD_MS));
+      /*
+       * A seat is only promoted on positive evidence: every probe we have asked has
+       * been answered. Treating "nothing has convicted them yet" as health is how a
+       * channel that is open and carrying nothing gets reported as fine — and since
+       * the late-tick branch clears the probe record, that would happen on the first
+       * cycle after every occasion the host's own tab slept, freezing the table on
+       * somebody who had long gone.
+       */
+      const answering = seat.probes.unanswered === 0;
       const next: ConnectionHealth = dead
         ? 'disconnected'
         : seat.probes.unanswered >= UNSTABLE_AFTER_MISSES
           ? 'unstable'
-          : 'connected';
+          : answering
+            ? 'connected'
+            : seat.health;
       if (next !== seat.health) {
         if (next === 'disconnected') {
           this.markAbsent(seat);
         } else if (next === 'connected') {
-          // The same bookkeeping as an inbound message, so a seat recovered by the
-          // heartbeat is not left carrying flags that cost it its next grace.
-          this.markPresent(seat);
+          /*
+           * The same bookkeeping as an inbound message, so a seat recovered by the
+           * heartbeat is not left carrying flags that cost it its next grace — but
+           * *not* heard from, so its silence clock is left alone.
+           */
+          this.markPresent(seat, false);
         } else {
           seat.health = next;
         }
@@ -1398,8 +1456,41 @@ export class HostSession implements Session {
     if (changed) {
       this.emitLobby();
       this.persist();
+    } else if (this.idleWaitBecameNudgeable(now)) {
+      this.emitLobby();
     }
     this.tickAbsence(now);
+  }
+
+  /**
+   * Whether the table has now been waiting on a *present* player long enough that
+   * the others should be offered the nudge.
+   *
+   * The nudge is decided from `sentAt - waitingSince`, and both of those are the
+   * host's own readings — which is what makes it immune to clock skew, and also
+   * what made it unreachable: the only snapshot carrying a new `waitingSince` is
+   * the one built in the same tick that set it, so the difference every client ever
+   * saw was zero. Nothing else re-broadcasts the lobby while a healthy seat simply
+   * thinks. This emits exactly one extra snapshot per idle turn, at the moment the
+   * threshold is crossed, rather than putting the lobby on a cadence for the whole
+   * game.
+   */
+  private idleWaitBecameNudgeable(now: number): boolean {
+    const since = this.waitingSince;
+    if (this.phase !== 'inGame' || since === null || this.idleWaitBroadcastFor === since) {
+      return false;
+    }
+    if (now - since < IDLE_TURN_NUDGE_MS) {
+      return false;
+    }
+    // An absent seat is the seat-hold callout's business, not the nudge's; nudging
+    // somebody whose connection is gone is noise aimed at a device nobody is
+    // holding.
+    if (this.waiting().reason !== 'turn') {
+      return false;
+    }
+    this.idleWaitBroadcastFor = since;
+    return true;
   }
 
   /** Frees a lobby seat once its short grace has run out. */
@@ -1474,7 +1565,15 @@ export class HostSession implements Session {
         : seat.health === 'disconnected'
           ? ABSENT_TURN_GRACE_CLOSED_MS
           : ABSENT_TURN_GRACE_UNSTABLE_MS;
-    if (this.waitingSince !== null && now - this.waitingSince < grace) {
+    /*
+     * Measured from the later of "it became their turn" and "they went away".
+     * Keying it on the last accepted move alone was wrong in the commonest case of
+     * all: a player who is on turn, thinks for longer than the grace and *then*
+     * drops would be skipped on the very first tick that noticed, so the twelve and
+     * thirty second windows were nought.
+     */
+    const waitingFrom = Math.max(this.waitingSince ?? 0, seat.absentSince ?? 0);
+    if (waitingFrom > 0 && now - waitingFrom < grace) {
       return;
     }
     this.skipAbsentTurn(onTurn.id);
@@ -1488,14 +1587,27 @@ export class HostSession implements Session {
    * Some rules only engage at a specific hand size — "last card" being the obvious
    * one — and a test that cannot reach that state ends up asserting that the engine
    * refuses an illegal move, which it would with the feature deleted.
+   *
+   * The cards it takes off the hand go back under the draw pile rather than out of
+   * existence. That is not tidiness: the first version deleted them, which broke the
+   * one invariant every absence test checks by counting the deck, and it left the
+   * version number where it was, so a client that had already seen that version was
+   * entitled to ignore the whole broadcast — a seam that silently does nothing is
+   * worse than no seam at all.
    */
   forceHandForTests(playerId: string, size: number): void {
     if (!this.game) {
       return;
     }
     const hand = this.game.hands[playerId] ?? [];
-    this.game = { ...this.game, hands: { ...this.game.hands, [playerId]: hand.slice(0, size) } };
-    this.broadcastGameState();
+    if (size >= hand.length) {
+      return;
+    }
+    const removed = hand.slice(size);
+    this.mutateForTests({
+      hands: { ...this.game.hands, [playerId]: hand.slice(0, size) },
+      drawPile: [...this.game.drawPile, ...removed],
+    });
   }
 
   /**
@@ -1509,11 +1621,24 @@ export class HostSession implements Session {
     if (!this.game) {
       return;
     }
-    this.game = {
-      ...this.game,
+    this.mutateForTests({
       plusThree: { playerId: this.localPlayerId, awaiting: [awaitedPlayerId] },
-      version: this.game.version + 1,
-    };
+    });
+  }
+
+  /**
+   * The one place a seam is allowed to write authoritative state.
+   *
+   * Everything that reaches a client goes through the same two steps as a real
+   * command — the version advances and the floor moves with it — so a forced
+   * situation is indistinguishable from a played one, and no test can pass because
+   * of a shortcut the game itself does not have.
+   */
+  private mutateForTests(patch: Partial<GameState>): void {
+    if (!this.game) {
+      return;
+    }
+    this.game = { ...this.game, ...patch, version: this.game.version + 1 };
     this.versionFloor = this.game.version;
     this.broadcastGameState();
   }

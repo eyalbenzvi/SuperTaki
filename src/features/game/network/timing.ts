@@ -85,6 +85,17 @@ export const SIGNALLING_READY_MS = 12_000;
 export const CONNECT_TIMEOUT_FIRST_MS = 8_000;
 export const CONNECT_TIMEOUT_RETRY_MS = 20_000;
 
+/**
+ * How much longer than the budget the caller waits before enforcing it itself.
+ *
+ * The transport is asked to honour the budget and does; this is the backstop for
+ * the case where it cannot — a promise that never settles freezes the session with
+ * no attempt in flight, no deadline and nothing said to the player, which is the
+ * exact shape of the reconnect bug this work exists to remove. The grace keeps the
+ * transport's own, more specific error the one that is normally reported.
+ */
+export const CONNECT_DEADLINE_GRACE_MS = 2_000;
+
 /** Join handshake budget. Must exceed the host's own turnaround, and is not terminal. */
 export const JOIN_TIMEOUT_MS = 15_000;
 
@@ -168,6 +179,14 @@ export const ACTION_LOCK_MS = 20_000;
 
 /** Soft nudge for a player who is connected but not looking at their phone. */
 export const IDLE_TURN_NUDGE_MS = 30_000;
+
+/**
+ * How long the nudge stays on screen for the player who received it.
+ *
+ * Long enough to be read by somebody who has just picked the phone up, short
+ * enough that it is gone before it becomes a second thing to dismiss.
+ */
+export const NUDGE_NOTICE_MS = 12_000;
 
 /** Entries kept in the local diagnostics ring. */
 export const DIAGNOSTICS_CAPACITY = 500;

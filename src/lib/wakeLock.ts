@@ -41,6 +41,16 @@ export function isWakeLockSupported(): boolean {
 
 let sentinel: SentinelLike | null = null;
 let wanted = false;
+/**
+ * The request currently in flight.
+ *
+ * Checking `sentinel` alone was not enough: the guard sits before an `await`, so a
+ * screen coming back — which fires the game-screen effect and the wake handler
+ * together — produced two requests, and the second overwrote the first. The
+ * orphaned one was then never released and kept the screen awake after the game
+ * had ended.
+ */
+let inFlight: Promise<void> | null = null;
 
 /** Asks for the lock. Safe to call repeatedly, including after a wake. */
 export async function requestWakeLock(): Promise<void> {
@@ -49,18 +59,27 @@ export async function requestWakeLock(): Promise<void> {
   if (!wakeLock || sentinel !== null) {
     return;
   }
-  try {
-    const granted = await wakeLock.request('screen');
-    granted.addEventListener('release', () => {
-      sentinel = null;
-      // The browser drops the lock whenever the page is hidden. Re-requesting is
-      // the caller's job on the next wake, not something to retry blindly here.
-    });
-    sentinel = granted;
-    log.debug('screen wake lock held');
-  } catch (error) {
-    log.debug('screen wake lock refused', error);
+  if (inFlight) {
+    await inFlight;
+    return;
   }
+  inFlight = (async () => {
+    try {
+      const granted = await wakeLock.request('screen');
+      granted.addEventListener('release', () => {
+        sentinel = null;
+        // The browser drops the lock whenever the page is hidden. Re-requesting is
+        // the caller's job on the next wake, not something to retry blindly here.
+      });
+      sentinel = granted;
+      log.debug('screen wake lock held');
+    } catch (error) {
+      log.debug('screen wake lock refused', error);
+    } finally {
+      inFlight = null;
+    }
+  })();
+  await inFlight;
 }
 
 export async function releaseWakeLock(): Promise<void> {
@@ -88,4 +107,5 @@ export async function refreshWakeLock(): Promise<void> {
 export function __resetWakeLockForTests(): void {
   sentinel = null;
   wanted = false;
+  inFlight = null;
 }

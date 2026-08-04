@@ -253,9 +253,31 @@ describe('connecting while signalling is down', () => {
     peer.disconnected = true;
     peer.emit('disconnected');
 
-    // `peer.connect()` returns undefined here. Dereferencing it used to throw a
-    // TypeError inside the promise executor, which surfaced as a bogus
-    // "unknown" error and told the player nothing.
+    // Rejected before an offer is even attempted: the wait for signalling is
+    // bounded by the caller's own budget, so a 30 ms attempt stays a 30 ms attempt
+    // instead of silently becoming a twelve-second one.
+    await expect(transport.connect('crush-a-b-02', 30)).rejects.toMatchObject({
+      name: 'TransportError',
+      code: 'signalingUnavailable',
+    });
+  });
+
+  it('rejects instead of crashing when PeerJS refuses to make an offer', async () => {
+    /*
+     * The original crash, which the test above never reaches. There `disconnected`
+     * is true, so the signalling wait rejects first; here the flag is false — the
+     * broker socket has died and PeerJS has not caught up yet, which is the real
+     * race — the wait passes, and `connect()` still hands back `undefined`.
+     * Dereferencing that threw a TypeError inside the promise executor, and the
+     * caller reported a bogus "unknown" error that told the player nothing.
+     */
+    const transport = createPeerTransport({ id: 'crush-x-y-01', readyTimeoutMs: 500 });
+    const peer = latestPeer();
+    peer.emit('open', 'crush-x-y-01');
+    await transport.ready();
+    expect(peer.disconnected).toBe(false);
+
+    peer.connect = () => undefined;
     await expect(transport.connect('crush-a-b-02', 30)).rejects.toMatchObject({
       name: 'TransportError',
       code: 'signalingUnavailable',

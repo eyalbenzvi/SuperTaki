@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '../../../../components/Button.tsx';
+import { Callout } from '../../../../components/Callout.tsx';
 import { Modal } from '../../../../components/Modal.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
-import { seatedPlayers } from '../../state/selectors.ts';
-import { IDLE_TURN_NUDGE_MS } from '../../network/timing.ts';
+import { playerName, seatedPlayers } from '../../state/selectors.ts';
+import { IDLE_TURN_NUDGE_MS, NUDGE_NOTICE_MS } from '../../network/timing.ts';
 
 /**
  * The two things a table needs and did not have: a way to wait, and a way to stop.
@@ -151,5 +152,55 @@ export function NudgeButton(): ReactNode {
     >
       {sentFor === waitingFor ? t('nudge.sent') : t('nudge.send')}
     </Button>
+  );
+}
+
+/**
+ * The other end of the nudge: what the player who was nudged actually sees.
+ *
+ * Without this the whole feature was a button that sent a message into nothing —
+ * the wire carried it, the store recorded it, and the app never said a word. It is
+ * an `alert` rather than a status because the entire point is to reach somebody who
+ * is not looking at the screen, and it clears itself: a notice about a turn is
+ * worthless once the turn has moved on, and nobody should have to dismiss a nag.
+ */
+export function NudgeNotice(): ReactNode {
+  const t = useT();
+  const nudge = useAppStore((state) => state.nudge);
+  const lobby = useAppStore((state) => state.lobby);
+  const publicState = useAppStore((state) => state.publicState);
+  const dismissNudge = useAppStore((state) => state.dismissNudge);
+
+  const nonce = nudge?.nonce ?? null;
+  useEffect(() => {
+    if (nonce === null) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      dismissNudge();
+    }, NUDGE_NOTICE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [nonce, dismissNudge]);
+
+  if (!nudge) {
+    return null;
+  }
+  const from = playerName({ publicState, lobby }, nudge.fromPlayerId);
+  return (
+    <Callout
+      tone="action"
+      icon="alert"
+      role="alert"
+      urgent
+      actions={
+        <Button variant="ghost" onClick={dismissNudge}>
+          {t('common.close')}
+        </Button>
+      }
+    >
+      {t('nudge.received', { name: from })}
+    </Callout>
   );
 }

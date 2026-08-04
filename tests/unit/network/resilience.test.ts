@@ -261,6 +261,134 @@ describe('a channel that stops carrying traffic', () => {
     }
   });
 
+  it('does not promote a dead channel back to healthy after the host sleeps', async () => {
+    /*
+     * The regression this pins, which a fix for the opposite bug introduced.
+     *
+     * A late watchdog tick clears the probe record — those questions were asked into
+     * a gap and their silence proves nothing. But if "no probe has gone unanswered"
+     * is then read as health, a channel that is open and carrying nothing is promoted
+     * to connected, its absence timer cleared, and the table freezes on a player who
+     * is long gone — every time the host's own tab sleeps. Health must be an
+     * *answered* probe, never merely an unrefuted one.
+     */
+    vi.useFakeTimers();
+    try {
+      const network = new MemoryNetwork();
+      const hostRecorder = createRecorder();
+      const host = await createHostSession({
+        transport: network.create(HOST_PEER_ID),
+        roomCode: TEST_ROOM,
+        hostDisplayName: 'Host',
+        maxPlayers: 4,
+        tableLanguage: 'he',
+        observer: hostRecorder.observer,
+        heartbeatIntervalMs: 500,
+      });
+      const guestTransport = network.create('client-1');
+      const client = await createClientSession({
+        transport: guestTransport,
+        roomCode: TEST_ROOM,
+        hostPeerId: HOST_PEER_ID,
+        displayName: 'Dana',
+        observer: createRecorder().observer,
+        heartbeatIntervalMs: 100_000,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      // Mid-game, so the seat is held rather than swept by the lobby's short grace.
+      host.startGame();
+      await vi.advanceTimersByTimeAsync(10);
+
+      guestTransport.faults.blackhole = true;
+      await vi.advanceTimersByTimeAsync(60_000);
+      const guestId = client.localPlayerId;
+      const healthOf = (): string | undefined =>
+        hostRecorder.last('lobby')?.lobby.players.find((player) => player.id === guestId)?.health;
+      expect(healthOf()).toBe('disconnected');
+
+      // Now the host's own tab sleeps: one tick, five minutes of wall clock.
+      await vi.advanceTimersByTimeAsync(300_000);
+
+      // Still gone. Nothing was heard from them in the meantime.
+      expect(healthOf()).toBe('disconnected');
+      const guest = hostRecorder.last('lobby')?.lobby.players.find((player) => player.id === guestId);
+      expect(guest?.absentSince).toBeGreaterThan(0);
+
+      client.destroy('leftVoluntarily');
+      host.destroy('leftVoluntarily');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('survives a phone that loses its network silently, and a reconnect that hangs', async () => {
+    /*
+     * Two faults this file claimed to model and nothing drove.
+     *
+     * `vanish()` is a lost network rather than a closed channel: the far end is
+     * never told, so the host keeps believing it has a live seat and can only find
+     * out by asking. A `hang` connect is the other half of the same story — an offer
+     * the broker queued and nobody answered — and it is what the reconnect deadline
+     * exists for. A retry that waits for ever is indistinguishable from a client that
+     * gave up, which is the shape the original bug had.
+     */
+    vi.useFakeTimers();
+    try {
+      const network = new MemoryNetwork();
+      const hostRecorder = createRecorder();
+      const host = await createHostSession({
+        transport: network.create(HOST_PEER_ID),
+        roomCode: TEST_ROOM,
+        hostDisplayName: 'Host',
+        maxPlayers: 4,
+        tableLanguage: 'he',
+        observer: hostRecorder.observer,
+        seedFactory: () => 4242,
+        heartbeatIntervalMs: 500,
+      });
+      const guestTransport = network.create('client-1');
+      const client = await createClientSession({
+        transport: guestTransport,
+        roomCode: TEST_ROOM,
+        hostPeerId: HOST_PEER_ID,
+        displayName: 'Dana',
+        observer: createRecorder().observer,
+        heartbeatIntervalMs: 100_000,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      host.startGame();
+      await vi.advanceTimersByTimeAsync(10);
+      const guestId = client.localPlayerId;
+      const healthOf = (): string | undefined =>
+        hostRecorder.last('lobby')?.lobby.players.find((player) => player.id === guestId)?.health;
+      expect(healthOf()).toBe('connected');
+
+      // Every reconnect attempt from here on hangs, so the client cannot quietly
+      // repair the situation before the host has had to form an opinion about it.
+      guestTransport.setConnectFault('hang');
+      const attemptsBefore = guestTransport.connectAttempts;
+      guestTransport.connections[0]?.vanish();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      // The host was told nothing and worked it out from unanswered probes.
+      expect(healthOf()).toBe('disconnected');
+      // The seat is held, not freed: this is mid-game.
+      expect(hostRecorder.last('lobby')?.lobby.players).toHaveLength(2);
+      /*
+       * And the client is still trying rather than sitting on one dead promise. Both
+       * the transport's budget and the session's own backstop are in play here: a
+       * connect that never settles must not be able to freeze the retry loop, since
+       * that leaves no attempt in flight, no deadline and nothing said to the player.
+       */
+      expect(guestTransport.connectAttempts).toBeGreaterThan(attemptsBefore + 1);
+
+      client.destroy('leftVoluntarily');
+      host.destroy('leftVoluntarily');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('applies a duplicated action exactly once', async () => {
     const room = await openRoom();
     const client = await joinRoom(room, 'client-1', 'Dana');
@@ -325,24 +453,39 @@ describe('a channel that stops carrying traffic', () => {
     await flush();
     expect(room.host.connectedPlayerCount).toBe(2);
 
-    // Three rounds of leaving and coming back on the same credential. Each cycle
-    // used to cost one seat against maxPlayers, because a duplicate channel nulled
-    // the record's player id and the close handler then bailed before freeing
-    // anything — so a flaky phone could fill a room with its own ghosts.
+    /*
+     * Three rounds of coming back on the same credential *before* the old channel
+     * has gone — which is the only version of this that exercises the bug. A phone
+     * that changes network does not close anything: the host is holding a channel it
+     * still believes in when the replacement arrives, so it has to kick one of them
+     * as a duplicate. That path used to null the record's player id, after which the
+     * close handler bailed out before freeing anything, and every cycle cost a seat
+     * against `maxPlayers` — a flaky phone could fill a room with its own ghosts.
+     * Closing first, as this test originally did, skips the duplicate entirely.
+     */
     let current = client;
     for (let cycle = 0; cycle < 3; cycle += 1) {
-      current.session.destroy('leftVoluntarily');
-      await flush();
+      const previous = current;
+      // The overlap is the point of the test, so it is asserted rather than assumed:
+      // the old channel is live at the instant the replacement arrives.
+      expect(previous.session.connectionPhase).toBe('connected');
       current = await joinRoom(room, `client-retry-${String(cycle)}`, 'Dana', {
         playerId: identity!.playerId,
         resumeToken: identity!.resumeToken,
       });
       await flush();
+      previous.session.destroy('leftVoluntarily');
+      await flush();
     }
 
     const lobby = room.hostRecorder.last('lobby')?.lobby;
     expect(lobby?.players).toHaveLength(2);
-    expect(lobby?.players.find((player) => !player.isHost)?.health).toBe('connected');
+    const guest = lobby?.players.find((player) => !player.isHost);
+    expect(guest?.health).toBe('connected');
+    // The same seat throughout: no cycle minted a new one, which is what the leak
+    // looked like from the outside.
+    expect(guest?.id).toBe(identity!.playerId);
+    expect(room.host.connectedPlayerCount).toBe(2);
     current.session.destroy('leftVoluntarily');
     room.destroy();
   });
@@ -587,6 +730,84 @@ describe('a table waiting for somebody who is not there', () => {
     client.destroy('leftVoluntarily');
     host.destroy('leftVoluntarily');
     vi.useRealTimers();
+  });
+});
+
+describe('waiting on somebody who is present', () => {
+  it('re-broadcasts once the wait is long enough to be worth a nudge', async () => {
+    /*
+     * The nudge is decided from `sentAt - waitingSince`, both of them the host's own
+     * readings so that clock skew between devices cancels. That made it correct and
+     * unreachable at the same time: the only snapshot carrying a new `waitingSince`
+     * was built in the tick that set it, so the difference every client ever saw was
+     * zero, and nothing else re-broadcast the lobby while a healthy seat simply
+     * thought about its move. The button shipped dead.
+     */
+    vi.useFakeTimers();
+    try {
+      let clock = 3_000_000;
+      const now = (): number => clock;
+      const network = new MemoryNetwork();
+      const hostRecorder = createRecorder();
+      const host = await createHostSession({
+        transport: network.create(HOST_PEER_ID),
+        roomCode: TEST_ROOM,
+        hostDisplayName: 'Host',
+        maxPlayers: 4,
+        tableLanguage: 'he',
+        observer: hostRecorder.observer,
+        seedFactory: () => 4242,
+        heartbeatIntervalMs: 50,
+        now,
+      });
+      const client = await createClientSession({
+        transport: network.create('client-1'),
+        roomCode: TEST_ROOM,
+        hostPeerId: HOST_PEER_ID,
+        displayName: 'Dana',
+        observer: createRecorder().observer,
+        heartbeatIntervalMs: 100_000,
+        now,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      host.startGame();
+      await vi.advanceTimersByTimeAsync(10);
+
+      const waited = (): number => {
+        const lobby = hostRecorder.last('lobby')?.lobby;
+        return lobby?.waitingSince !== null && lobby?.waitingSince !== undefined && lobby.sentAt !== undefined
+          ? lobby.sentAt - lobby.waitingSince
+          : -1;
+      };
+      expect(waited()).toBe(0);
+
+      /*
+       * Several ticks per step, because the tick that follows a jump in the clock is
+       * a *late* tick — the host cannot tell a suspended tab from a slow one, so it
+       * judges nobody and only re-probes. The decision is taken on the ordinary tick
+       * after it.
+       */
+      // Ten seconds is an ordinary turn. Nobody should be hurried yet.
+      clock += 10_000;
+      await vi.advanceTimersByTimeAsync(200);
+      expect(waited()).toBeLessThan(30_000);
+
+      clock += 25_000;
+      await vi.advanceTimersByTimeAsync(200);
+      expect(waited()).toBeGreaterThanOrEqual(30_000);
+      expect(hostRecorder.last('lobby')?.lobby.waitingReason).toBe('turn');
+      expect(hostRecorder.last('lobby')?.lobby.players.every((p) => p.health === 'connected')).toBe(true);
+
+      // And exactly once for this turn: the lobby is not put on a cadence.
+      const count = hostRecorder.ofType('lobby').length;
+      await vi.advanceTimersByTimeAsync(500);
+      expect(hostRecorder.ofType('lobby').length).toBe(count);
+
+      client.destroy('leftVoluntarily');
+      host.destroy('leftVoluntarily');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

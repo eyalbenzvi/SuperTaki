@@ -22,6 +22,7 @@ import {
 } from './session.ts';
 import {
   CHANNEL_DEAD_MS,
+  CONNECT_DEADLINE_GRACE_MS,
   CONNECT_TIMEOUT_FIRST_MS,
   CONNECT_TIMEOUT_RETRY_MS,
   JOIN_TIMEOUT_MS,
@@ -293,7 +294,7 @@ export class ClientSession implements Session {
 
     try {
       const budget = isRetry ? CONNECT_TIMEOUT_RETRY_MS : CONNECT_TIMEOUT_FIRST_MS;
-      const connection = await this.transport.connect(this.hostPeerId, budget);
+      const connection = await this.connectWithin(budget);
       if (this.destroyed || generation !== this.connectGeneration) {
         // Superseded while we waited. Closing it matters: a channel left open
         // here is what the host kicks as a duplicate.
@@ -350,6 +351,45 @@ export class ClientSession implements Session {
     }
   }
 
+  /**
+   * The connect, with its deadline also enforced on this side.
+   *
+   * The transport is given the budget and honours it; this is the backstop for the
+   * case where it cannot. A promise that never settles is the worst possible
+   * outcome here — `connecting` stays set, so no retry is armed, no deadline is
+   * ever reached, and the player is told nothing while the session sits in
+   * `reconnecting` for good. That is the same failure the reconnect loop had, and
+   * it should not be reachable through a single misbehaving dependency.
+   */
+  private connectWithin(budget: number): Promise<TransportConnection> {
+    const attempt = this.transport.connect(this.hostPeerId, budget);
+    return new Promise<TransportConnection>((resolve, reject) => {
+      let expired = false;
+      const timer = setTimeout(() => {
+        expired = true;
+        reject(new TransportError('timeout', 'connect exceeded its own budget'));
+      }, budget + CONNECT_DEADLINE_GRACE_MS);
+      attempt.then(
+        (connection) => {
+          clearTimeout(timer);
+          if (expired) {
+            // Arrived after we gave up. Closing it matters: an orphaned channel is
+            // exactly what the host kicks as a duplicate.
+            connection.close();
+            return;
+          }
+          resolve(connection);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          if (!expired) {
+            reject(error instanceof Error ? error : new TransportError('unknown', String(error)));
+          }
+        },
+      );
+    });
+  }
+
   /** True once we have been failing for longer than the host will hold the seat. */
   private deadlineExpired(): boolean {
     if (this.reconnectingSince === null) {
@@ -402,7 +442,8 @@ export class ClientSession implements Session {
       record('transportError', error.code, { detail: error.message });
     });
     const offUnstable = connection.onUnstable(() => {
-      this.sampleDiagnostics('channelUnstable');
+      record('channelUnstable', this.hostPeerId);
+      this.sampleDiagnostics('unstable');
       if (this.phase === 'connected') {
         this.setPhase('reconnecting');
       }
@@ -424,16 +465,18 @@ export class ClientSession implements Session {
    * "our path died", and they are unrecoverable after the fact — so they are
    * sampled while the connection is still there to ask.
    */
-  private sampleDiagnostics(kind: 'channelUnstable' | 'channelClosed' | 'connected'): void {
+  private sampleDiagnostics(at: 'unstable' | 'closed' | 'connected'): void {
     const connection = this.connection;
     if (!connection) {
-      record(kind === 'connected' ? 'phase' : kind, this.hostPeerId);
       return;
     }
     void connection
       .diagnostics()
       .then((info) => {
-        record(kind === 'connected' ? 'phase' : kind, this.hostPeerId, {
+        // Filed under its own kind, which is never evicted: the candidate types are
+        // the one thing this module calls unrecoverable, and putting them under a
+        // routine kind meant ordinary chatter flushed them out of the ring first.
+        record('path', at, {
           local: info.localCandidateType,
           remote: info.remoteCandidateType,
           protocol: info.candidateProtocol,
@@ -442,7 +485,7 @@ export class ClientSession implements Session {
         });
       })
       .catch(() => {
-        record(kind === 'connected' ? 'phase' : kind, this.hostPeerId);
+        /* nothing to report */
       });
   }
 
@@ -509,7 +552,7 @@ export class ClientSession implements Session {
 
   private handleClosed(): void {
     // Sampled before the connection is dropped: afterwards there is nothing to ask.
-    this.sampleDiagnostics('channelClosed');
+    this.sampleDiagnostics('closed');
     record('channelClosed', this.hostPeerId, { joined: this.joined });
     this.detachConnection();
     if (this.destroyed) {
@@ -867,13 +910,16 @@ export class ClientSession implements Session {
     if (!pending) {
       return;
     }
-    if (pending.turnSeq !== null && pending.turnSeq !== this.lastTurnSeq) {
-      record('note', 'dropped a stale action after reconnecting');
-      this.outbox = null;
-      this.busy = false;
-      this.observer({ type: 'actionRejected', code: 'notYourTurn', requestId: pending.requestId });
-      return;
-    }
+    /*
+     * Always re-sent, and judged by the host.
+     *
+     * Dropping it here when the turn had moved seemed prudent and was actively
+     * misleading: on the commonest lost-acknowledgement path the move *was* applied
+     * — which is precisely why the turn moved — so the player was told "it is not
+     * your turn" about a card they had successfully played. The host answers a
+     * request id it has already seen from its own record, and checks the turn token
+     * for anything it has not, so it can tell those two cases apart and this cannot.
+     */
     record('note', 'replaying an unanswered action');
     this.sendOutbox();
   }

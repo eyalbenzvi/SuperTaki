@@ -44,6 +44,20 @@ test.describe('a host that reloads', () => {
     // still works and every guest's stored credential still fits, so the table
     // reassembles itself without anybody being told anything.
     await expect(host.getByText(new RegExp(roomCode)).first()).toBeVisible();
+
+    /*
+     * And the offer is taken up, rather than merely admired. Everything after this
+     * click — reclaiming the peer id, restoring the round from the snapshot, the
+     * guest's own reconnect finding the seat still there — was previously only
+     * covered by unit tests, so the one path a real host actually walks was the one
+     * nothing walked end to end.
+     */
+    await resume.click();
+    await expect(host.locator('.hand .card')).toHaveCount(8);
+    await expect(host.getByRole('button', { name: 'Carry on hosting' })).toBeHidden();
+    // The guest is back at the same table, not at a new one.
+    await expect(guest.locator('.hand .card')).toHaveCount(8);
+    await expect(guest.getByText('The host is reloading. Your seat is being held.')).toBeHidden();
   });
 
   test('leaves a guest holding their seat rather than sending them home', async ({ context }) => {
@@ -121,6 +135,27 @@ test.describe('handing the room over', () => {
     // the only one.
     await expect(dialog.getByRole('button', { name: 'Hand over and leave' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Close the room for everyone' })).toBeVisible();
+  });
+
+  test('carries the room to the other player when the host hands it over', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+    const roomCode = await seatTwoPlayers(host, guest);
+
+    await host.getByRole('button', { name: 'Leave' }).first().click();
+    await host.getByRole('dialog').getByRole('button', { name: 'Hand over and leave' }).click();
+
+    /*
+     * The guest is now the host, on the same room code — the successor's peer id is
+     * derived from the code and a generation number, so nothing has to be told an
+     * address. "Start game" is the proof: it is a host-only control, and before this
+     * existed the only way out of a host leaving was the room closing on everybody.
+     */
+    await expect(guest.getByRole('button', { name: 'Start game' })).toBeVisible();
+    await expect(guest.getByText(new RegExp(roomCode)).first()).toBeVisible();
+    // And the outgoing host has actually left, rather than being told their own room
+    // has closed.
+    await expect(host.getByRole('button', { name: 'Create game' })).toBeVisible();
   });
 });
 

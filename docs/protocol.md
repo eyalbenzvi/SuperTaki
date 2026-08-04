@@ -116,14 +116,14 @@ single undeclared card (`nothingToCatch`), and makes them draw the penalty. See
 | ---------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `joinAccepted`   | `{playerId, resumeToken, displayName, lobby}` | The assigned seat and its rejoin secret. `displayName` may differ from the requested one after sanitising/de-duplication. |
 | `joinRejected`   | `{reason}`                                    | `roomFull \| gameInProgress \| invalidName \| protocolMismatch \| unknownSeat \| invalidResumeToken \| roomClosed`        |
-| `lobbyState`     | `{lobby}`                                     | Broadcast on any seat or health change.                                                                                   |
+| `lobbyState`     | `{lobby}`                                     | On any seat or health change, and once when a turn passes the nudge threshold.                                            |
 | `publicState`    | `{state}`                                     | The whole table, minus every hand.                                                                                        |
 | `privateHand`    | `{hand}`                                      | **Unicast.** Only the owner's cards.                                                                                      |
 | `gameEvents`     | `{version, events}`                           | Log lines; max 64 per message.                                                                                            |
 | `actionRejected` | `{code, requestId?}`                          | **Unicast**, an engine `RejectionCode`.                                                                                   |
 | `playAgainState` | `{agreed, required}`                          | Vote progress for the next round.                                                                                         |
 | `kicked`         | `{reason}`                                    | `removedByHost \| duplicateConnection`                                                                                    |
-| `hostClosed`     | `{reason}`                                    | `hostLeft \| roomReset`                                                                                                   |
+| `hostClosed`     | `{reason, generation?}`                       | `hostLeft \| roomReset \| restarting \| handoff` — only the first two are terminal; see below.                            |
 | `ping` / `pong`  | `{nonce}`                                     | Heartbeat.                                                                                                                |
 
 ## Snapshot / event model

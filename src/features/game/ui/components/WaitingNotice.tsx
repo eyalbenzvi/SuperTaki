@@ -30,11 +30,20 @@ interface SeatHoldProps {
  * cancels — and everything after that is local elapsed time, counted by a ticking
  * integer rather than by asking what time it is.
  *
- * The caller keys this on the snapshot, so a fresh one restarts the count from the
- * host's new number instead of drifting away from it.
+ * The host's figure is taken **once**, when the callout appears, and the count
+ * carries on locally from there. Two rejected alternatives are the reason:
+ * re-keying on the snapshot tore the whole callout down several times a minute —
+ * the host re-broadcasts on every accepted command — which dropped keyboard focus
+ * to the document mid-interaction and re-announced the callout to a screen reader;
+ * re-anchoring inside an effect is a state write during commit that re-renders
+ * every seat for a number nobody can see change. What is given up is correction
+ * for clock drift between two devices over the few minutes a seat is held, which
+ * is far below the one-second resolution displayed. A seat that fills and empties
+ * again unmounts this in between, so the next hold re-anchors naturally.
  */
 function SeatHold({ name, elapsedWhenSent, graceMs, actions }: SeatHoldProps): ReactNode {
   const t = useT();
+  const [anchorMs] = useState(elapsedWhenSent);
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
@@ -46,15 +55,19 @@ function SeatHold({ name, elapsedWhenSent, graceMs, actions }: SeatHoldProps): R
     };
   }, []);
 
-  const remaining = Math.max(graceMs - (elapsedWhenSent + seconds * 1_000), 0);
+  const remaining = Math.max(graceMs - (anchorMs + seconds * 1_000), 0);
   return (
-    <Callout
-      tone="warning"
-      icon="hourglass"
-      title={t('absent.title', { name })}
-      role="status"
-      actions={actions}
-    >
+    /*
+     * Deliberately not a live region.
+     *
+     * `role="status"` here announced the whole body every time its text changed —
+     * and its text changes once a second, so a screen reader read the seat out
+     * sixty times a minute and buried every other event at the table. The arrival
+     * of the hold is said once, through the app's single announcer, by the parent.
+     * The countdown stays in the accessibility tree and readable on demand; it
+     * just no longer speaks for itself.
+     */
+    <Callout tone="warning" icon="hourglass" title={t('absent.title', { name })} actions={actions}>
       {t('absent.holdingSeat', { time: formatDuration(remaining) })}
     </Callout>
   );
@@ -77,9 +90,26 @@ export function WaitingNotice(): ReactNode {
   const localPlayerId = useAppStore((state) => state.localPlayerId);
   const skipAbsentTurn = useAppStore((state) => state.skipAbsentTurn);
   const removeFromRound = useAppStore((state) => state.removeFromRound);
+  const announce = useAppStore((state) => state.announce);
 
   const absent = absentPlayers({ lobby });
   const waiting = waitingFor({ lobby });
+
+  /*
+   * Said once per change in *who* is being held, through the one announcer the app
+   * has. The callouts themselves cannot carry this: their text is a countdown, and
+   * a live region containing a countdown talks over everything else.
+   */
+  const absentKey = absent.map((player) => player.id).join(',');
+  useEffect(() => {
+    if (absentKey === '') {
+      return;
+    }
+    announce(absent.map((player) => t('absent.title', { name: player.name })).join(' '));
+    // The set of held seats is what makes this worth saying again; a new snapshot
+    // for the same seats is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [absentKey, announce]);
 
   if (pausedBy !== null) {
     const who = pausedBy === localPlayerId ? null : playerName({ publicState, lobby }, pausedBy);
@@ -104,9 +134,7 @@ export function WaitingNotice(): ReactNode {
         const isWaitingOnThem = waiting?.playerId === player.id && waiting.reason === 'absent';
         return (
           <SeatHold
-            // Re-anchored on every snapshot, so the local count never drifts from
-            // the host's own measurement of the same absence.
-            key={`${player.id}:${String(sentAt ?? 0)}`}
+            key={player.id}
             name={player.name}
             elapsedWhenSent={sentAt !== undefined ? Math.max(sentAt - player.absentSince, 0) : 0}
             graceMs={graceMs}
