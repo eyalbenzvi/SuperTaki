@@ -1,6 +1,13 @@
 import { randomHex } from '../../../lib/id.ts';
 import { createLogger } from '../../../lib/logger.ts';
-import { TransportError, createEmitter, type Transport, type TransportConnection } from './transport.ts';
+import {
+  TransportError,
+  createEmitter,
+  type ConnectionDiagnostics,
+  type SignallingState,
+  type Transport,
+  type TransportConnection,
+} from './transport.ts';
 
 /**
  * BroadcastChannel transport: connects tabs of the *same browser and origin*.
@@ -56,6 +63,7 @@ class BroadcastConnection implements TransportConnection {
   private readonly data = createEmitter<[unknown]>();
   private readonly closed = createEmitter<[]>();
   private readonly errors = createEmitter<[TransportError]>();
+  private readonly unstable = createEmitter<[]>();
   private readonly channel: BroadcastChannel;
   private isOpen = true;
 
@@ -84,6 +92,11 @@ class BroadcastConnection implements TransportConnection {
     return this.isOpen;
   }
 
+  /** A BroadcastChannel post is delivered or it throws; nothing is ever queued. */
+  get bufferedAmount(): number {
+    return 0;
+  }
+
   send(payload: unknown): void {
     if (!this.isOpen) {
       this.errors.emit(new TransportError('closed', 'Connection is closed'));
@@ -106,6 +119,15 @@ class BroadcastConnection implements TransportConnection {
 
   onError(handler: (error: TransportError) => void): () => void {
     return this.errors.add(handler);
+  }
+
+  /** Same-browser channels do not degrade: they work or they are closed. */
+  onUnstable(handler: () => void): () => void {
+    return this.unstable.add(handler);
+  }
+
+  diagnostics(): Promise<ConnectionDiagnostics> {
+    return Promise.resolve({ bufferedAmount: 0 });
   }
 
   private handleRemoteClose(): void {
@@ -136,6 +158,7 @@ class BroadcastTransport implements Transport {
   readonly kind = 'broadcast' as const;
   private readonly incoming = createEmitter<[TransportConnection]>();
   private readonly errors = createEmitter<[TransportError]>();
+  private readonly signalling = createEmitter<[SignallingState]>();
   private readonly control: BroadcastChannel;
   private readonly pending = new Map<string, (connection: TransportConnection) => void>();
   private destroyed = false;
@@ -173,6 +196,13 @@ class BroadcastTransport implements Transport {
       : Promise.resolve(this.localId);
   }
 
+  /** There is no broker to lose: within one browser, signalling is always up. */
+  signallingReady(): Promise<void> {
+    return this.destroyed
+      ? Promise.reject(new TransportError('closed', 'Transport destroyed'))
+      : Promise.resolve();
+  }
+
   connect(remoteId: string): Promise<TransportConnection> {
     if (this.destroyed) {
       return Promise.reject(new TransportError('closed', 'Transport destroyed'));
@@ -206,10 +236,15 @@ class BroadcastTransport implements Transport {
     return this.errors.add(handler);
   }
 
+  onSignallingChange(handler: (state: SignallingState) => void): () => void {
+    return this.signalling.add(handler);
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.incoming.clear();
     this.errors.clear();
+    this.signalling.clear();
     this.pending.clear();
     this.control.close();
   }

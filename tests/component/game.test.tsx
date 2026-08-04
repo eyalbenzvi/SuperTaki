@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import {
   GUEST_ID,
   HOST_ID,
@@ -507,8 +507,9 @@ describe('leaving a game', () => {
 
     await user.click(screen.getByRole('button', { name: 'יציאה' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('יציאה תסיים את המשחק לכולם');
-    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
+    // A host with another player present is offered the handover; closing the room
+    // for everybody is still available, and still the destructive option.
+    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
     expect(leaveRoom).toHaveBeenCalled();
   });
 
@@ -584,5 +585,171 @@ describe('the last card declaration', () => {
     renderApp();
     const opponents = screen.getByRole('region', { name: 'שאר השחקנים' });
     expect(within(opponents).getByText('הכריז/ה')).toBeInTheDocument();
+  });
+
+  it('counts down the seat it is holding, and keeps counting', async () => {
+    /*
+     * The headline of the whole effort, and it had no test: a countdown that does
+     * not advance is not a countdown. The first implementation cancelled the clock
+     * skew against the *current* time rather than the arrival time, which reduced
+     * the arithmetic to a constant, so it re-rendered the same number every second.
+     */
+    vi.useFakeTimers();
+    try {
+      const sentAt = 1_000_000;
+      enterGame();
+      setState({
+        lobby: lobbyFixture({
+          phase: 'inGame',
+          sentAt,
+          seatGraceMs: 300_000,
+          waitingFor: GUEST_ID,
+          waitingReason: 'absent',
+          players: [
+            { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+            {
+              id: GUEST_ID,
+              name: 'אלי',
+              isHost: false,
+              health: 'disconnected',
+              seat: 1,
+              // Away for a minute already, by the host's own reckoning.
+              absentSince: sentAt - 60_000,
+            },
+          ],
+        }),
+      });
+      renderApp();
+
+      // Five minutes' grace less the minute already gone.
+      expect(screen.getByText(/4:00/)).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(3_000);
+        await Promise.resolve();
+      });
+      expect(screen.getByText(/3:57/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('waiting on somebody at the table', () => {
+  it('keeps the seat-hold callout and its focus across a fresh snapshot', async () => {
+    /*
+     * The countdown used to be keyed on the snapshot time so it could re-anchor on
+     * the host's number, which meant the host re-broadcasting — something it does on
+     * every accepted command — tore the callout down and rebuilt it. Anybody who had
+     * tabbed to "pass their turn" lost the focus mid-interaction. The count now runs
+     * locally from the reading it had when it appeared, so a new snapshot must leave
+     * both the element and the focus alone.
+     */
+    vi.useFakeTimers();
+    try {
+      const sentAt = 1_000_000;
+      enterGame();
+      const held = (at: number) =>
+        lobbyFixture({
+          phase: 'inGame',
+          sentAt: at,
+          seatGraceMs: 300_000,
+          waitingFor: GUEST_ID,
+          waitingReason: 'absent',
+          players: [
+            { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+            {
+              id: GUEST_ID,
+              name: 'אלי',
+              isHost: false,
+              health: 'disconnected',
+              seat: 1,
+              absentSince: sentAt - 60_000,
+            },
+          ],
+        });
+      setState({ lobby: held(sentAt) });
+      renderApp();
+
+      const skip = screen.getByRole('button', { name: 'העברת התור' });
+      skip.focus();
+      expect(document.activeElement).toBe(skip);
+
+      await act(async () => {
+        vi.advanceTimersByTime(2_000);
+        await Promise.resolve();
+      });
+      // A later snapshot, exactly as an accepted command would produce.
+      await act(async () => {
+        setState({ lobby: held(sentAt + 2_000) });
+        await Promise.resolve();
+      });
+
+      // Same element, same focus, and the count did not jump back to 4:00.
+      expect(screen.getByRole('button', { name: 'העברת התור' })).toBe(skip);
+      expect(document.activeElement).toBe(skip);
+      expect(screen.getByText(/3:58/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offers the nudge only once the host says the wait is long, and sends it once', async () => {
+    const sentAt = 2_000_000;
+    enterGame({ myTurn: false });
+    const waiting = (waitedMs: number) =>
+      lobbyFixture({
+        phase: 'inGame',
+        sentAt,
+        waitingFor: GUEST_ID,
+        waitingReason: 'turn',
+        waitingSince: sentAt - waitedMs,
+      });
+
+    setState({ lobby: waiting(5_000) });
+    const { user } = renderApp();
+    // Five seconds is a normal turn: offering the nudge here is hurrying people.
+    expect(screen.queryByRole('button', { name: 'תזכורת' })).not.toBeInTheDocument();
+
+    const sent: string[] = [];
+    await act(async () => {
+      setState({
+        lobby: waiting(31_000),
+        nudgePlayer: (playerId: string) => {
+          sent.push(playerId);
+        },
+      });
+      await Promise.resolve();
+    });
+
+    const button = screen.getByRole('button', { name: 'תזכורת' });
+    await user.click(button);
+    expect(sent).toEqual([GUEST_ID]);
+    expect(screen.getByRole('button', { name: 'התזכורת נשלחה.' })).toBeDisabled();
+  });
+
+  it('shows a received nudge and clears it without being asked', async () => {
+    /*
+     * The receiving half shipped writing to the store and rendering nothing, so the
+     * feature was a button that sent a message into silence.
+     */
+    vi.useFakeTimers();
+    try {
+      enterGame();
+      setState({ nudge: { fromPlayerId: GUEST_ID, nonce: 1 } });
+      renderApp();
+
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent('אלי');
+
+      await act(async () => {
+        vi.advanceTimersByTime(12_000);
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(useAppStore.getState().nudge).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

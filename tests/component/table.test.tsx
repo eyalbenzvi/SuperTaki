@@ -205,11 +205,10 @@ describe('leaving', () => {
     // screen all go through the same warning with the same wording.
     await user.click(screen.getByRole('button', { name: 'יציאה' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveAccessibleName('לצאת מהמשחק?');
-    expect(dialog).toHaveTextContent('יציאה תסיים את המשחק לכולם');
+    expect(dialog).toHaveAccessibleName('להעביר את ניהול החדר?');
     expect(leaveRoom).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
+    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
     expect(leaveRoom).toHaveBeenCalled();
   });
 });

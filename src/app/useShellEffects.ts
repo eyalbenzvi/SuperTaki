@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useAppStore, type Screen } from '../features/game/state/store.ts';
+import { onWake } from '../lib/lifecycle.ts';
+import { refreshWakeLock, releaseWakeLock, requestWakeLock } from '../lib/wakeLock.ts';
 
 /** Screens that mean "seated in a room", where a stray Back must not eject you. */
 const IN_ROOM: ReadonlySet<Screen> = new Set<Screen>(['lobby', 'game', 'over']);
@@ -86,6 +88,31 @@ export function useShellEffects(screen: Screen): void {
       window.removeEventListener('popstate', onPopState);
     };
   }, []);
+
+  /*
+   * Keep the screen awake while a game is on the table.
+   *
+   * A phone that dims and locks is the most ordinary way a player "disconnects":
+   * the tab is suspended, the connection dies with it, and nobody touched
+   * anything. This cannot help a backgrounded tab — nothing in a web page can —
+   * but it does prevent the case where the game is in front of the player and the
+   * device puts itself to sleep regardless. The browser revokes the lock whenever
+   * the page is hidden, which is why it is re-requested on every wake.
+   */
+  useEffect(() => {
+    if (screen !== 'game') {
+      void releaseWakeLock();
+      return;
+    }
+    void requestWakeLock();
+    const off = onWake(() => {
+      void refreshWakeLock();
+    });
+    return () => {
+      off();
+      void releaseWakeLock();
+    };
+  }, [screen]);
 
   /*
    * A refresh or a closed tab during play costs the host's room outright, and

@@ -6,6 +6,8 @@ import { LANGUAGES, type Language } from '../i18n/index.ts';
 import { copyText } from '../lib/share.ts';
 import type { ThemeChoice } from '../features/game/state/persistence.ts';
 import { useAppStore } from '../features/game/state/store.ts';
+import { TableControls } from '../features/game/ui/components/TableControls.tsx';
+import { DiagnosticsPanel } from './DiagnosticsPanel.tsx';
 import { useT } from './useT.ts';
 
 const THEMES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
@@ -84,6 +86,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): ReactNod
             </div>
           </div>
         ) : null}
+
+        {/* Asking the table to wait, and agreeing to stop. Reachable in two taps
+            from every screen, without spending a row of the table on them. */}
+        <TableControls />
+
+        <DiagnosticsPanel />
       </div>
     </Modal>
   );

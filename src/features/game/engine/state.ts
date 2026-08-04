@@ -9,6 +9,25 @@ export type TurnDirection = 1 | -1;
 export interface EnginePlayer {
   readonly id: PlayerId;
   readonly name: string;
+  /**
+   * Set when a player has left the round for good.
+   *
+   * They are *marked*, never removed from `players`, and that is a deliberate
+   * design decision rather than laziness. Splicing a seat out mid-round breaks
+   * five things at once: a Taki sequence they owned can never be closed and never
+   * be drawn out of, so the table deadlocks permanently; a `plusThree.awaiting`
+   * entry naming them can never empty, so every command from every seat is
+   * refused for the rest of the game; `currentPlayerIndex` silently points at the
+   * wrong player whenever the removed seat sat before it; the public state drops
+   * below the two players the wire schema requires, so the final broadcast is
+   * unparseable and nobody sees the round end; and the player vanishes from the
+   * standings of a round they may have been winning.
+   *
+   * Marking costs one flag and one condition inside `advanceTurn`. Card
+   * conservation then holds by construction — their hand is simply frozen out of
+   * play, with no reshuffle and no random numbers consumed.
+   */
+  readonly left?: boolean;
 }
 
 /** State of an open Taki sequence. */
@@ -40,6 +59,16 @@ export interface PlusThreeState {
 }
 
 export type GamePhase = 'playing' | 'finished';
+
+/**
+ * Why a round ended.
+ *
+ * `abandoned` exists because "the last player standing wins" is not a result. A
+ * two-player table whose opponent's phone blinks for twenty seconds would hand the
+ * round to whoever was left, and the host is the one measuring the blink. A round
+ * that runs out of players has no winner, and says so.
+ */
+export type GameEndReason = 'won' | 'abandoned';
 
 /**
  * Complete authoritative game state. Serialisable, never mutated in place.
@@ -86,6 +115,17 @@ export interface GameState {
   readonly declaredLastCard: readonly PlayerId[];
   readonly rng: RngState;
   readonly winnerId: PlayerId | null;
+  /** Why the round ended, or `null` while it is still running. */
+  readonly endReason: GameEndReason | null;
+  /**
+   * Counts turn handovers, not commands.
+   *
+   * `version` moves for everything, including the out-of-turn declarations and
+   * catches that are legal at any moment — which makes it useless as a way for a
+   * client to ask "is my move still meant for the table I was looking at?". This
+   * does answer that, because it changes only when the turn does.
+   */
+  readonly turnSeq: number;
   /** Seed the game was created with, kept for reproducibility/debugging. */
   readonly seed: number;
 }
@@ -111,7 +151,31 @@ export type GameCommand =
    * Catches `targetId` holding a single card they never declared. Legal from any
    * seat but their own, in or out of turn, for as long as they stay silent.
    */
-  | { readonly type: 'catchLastCard'; readonly playerId: PlayerId; readonly targetId: PlayerId };
+  | { readonly type: 'catchLastCard'; readonly playerId: PlayerId; readonly targetId: PlayerId }
+  /**
+   * Passes the turn of a player who is not there.
+   *
+   * Host-only: it is deliberately absent from the wire protocol, because a client
+   * that could ask for it could skip anybody. See `docs/rules.md` for the full
+   * rule table — the short version is that a skip is *free*. A disconnect is not a
+   * decision, and charging a card for it would leave a returning player several
+   * cards down after a seat had been faithfully held for them, which would make
+   * the whole promise of holding it theatre. The one thing that does not
+   * evaporate is a penalty somebody *else* created: an outstanding +2 run is paid
+   * in full, or pulling the plug becomes the cheapest answer to an eight-card run.
+   */
+  | { readonly type: 'skipTurn'; readonly playerId: PlayerId }
+  /** Marks a player as having left for good, without disturbing the round. */
+  | { readonly type: 'leaveGame'; readonly playerId: PlayerId }
+  /**
+   * Ends the round with no winner, by agreement of the table.
+   *
+   * This is what a real table does when somebody has to leave: you stop, and
+   * nobody pretends the interrupted hand produced a champion. Having it removes
+   * most of the reason to attempt an automatic host takeover, which cannot be made
+   * safe in a topology with no authority.
+   */
+  | { readonly type: 'abandonRound'; readonly playerId: PlayerId };
 
 export type GameCommandType = GameCommand['type'];
 
@@ -165,7 +229,12 @@ export type GameEvent =
   | { readonly type: 'turnChanged'; readonly playerId: PlayerId }
   | { readonly type: 'drawPileRecycled'; readonly count: number }
   | { readonly type: 'drawPileExhausted' }
-  | { readonly type: 'playerWon'; readonly playerId: PlayerId };
+  | { readonly type: 'playerWon'; readonly playerId: PlayerId }
+  /** A turn was passed for somebody who was not there. `drew` is what they owed. */
+  | { readonly type: 'turnSkipped'; readonly playerId: PlayerId; readonly drew: number }
+  | { readonly type: 'playerLeft'; readonly playerId: PlayerId }
+  /** The round ran out of players. There is no winner. */
+  | { readonly type: 'roundAbandoned' };
 
 export type GameEventType = GameEvent['type'];
 
@@ -192,6 +261,12 @@ export const REJECTION_CODES = [
   'notEnoughPlayers',
   'tooManyPlayers',
   'duplicatePlayerId',
+  /** Asked to skip a seat that is not the one the table is waiting for. */
+  'nothingToSkip',
+  /** Asked to act for, or remove, a player who has already left. */
+  'alreadyLeft',
+  /** The table is holding at somebody's request. */
+  'tablePaused',
 ] as const;
 
 export type RejectionCode = (typeof REJECTION_CODES)[number];

@@ -109,9 +109,17 @@ export function isValidRoomCode(input: string): boolean {
   return ROOM_CODE_PATTERN.test(normalizeRoomCode(input));
 }
 
-/** Deterministic host peer id for a room code. */
-export function hostPeerIdForRoom(roomCode: string): string {
-  return `${PEER_ID_PREFIX}-${normalizeRoomCode(roomCode).toLowerCase()}`;
+/**
+ * Deterministic host peer id for a room code.
+ *
+ * `generation` exists so a room can move to another device without the room code
+ * changing: after a handover the successor claims generation 1, and a client that
+ * cannot find generation 0 knows where to look without any registry to consult.
+ * Generation 0 keeps the original, unadorned id, so old invites stay valid.
+ */
+export function hostPeerIdForRoom(roomCode: string, generation = 0): string {
+  const base = `${PEER_ID_PREFIX}-${normalizeRoomCode(roomCode).toLowerCase()}`;
+  return generation > 0 ? `${base}-h${String(generation)}` : base;
 }
 
 const PEER_ID_PATTERN = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;

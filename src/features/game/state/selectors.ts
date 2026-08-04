@@ -167,6 +167,8 @@ export interface OpponentView {
   readonly isHost: boolean;
   /** Has declared "last card" for the single card they are holding. */
   readonly declaredLastCard: boolean;
+  /** Has left the round; their cards are frozen out of play. */
+  readonly left: boolean;
   /** On one card and still silent, so this seat can be called out. */
   readonly catchable: boolean;
 }
@@ -199,12 +201,58 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
         health: lobbyPlayer?.health ?? 'connected',
         isHost: lobbyPlayer?.isHost ?? false,
         declaredLastCard: publicState.declaredLastCard.includes(player.id),
+        left: player.left === true,
         catchable:
           publicState.phase === 'playing' &&
           player.cardCount === 1 &&
-          !publicState.declaredLastCard.includes(player.id),
+          !publicState.declaredLastCard.includes(player.id) &&
+          player.left !== true &&
+          /*
+           * Somebody who is not there cannot shout, so calling them out for
+           * silence is not a catch, it is farming — four cards an orbit off a
+           * player whose phone is rebooting. The host refuses it too; this only
+           * keeps the button from appearing.
+           */
+          (lobbyPlayer?.health ?? 'connected') === 'connected',
       };
     });
+}
+
+/** The seat the table is waiting for, and why, straight from the host. */
+export function waitingFor(
+  state: Pick<TableSnapshot, 'lobby'>,
+): { readonly playerId: string; readonly reason: NonNullable<LobbySnapshot['waitingReason']> } | null {
+  const lobby = state.lobby;
+  if (!lobby?.waitingFor || !lobby.waitingReason) {
+    return null;
+  }
+  return { playerId: lobby.waitingFor, reason: lobby.waitingReason };
+}
+
+/** Seats currently away, with how long the host has been holding them. */
+export function absentPlayers(
+  state: Pick<TableSnapshot, 'lobby'>,
+): readonly { readonly id: string; readonly name: string; readonly absentSince: number }[] {
+  const lobby = state.lobby;
+  if (!lobby) {
+    return [];
+  }
+  return lobby.players
+    .filter((player) => player.absentSince !== undefined && player.left !== true)
+    .map((player) => ({
+      id: player.id,
+      name: player.name,
+      absentSince: player.absentSince as number,
+    }));
+}
+
+export function isPaused(state: { readonly pausedBy: string | null }): boolean {
+  return state.pausedBy !== null;
+}
+
+/** Whether the round ended without a winner. */
+export function wasAbandoned(state: Pick<TableSnapshot, 'publicState'>): boolean {
+  return state.publicState?.endReason === 'abandoned';
 }
 
 export function currentPlayerName(state: Pick<TableSnapshot, 'publicState'>): string | null {

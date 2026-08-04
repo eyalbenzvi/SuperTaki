@@ -838,3 +838,58 @@
   font-weight: var(--weight-bold);
   background: var(--success-soft);
 }
+
+/*
+ * Table controls: pausing, and agreeing to stop.
+ *
+ * Deliberately quiet. These are the actions a table reaches for once an evening,
+ * and they must not compete with the cards for attention — but they also must not
+ * be hidden behind a menu, because the moment somebody needs them is the moment
+ * they are least willing to hunt.
+ */
+.table-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/*
+ * The support log.
+ *
+ * Monospaced and scrollable, with the newest lines at the bottom, because it is
+ * read by scanning for the moment something went wrong rather than from the top.
+ */
+.diagnostics {
+  display: grid;
+  gap: var(--space-2);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--border);
+}
+
+.diagnostics h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+}
+
+.diagnostics__log {
+  max-block-size: 12rem;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre;
+  /* The log is machine text: it should not flip with the interface language. */
+  direction: ltr;
+  text-align: left;
+}
+
+.diagnostics__actions {
+  display: flex;
+  gap: var(--space-2);
+}

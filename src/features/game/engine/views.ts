@@ -1,12 +1,14 @@
 import type { Card, CardColor } from './cards.ts';
 import { topCard } from './engine.ts';
 import type { PlayContext } from './rules.ts';
-import type { GamePhase, GameState, PlayerId, TakiModeState, TurnDirection } from './state.ts';
+import type { GameEndReason, GamePhase, GameState, PlayerId, TakiModeState, TurnDirection } from './state.ts';
 
 export interface PublicPlayerView {
   readonly id: PlayerId;
   readonly name: string;
   readonly cardCount: number;
+  /** True for a seat that has left the round. Their cards are frozen out of play. */
+  readonly left?: boolean;
 }
 
 /**
@@ -16,7 +18,10 @@ export interface PublicPlayerView {
  */
 export interface PublicGameState {
   readonly version: number;
+  /** Turn counter, so a client can tell whether its intent is still current. */
+  readonly turnSeq?: number;
   readonly phase: GamePhase;
+  readonly endReason?: GameEndReason;
   readonly players: readonly PublicPlayerView[];
   readonly drawPileCount: number;
   readonly discardTop: Card | null;
@@ -53,11 +58,14 @@ export interface PrivateHandView {
 export function toPublicGameState(state: GameState): PublicGameState {
   return {
     version: state.version,
+    turnSeq: state.turnSeq,
     phase: state.phase,
+    ...(state.endReason ? { endReason: state.endReason } : {}),
     players: state.players.map((player) => ({
       id: player.id,
       name: player.name,
       cardCount: (state.hands[player.id] ?? []).length,
+      ...(player.left === true ? { left: true } : {}),
     })),
     drawPileCount: state.drawPile.length,
     discardTop: topCard(state),
@@ -101,7 +109,13 @@ export interface StandingRow {
   readonly rank: number;
 }
 
-/** Final standings: fewest remaining cards first, ties share a rank. */
+/**
+ * Final standings: fewest remaining cards first, ties share a rank.
+ *
+ * A player who left is still listed, with the hand they were holding when they
+ * went. Dropping them would erase somebody from the standings of a round they may
+ * have been winning, which is not an honest result.
+ */
 export function computeStandings(state: PublicGameState): StandingRow[] {
   const sorted = state.players
     .map((player) => ({ ...player }))

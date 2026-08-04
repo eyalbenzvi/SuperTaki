@@ -6,7 +6,9 @@ import { clearHash, inviteFromHash } from '../../../../app/routing.ts';
 import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../../../../lib/sanitize.ts';
 import { parseInvite } from '../../network/roomCode.ts';
 import { useAppStore } from '../../state/store.ts';
+import { hostPeerIdForRoom } from '../../network/roomCode.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
+import { ConnectivityNotice } from '../components/ConnectivityNotice.tsx';
 import { ResumeCard } from '../components/ResumeCard.tsx';
 
 export function JoinRoomScreen(): ReactNode {
@@ -66,9 +68,15 @@ export function JoinRoomScreen(): ReactNode {
       return;
     }
     void joinRoom({
+      /*
+       * Derived from the generation, not the stored peer id. After a handover the
+       * stored id names the host that left, so reconnecting to it answers "no such
+       * peer" — and that is terminal before a seat exists. The one flow the
+       * handover exists to survive was the one that could not.
+       */
       name: resumable.displayName,
       roomCode: resumable.roomCode,
-      hostPeerId: resumable.hostPeerId,
+      hostPeerId: hostPeerIdForRoom(resumable.roomCode, resumable.generation ?? 0),
       resume: { playerId: resumable.playerId, resumeToken: resumable.resumeToken },
     });
   };
@@ -78,6 +86,7 @@ export function JoinRoomScreen(): ReactNode {
       <h1>{t('join.title')}</h1>
 
       <ConnectionPhaseNotice />
+      <ConnectivityNotice />
 
       <ResumeCard onResume={resume} busy={busy} />
 

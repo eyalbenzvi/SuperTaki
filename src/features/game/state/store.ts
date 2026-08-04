@@ -1,23 +1,35 @@
 import { create } from 'zustand';
 import { DEFAULT_LANGUAGE, directionFor, type Language } from '../../../i18n/index.ts';
+import { record } from '../../../lib/diagnostics.ts';
+import { onSleep } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import type { Card } from '../engine/cards.ts';
 import type { GameEvent, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import { ClientSession } from '../network/clientSession.ts';
-import { HostSession, createHostSession } from '../network/hostSession.ts';
+import { HostSession, createHostSession, type HostRestoreState } from '../network/hostSession.ts';
 import type { GameAction, LobbySnapshot } from '../network/protocol.ts';
 import { buildInviteUrl, generateRoomCode, hostPeerIdForRoom } from '../network/roomCode.ts';
 import {
+  CREDENTIAL_ENDING_REASONS,
   sessionError,
   type ConnectionPhase,
   type SessionClosedReason,
   type SessionError,
   type SessionUpdate,
 } from '../network/session.ts';
+import { ACTION_LOCK_MS, HOST_ID_RETRY_SCHEDULE_MS } from '../network/timing.ts';
 import { TransportError, type Transport } from '../network/transport.ts';
 import { createTransport } from '../network/transportFactory.ts';
+import {
+  clearHostedRoom,
+  flushHostedRoom,
+  loadHostedRoom,
+  saveHostedRoom,
+  validateHandoffSnapshot,
+  type HostedRoom,
+} from './hostSnapshot.ts';
 import {
   applyLanguage,
   applyTheme,
@@ -59,14 +71,14 @@ const FEED_LIMIT = 60;
 const ROOM_CODE_ATTEMPTS = 4;
 
 /**
- * How long a submitted move keeps the table locked when no answer arrives.
+ * How many times a returning host tries to reclaim its own room code.
  *
- * The lock exists so one tap cannot become two moves. It is released as soon as
- * the host's answer lands — new state, new hand or a rejection — and this
- * deadline only covers the case where nothing comes back at all, so a dropped
- * packet cannot leave a player unable to act.
+ * The schedule spans seventy-five seconds because the broker holds a dropped peer
+ * id for up to a minute: the id being refused is usually our own ghost, so giving
+ * up early means conceding the room code — and invalidating every invite already
+ * sent — at the moment it was still recoverable.
  */
-const ACTION_LOCK_MS = 5000;
+const HOST_ID_ATTEMPTS = HOST_ID_RETRY_SCHEDULE_MS.length;
 
 export interface AppState {
   language: Language;
@@ -93,6 +105,12 @@ export interface AppState {
   rejection: RejectionNotice | null;
   closedReason: SessionClosedReason | null;
   resumable: ResumableRoom | null;
+  /** A room this device was hosting and can take back. */
+  hostable: HostedRoom | null;
+  /** Who asked the table to hold, or `null`. */
+  pausedBy: string | null;
+  /** Set when another player nudges you; the nonce forces a re-announcement. */
+  nudge: { readonly fromPlayerId: string; readonly nonce: number } | null;
 
   /** True from the moment a move is submitted until the table answers. */
   actionPending: boolean;
@@ -113,6 +131,8 @@ export interface AppActions {
   readonly dismissRejection: () => void;
   readonly dismissClosed: () => void;
   readonly forgetResumable: () => void;
+  readonly forgetHostable: () => void;
+  readonly dismissNudge: () => void;
 
   readonly createRoom: (options: {
     name: string;
@@ -126,10 +146,22 @@ export interface AppActions {
     resume?: { playerId: string; resumeToken: string };
   }) => Promise<void>;
   readonly retryConnection: () => void;
+  /** Takes back a room this device was hosting, on the same room code. */
+  readonly resumeHosting: () => Promise<void>;
 
   readonly setMaxPlayers: (value: number) => void;
   readonly removePlayer: (playerId: string) => void;
   readonly startGame: () => void;
+  /** Passes the turn of a player who is away. Host only. */
+  readonly skipAbsentTurn: (playerId: string) => void;
+  /** Takes an absent player out of the round, keeping their cards out of play. */
+  readonly removeFromRound: (playerId: string) => void;
+  /** Asks the table to hold, or lets it carry on. */
+  readonly setPaused: (paused: boolean) => void;
+  readonly voteAbandon: (agree: boolean) => void;
+  readonly nudgePlayer: (playerId: string) => void;
+  /** Offers the room to another player and leaves. Host only. */
+  readonly handOver: (playerId: string) => void;
   readonly playCard: (cardId: string, chosenColor?: 'red' | 'blue' | 'green' | 'yellow') => void;
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
@@ -151,10 +183,33 @@ export type AppStore = AppState & AppActions;
  * handles that must never be treated as renderable state.
  */
 let session: HostSession | ClientSession | null = null;
+/**
+ * Which session the store is currently listening to.
+ *
+ * A session's observer is fixed when it is constructed, so a session that has
+ * been superseded can still speak — and one of the things it says on the way out
+ * is `closed`, which clears `session`. During a handover that is actively
+ * harmful: this device creates its new host session, then tears down the client
+ * session it used to be, and the teardown's `closed` would null out the host that
+ * had just been installed. Stamping each observer with the epoch it belongs to
+ * makes a superseded session's parting words inert.
+ */
+let sessionEpoch = 0;
 let feedCounter = 0;
 let rejectionCounter = 0;
 let announcementCounter = 0;
+let nudgeCounter = 0;
 let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * The intent currently in flight.
+ *
+ * The lock is keyed on this rather than on the table moving, because in this game
+ * other players legally act out of turn — so a new snapshot may have nothing to do
+ * with my move, and treating it as proof of delivery is how a lost action comes to
+ * look like a delivered one.
+ */
+let pendingRequestId: string | null = null;
+let detachSleepHook: (() => void) | null = null;
 
 /** Test seam: replaces the active session (used by component tests). */
 export function __setSessionForTests(next: HostSession | ClientSession | null): void {
@@ -185,6 +240,9 @@ function initialState(): AppState {
     rejection: null,
     closedReason: null,
     resumable: loadResumableRoom(),
+    hostable: loadHostedRoom(),
+    pausedBy: null,
+    nudge: null,
     actionPending: false,
     leaveIntent: false,
     online: typeof navigator === 'undefined' || navigator.onLine !== false,
@@ -207,6 +265,7 @@ const CLEARED_SESSION: Partial<AppState> = {
   playAgain: null,
   actionPending: false,
   leaveIntent: false,
+  pausedBy: null,
 };
 
 function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
@@ -227,9 +286,136 @@ export const useAppStore = create<AppStore>((set, get) => {
       clearTimeout(actionLockTimer);
       actionLockTimer = null;
     }
+    pendingRequestId = null;
     if (get().actionPending) {
       set({ actionPending: false });
     }
+  }
+
+  /**
+   * Becomes the host, on the room the previous one just handed over.
+   *
+   * The order matters: this device starts serving on the next generation *before*
+   * telling the old host it accepted. Only then does the old host step down and
+   * point everybody here, so the table never has a moment with nowhere to go. If
+   * anything fails, nothing is accepted and the old host simply carries on.
+   */
+  async function acceptHandoff(generation: number, snapshot: unknown, accept: () => void): Promise<void> {
+    const roomCode = get().roomCode;
+    if (!roomCode) {
+      return;
+    }
+    const restore = validateHandoffSnapshot(snapshot);
+    if (!restore) {
+      log.warn('refusing a handover whose state did not parse');
+      record('handover', 'refused: unreadable state');
+      return;
+    }
+    const peerId = hostPeerIdForRoom(roomCode, generation);
+    let transport: Transport | null = null;
+    try {
+      transport = createTransport({ id: peerId });
+      const previous = session;
+      sessionEpoch += 1;
+      const hostSession = await createHostSession({
+        transport,
+        roomCode,
+        hostDisplayName: get().displayName || 'Host',
+        maxPlayers: restore.maxPlayers,
+        tableLanguage: restore.tableLanguage,
+        observer: observerFor(sessionEpoch),
+        restore,
+        onSnapshot: persistHostedRoom,
+        generation,
+      });
+      session = hostSession;
+      attachSleepHook();
+      accept();
+      // The old client session has served its purpose; its transport must go, or
+      // this device holds two peers and answers to both.
+      if (previous instanceof ClientSession) {
+        queueMicrotask(() => {
+          previous.destroy('leftVoluntarily');
+        });
+      }
+      set({
+        role: 'host',
+        hostPeerId: peerId,
+        busy: false,
+        inviteUrl: buildInviteUrl({ roomCode, hostPeerId: peerId }, window.location.href),
+      });
+      record('handover', 'took over the room', { generation });
+    } catch (error) {
+      log.warn('could not take the room over', error);
+      record('handover', 'refused: could not claim the id', { generation });
+      transport?.destroy();
+    }
+  }
+
+  /** Persists the room whenever the host's authoritative state changes. */
+  function persistHostedRoom(restore: HostRestoreState): void {
+    const active = session;
+    if (!(active instanceof HostSession)) {
+      return;
+    }
+    saveHostedRoom({
+      roomCode: active.roomCode,
+      hostPeerId: active.hostPeerId,
+      generation: active.generation,
+      restore,
+    });
+    // Only touch the store when the *existence* of a recoverable room changes.
+    // Re-publishing an equivalent object on every accepted move would churn every
+    // subscriber for nothing.
+    if (get().hostable === null) {
+      const hostable = loadHostedRoom();
+      if (hostable) {
+        set({ hostable });
+      }
+    }
+  }
+
+  /**
+   * Tells the table this device is reloading, and writes the room down first.
+   *
+   * `pagehide` is the only hook that fires reliably on a phone, and this single
+   * message is what turns an ambiguous silence into "the host is coming back" —
+   * which is the difference between a held seat and a lost game.
+   */
+  function attachSleepHook(): void {
+    detachSleepHook?.();
+    detachSleepHook = onSleep((reason) => {
+      if (reason !== 'pagehide') {
+        return;
+      }
+      const active = session;
+      if (!(active instanceof HostSession)) {
+        return;
+      }
+      flushHostedRoom({
+        roomCode: active.roomCode,
+        hostPeerId: active.hostPeerId,
+        generation: active.generation,
+        restore: active.snapshot(),
+      });
+      active.announceRestarting();
+    });
+  }
+
+  /**
+   * Binds an observer to one session's lifetime.
+   *
+   * Updates from a session that is no longer the current one are dropped. Without
+   * this, an abandoned connection attempt or a superseded session can still write
+   * to the store — most damagingly by reporting its own closure.
+   */
+  function observerFor(epoch: number): (update: SessionUpdate) => void {
+    return (update) => {
+      if (epoch !== sessionEpoch) {
+        return;
+      }
+      applyUpdate(update);
+    };
   }
 
   /** Applies one session update to the store. */
@@ -243,11 +429,9 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'publicState':
-        clearActionLock();
         set({ publicState: update.state });
         return;
       case 'hand':
-        clearActionLock();
         set({ hand: update.cards });
         return;
       case 'events': {
@@ -259,12 +443,36 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'actionRejected':
-        clearActionLock();
+        if (update.requestId === undefined || update.requestId === pendingRequestId) {
+          clearActionLock();
+        }
         rejectionCounter += 1;
         set({ rejection: { code: update.code, nonce: rejectionCounter } });
         return;
+      case 'actionAccepted':
+        if (update.requestId === pendingRequestId) {
+          clearActionLock();
+        }
+        return;
       case 'error':
         set({ error: update.error, busy: false });
+        return;
+      case 'paused':
+        set({ pausedBy: update.pausedBy });
+        return;
+      case 'nudged':
+        nudgeCounter += 1;
+        set({ nudge: { fromPlayerId: update.fromPlayerId, nonce: nudgeCounter } });
+        return;
+      case 'handover':
+        // The client session already re-points itself at the new host; the store
+        // only needs to remember where the room went, so a later resume follows it.
+        set((state) =>
+          state.resumable ? { resumable: { ...state.resumable, generation: update.generation } } : {},
+        );
+        return;
+      case 'handoffOffer':
+        void acceptHandoff(update.generation, update.snapshot, update.accept);
         return;
       case 'playAgain':
         set({ playAgain: { agreed: update.agreed, required: update.required } });
@@ -280,6 +488,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             playerId: update.playerId,
             resumeToken: update.resumeToken,
             displayName: update.displayName,
+            ...(state.resumable?.generation !== undefined ? { generation: state.resumable.generation } : {}),
           };
           saveResumableRoom(room);
           set({ resumable: loadResumableRoom() });
@@ -288,13 +497,34 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       case 'closed': {
         session = null;
-        if (update.reason !== 'transportFailed') {
+        detachSleepHook?.();
+        detachSleepHook = null;
+        /*
+         * Only an explicit departure or a removal means the seat is gone. This
+         * used to clear the credential for every reason but one — including a host
+         * that had merely blinked, and including the tab-took-over case — so the
+         * one thing a player needed in order to come back was destroyed at exactly
+         * the moment they needed it.
+         */
+        if (CREDENTIAL_ENDING_REASONS.has(update.reason)) {
           clearResumableRoom();
+        }
+        if (get().role === 'host') {
+          clearHostedRoom();
         }
         set({
           ...CLEARED_SESSION,
           closedReason: update.reason,
           resumable: loadResumableRoom(),
+          hostable: loadHostedRoom(),
+          /*
+           * A voluntary ending explains itself, so no dialog is drawn for it — which
+           * left a host who had just handed the room over sitting on a lobby screen
+           * with no lobby behind it and nothing to press. Every other reason keeps the
+           * screen, because the dialog that explains it is drawn on top and offers the
+           * way out.
+           */
+          ...(update.reason === 'leftVoluntarily' ? { screen: 'home' as const } : {}),
         });
         return;
       }
@@ -310,19 +540,27 @@ export const useAppStore = create<AppStore>((set, get) => {
    * they legitimately played.
    */
   function submit(action: GameAction): void {
-    if (!session || get().actionPending) {
+    if (!session || get().actionPending || get().pausedBy !== null) {
       return;
     }
     if (actionLockTimer !== null) {
       clearTimeout(actionLockTimer);
     }
+    // A request id, minted once here, is what lets a re-send after a reconnect be
+    // recognised as the same intent rather than applied a second time.
+    const requestId = `rq-${String(Date.now())}-${String(rejectionCounter)}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    pendingRequestId = requestId;
     actionLockTimer = setTimeout(clearActionLock, ACTION_LOCK_MS);
     set({ actionPending: true });
 
     if (session instanceof HostSession) {
       session.submitLocalAction(action);
+      // The host answers itself synchronously, so nothing is left in flight.
+      clearActionLock();
     } else {
-      session.submitAction(action);
+      session.submitAction(action, requestId);
     }
   }
 
@@ -368,6 +606,15 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ resumable: null });
     },
 
+    forgetHostable: () => {
+      clearHostedRoom();
+      set({ hostable: null });
+    },
+
+    dismissNudge: () => {
+      set({ nudge: null });
+    },
+
     createRoom: async ({ name, maxPlayers, tableLanguage }) => {
       if (get().busy) {
         return;
@@ -385,15 +632,18 @@ export const useAppStore = create<AppStore>((set, get) => {
         try {
           transport = createTransport({ id: peerId });
           set({ role: 'host', roomCode, hostPeerId: peerId, phase: 'initializing' });
+          sessionEpoch += 1;
           const hostSession = await createHostSession({
             transport,
             roomCode,
             hostDisplayName: cleaned,
             maxPlayers,
             tableLanguage,
-            observer: applyUpdate,
+            observer: observerFor(sessionEpoch),
+            onSnapshot: persistHostedRoom,
           });
           session = hostSession;
+          attachSleepHook();
           set({
             busy: false,
             screen: 'lobby',
@@ -419,6 +669,122 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
+    /**
+     * Takes back a room this device was hosting, on the *same* room code.
+     *
+     * Keeping the code is the whole point: every invite already sent stays valid,
+     * and every client's stored credential still fits, so the players reconnect on
+     * their own without being told anything. It has to be patient, though — the
+     * broker holds a dropped peer id for up to a minute, so the id we are trying to
+     * reclaim is very often our own ghost. Giving up early would concede the code
+     * and silently invalidate all those invites at the exact moment they were
+     * recoverable.
+     */
+    resumeHosting: async () => {
+      const hostable = get().hostable;
+      if (!hostable || get().busy) {
+        return;
+      }
+      set({
+        busy: true,
+        error: null,
+        closedReason: null,
+        feed: [],
+        role: 'host',
+        roomCode: hostable.roomCode,
+        hostPeerId: hostable.hostPeerId,
+        phase: 'initializing',
+      });
+      record('hostRestart', 'reclaiming room code', { room: hostable.roomCode });
+      /*
+       * The loop below can run for over a minute, and the player may leave in the
+       * middle of it. Without this, a retry that finally succeeded would install a
+       * session and republish a room they had deliberately walked away from.
+       */
+      sessionEpoch += 1;
+      const attemptEpoch = sessionEpoch;
+
+      for (let attempt = 0; attempt < HOST_ID_ATTEMPTS; attempt += 1) {
+        if (attemptEpoch !== sessionEpoch || get().hostable === null) {
+          record('hostRestart', 'abandoned: the room was let go');
+          // Cleared rather than merely returned from: leaving `busy` set left the
+          // player watching a spinner for a room nobody was going to reclaim.
+          set({ ...CLEARED_SESSION, screen: 'home' });
+          return;
+        }
+        if (attempt > 0) {
+          const previous = HOST_ID_RETRY_SCHEDULE_MS[attempt - 1] ?? 0;
+          const target = HOST_ID_RETRY_SCHEDULE_MS[attempt] ?? previous;
+          await new Promise((resolve) => setTimeout(resolve, Math.max(target - previous, 0)));
+        }
+        let transport: Transport | null = null;
+        try {
+          transport = createTransport({ id: hostable.hostPeerId });
+          const hostSession = await createHostSession({
+            transport,
+            roomCode: hostable.roomCode,
+            hostDisplayName: get().displayName || 'Host',
+            maxPlayers: hostable.restore.maxPlayers,
+            tableLanguage: hostable.restore.tableLanguage,
+            observer: observerFor(attemptEpoch),
+            restore: hostable.restore,
+            onSnapshot: persistHostedRoom,
+            generation: hostable.generation,
+          });
+          /*
+           * Checked again on the way out, not only on the way in. The attempt that
+           * is in flight is the one most likely to succeed, so a player who gives up
+           * while it is pending — the card offering this also offers "forget it" —
+           * would otherwise have the room reinstated under them a moment later, and
+           * republished to everybody holding an invitation.
+           */
+          if (attemptEpoch !== sessionEpoch || get().hostable === null) {
+            record('hostRestart', 'abandoned: the room was let go');
+            hostSession.destroy('leftVoluntarily');
+            if (attemptEpoch === sessionEpoch) {
+              // Only this attempt's own state is cleared. A newer epoch means some
+              // other session owns the store now, and stamping over it would take a
+              // room the player is actually in away from them.
+              set({ ...CLEARED_SESSION, screen: 'home' });
+            }
+            return;
+          }
+          session = hostSession;
+          attachSleepHook();
+          set({
+            busy: false,
+            inviteUrl: buildInviteUrl(
+              { roomCode: hostable.roomCode, hostPeerId: hostSession.hostPeerId },
+              window.location.href,
+            ),
+          });
+          record('hostRestart', 'room reclaimed', { attempt });
+          return;
+        } catch (error) {
+          transport?.destroy();
+          const isTaken = error instanceof TransportError && error.code === 'idUnavailable';
+          log.warn('reclaiming the room failed', attempt, error);
+          if (!isTaken) {
+            set({
+              ...CLEARED_SESSION,
+              error:
+                error instanceof TransportError
+                  ? sessionError(error.code, error.message)
+                  : sessionError('unknown', error instanceof Error ? error.message : undefined),
+              phase: 'failed',
+            });
+            return;
+          }
+        }
+      }
+      record('hostRestart', 'could not reclaim the room code');
+      set({
+        ...CLEARED_SESSION,
+        error: sessionError('idUnavailable'),
+        phase: 'failed',
+      });
+    },
+
     joinRoom: async ({ name, roomCode, hostPeerId, resume }) => {
       if (get().busy) {
         return;
@@ -441,12 +807,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       let transport: Transport | null = null;
       try {
         transport = createTransport({});
+        sessionEpoch += 1;
         const clientSession = new ClientSession({
           transport,
           roomCode,
           hostPeerId: targetHost,
           displayName: cleaned,
-          observer: applyUpdate,
+          observer: observerFor(sessionEpoch),
           ...(resume ? { resume } : {}),
         });
         session = clientSession;
@@ -494,6 +861,54 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
+    skipAbsentTurn: (playerId) => {
+      if (session instanceof HostSession) {
+        session.skipAbsentTurn(playerId);
+      }
+    },
+
+    removeFromRound: (playerId) => {
+      if (session instanceof HostSession) {
+        session.removeFromRound(playerId);
+      }
+    },
+
+    setPaused: (paused) => {
+      const active = session;
+      if (active instanceof HostSession) {
+        active.setPaused(paused ? active.localPlayerId : null);
+      } else if (active instanceof ClientSession) {
+        active.requestPause(paused);
+      }
+    },
+
+    voteAbandon: (agree) => {
+      const active = session;
+      if (active instanceof HostSession) {
+        active.voteAbandon(agree);
+      } else if (active instanceof ClientSession) {
+        active.voteAbandon(agree);
+      }
+    },
+
+    nudgePlayer: (playerId) => {
+      const active = session;
+      if (active instanceof HostSession) {
+        active.nudge(playerId);
+      } else if (active instanceof ClientSession) {
+        active.nudge(playerId);
+      }
+    },
+
+    handOver: (playerId) => {
+      if (session instanceof HostSession) {
+        // A living host, vouching on a channel both sides already trust. That is
+        // what makes this safe without any of the verification an automatic
+        // takeover from a silent host would need — and could not get.
+        session.offerHandoff(playerId);
+      }
+    },
+
     playCard: (cardId, chosenColor) => {
       submit(chosenColor ? { type: 'playCard', cardId, chosenColor } : { type: 'playCard', cardId });
     },
@@ -537,9 +952,20 @@ export const useAppStore = create<AppStore>((set, get) => {
     leaveRoom: () => {
       session?.destroy('leftVoluntarily');
       session = null;
+      detachSleepHook?.();
+      detachSleepHook = null;
       clearResumableRoom();
+      clearHostedRoom();
       clearActionLock();
-      set({ ...CLEARED_SESSION, screen: 'home', error: null, closedReason: null, resumable: null });
+      set({
+        ...CLEARED_SESSION,
+        screen: 'home',
+        error: null,
+        closedReason: null,
+        resumable: null,
+        hostable: null,
+        nudge: null,
+      });
     },
 
     setOnline: (online) => {

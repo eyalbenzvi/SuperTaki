@@ -24,6 +24,8 @@ import { colorName } from '../cardText.ts';
 import { describeEvent } from '../eventText.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
+import { NudgeButton, NudgeNotice } from '../components/TableControls.tsx';
+import { WaitingNotice } from '../components/WaitingNotice.tsx';
 import { GameLog } from '../components/GameLog.tsx';
 import { DirectionIndicator, Hand, OpponentList, Piles } from '../components/TableParts.tsx';
 
@@ -176,6 +178,8 @@ export function GameScreen(): ReactNode {
     <div className="game">
       <div className="game__notice">
         <ConnectionPhaseNotice />
+        <NudgeNotice />
+        <WaitingNotice />
       </div>
 
       {/*
@@ -187,6 +191,18 @@ export function GameScreen(): ReactNode {
        */}
       <div className="game__info">
         <OpponentList opponents={seats} t={t} onCatch={catchLastCard} />
+
+        {/*
+         * The nudge renders only while the table is genuinely waiting on a
+         * connected player, so this row costs nothing the rest of the time. The
+         * pause and end-round controls live in the room sheet instead: they are
+         * once-an-evening actions, and a permanent row of them above the table
+         * pushes a card off the bottom of a 390px screen — which the layout test
+         * caught, correctly.
+         */}
+        <div className="row row--between">
+          <NudgeButton />
+        </div>
 
         {/* Outside the scrollable region below: on a short screen, whose turn it is
             is the last thing that should ever scroll out of sight. */}

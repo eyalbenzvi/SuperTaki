@@ -20,6 +20,7 @@ import {
   type CommandResult,
   type EnginePlayer,
   type GameCommand,
+  type GameEndReason,
   type GameEvent,
   type GameState,
   type PlayerId,
@@ -50,6 +51,8 @@ interface Draft {
   declaredLastCard: PlayerId[];
   rng: RngState;
   winnerId: PlayerId | null;
+  endReason: GameEndReason | null;
+  turnSeq: number;
   seed: number;
 }
 
@@ -76,6 +79,8 @@ function toDraft(state: GameState): Draft {
     declaredLastCard: state.declaredLastCard.slice(),
     rng: state.rng,
     winnerId: state.winnerId,
+    endReason: state.endReason,
+    turnSeq: state.turnSeq,
     seed: state.seed,
   };
 }
@@ -114,8 +119,15 @@ function freeze(draft: Draft): GameState {
     declaredLastCard: draft.declaredLastCard,
     rng: draft.rng,
     winnerId: draft.winnerId,
+    endReason: draft.endReason,
+    turnSeq: draft.turnSeq,
     seed: draft.seed,
   };
+}
+
+/** Players still in the round. A `left` seat keeps its cards but takes no turns. */
+export function activePlayers(state: Pick<GameState, 'players'>): readonly EnginePlayer[] {
+  return state.players.filter((player) => player.left !== true);
 }
 
 export function topCard(state: Pick<GameState, 'discardPile'>): Card | null {
@@ -152,6 +164,7 @@ export function createGame(
   players: readonly EnginePlayer[],
   seed: number,
   initialVersion = 1,
+  startingSeat = 0,
 ): CommandResult {
   if (players.length < MIN_PLAYERS) {
     return reject('notEnoughPlayers');
@@ -197,6 +210,12 @@ export function createGame(
   }
 
   const drawPile = pile.concat(buried);
+  /*
+   * The host holds seat 0 for the life of the room, so a fixed starting index
+   * meant the host moved first in every round, for ever. A table notices that by
+   * about the fifth round.
+   */
+  const firstIndex = ((startingSeat % players.length) + players.length) % players.length;
   const state: GameState = {
     version: initialVersion,
     phase: 'playing',
@@ -206,7 +225,7 @@ export function createGame(
     discardPile: [opening],
     activeColor: opening.color,
     direction: 1,
-    currentPlayerIndex: 0,
+    currentPlayerIndex: firstIndex,
     takiMode: null,
     pendingPlus: false,
     pendingDraw: 0,
@@ -215,10 +234,12 @@ export function createGame(
     declaredLastCard: [],
     rng,
     winnerId: null,
+    endReason: null,
+    turnSeq: 0,
     seed,
   };
 
-  const firstPlayer = players[0] as EnginePlayer;
+  const firstPlayer = players[firstIndex] as EnginePlayer;
   const events: GameEvent[] = [
     { type: 'gameStarted', firstPlayerId: firstPlayer.id, activeColor: opening.color },
     { type: 'turnChanged', playerId: firstPlayer.id },
@@ -226,9 +247,28 @@ export function createGame(
   return { ok: true, state, events };
 }
 
+/**
+ * Moves the turn on, stepping over seats that have left.
+ *
+ * The loop is bounded by the seat count, so a table where everybody has left
+ * cannot spin: it lands back where it started and the caller's own end-of-round
+ * check deals with it.
+ */
+function nextActiveIndex(draft: Draft, from: number): number {
+  let index = from;
+  for (let step = 0; step < draft.players.length; step += 1) {
+    index = stepIndex(index, draft.direction, draft.players.length);
+    if ((draft.players[index] as EnginePlayer).left !== true) {
+      return index;
+    }
+  }
+  return from;
+}
+
 function advanceTurn(draft: Draft, events: GameEvent[]): void {
-  draft.currentPlayerIndex = stepIndex(draft.currentPlayerIndex, draft.direction, draft.players.length);
+  draft.currentPlayerIndex = nextActiveIndex(draft, draft.currentPlayerIndex);
   const next = draft.players[draft.currentPlayerIndex] as EnginePlayer;
+  draft.turnSeq += 1;
   events.push({ type: 'turnChanged', playerId: next.id });
 }
 
@@ -281,7 +321,8 @@ function resolvePlusThree(draft: Draft, breakerId: PlayerId | null, events: Game
     drawCards(draft, sourceId, PLUS_THREE_PENALTY, events);
   } else {
     for (const player of draft.players) {
-      if (player.id !== sourceId) {
+      // A player who has left the round pays nothing: their hand is out of play.
+      if (player.id !== sourceId && player.left !== true) {
         drawCards(draft, player.id, PLUS_THREE_PENALTY, events);
       }
     }
@@ -302,6 +343,7 @@ function openPlusThree(draft: Draft, events: GameEvent[]): void {
     .filter(
       (player) =>
         player.id !== playerId &&
+        player.left !== true &&
         (draft.hands[player.id] ?? []).some((card) => card.kind === 'breakPlusThree'),
     )
     .map((player) => player.id);
@@ -321,7 +363,10 @@ function openPlusThree(draft: Draft, events: GameEvent[]): void {
 function resolveCardEffect(draft: Draft, card: Card, events: GameEvent[]): void {
   switch (card.kind) {
     case 'stop': {
-      const skippedIndex = stepIndex(draft.currentPlayerIndex, draft.direction, draft.players.length);
+      // Whoever the Stop lands on has to be somebody still playing, or the card
+      // would be spent on an empty seat and the next live player would be robbed
+      // of their turn instead.
+      const skippedIndex = nextActiveIndex(draft, draft.currentPlayerIndex);
       const skipped = draft.players[skippedIndex] as EnginePlayer;
       events.push({ type: 'playerSkipped', playerId: skipped.id });
       draft.currentPlayerIndex = skippedIndex;
@@ -454,6 +499,7 @@ function applyPlayCard(
   if ((draft.hands[playerId] ?? []).length === 0) {
     draft.phase = 'finished';
     draft.winnerId = playerId;
+    draft.endReason = 'won';
     draft.takiMode = null;
     draft.pendingPlus = false;
     draft.pendingDraw = 0;
@@ -552,7 +598,9 @@ function applyDeclareLastCard(state: GameState, playerId: PlayerId): CommandResu
  */
 function applyCatchLastCard(state: GameState, playerId: PlayerId, targetId: PlayerId): CommandResult {
   const target = state.players.find((player) => player.id === targetId);
-  if (!target || targetId === playerId) {
+  // A player who has left cannot be caught: their hand is frozen out of play, and
+  // they are in no position to shout.
+  if (!target || target.left === true || targetId === playerId) {
     return reject('nothingToCatch');
   }
   if ((state.hands[targetId] ?? []).length !== 1 || state.declaredLastCard.includes(targetId)) {
@@ -591,6 +639,168 @@ function applyCloseTaki(state: GameState, playerId: PlayerId): CommandResult {
 
   draft.version += 1;
   return { ok: true, state: freeze(draft), events };
+}
+
+/**
+ * Passes the turn of a player who is not there.
+ *
+ * This is its own transition rather than a `drawCard` issued on somebody's behalf,
+ * and it has to be: the engine *refuses* to draw during an open Taki, and refuses
+ * again while a Plus obligation stands and the hand holds anything legal — which
+ * after a King is every card in it. A skip built out of `drawCard` would therefore
+ * be rejected in exactly the states where a table is most likely to be stuck.
+ *
+ * The order below matters and each step re-reads the state the previous one left:
+ *
+ * 1. A Taki sequence the absent player owns is closed *properly*, through the
+ *    real close transition, so the last card's effect is applied once and only
+ *    once. Only a Plus leaves the turn with them afterwards; a number, Taki,
+ *    Super Taki, Stop, Change Direction or +2 has already moved it on, and adding
+ *    another advance here would skip an innocent player — two of them after a
+ *    Stop. A colourless card cannot end a sequence, so those seven cases are
+ *    exhaustive.
+ * 2. An outstanding +2 run is paid in full. It is an obligation somebody else
+ *    created, and voiding it would either destroy cards or dump the run on the
+ *    next seat, who did nothing to deserve it.
+ * 3. Everything else costs nothing at all.
+ */
+function applySkipTurn(state: GameState, playerId: PlayerId): CommandResult {
+  if (currentPlayer(state)?.id !== playerId) {
+    return reject('nothingToSkip');
+  }
+
+  // Step 1: close their sequence through the transition that already knows how.
+  if (state.takiMode !== null) {
+    const closed = applyCloseTaki(state, playerId);
+    if (!closed.ok) {
+      return closed;
+    }
+    // Still their turn only if the sequence ended on a Plus; otherwise done.
+    if (currentPlayer(closed.state)?.id !== playerId) {
+      return closed;
+    }
+    const after = applySkipTurn(closed.state, playerId);
+    return after.ok ? { ok: true, state: after.state, events: [...closed.events, ...after.events] } : closed;
+  }
+
+  const draft = toDraft(state);
+  const events: GameEvent[] = [];
+
+  const owed = state.pendingDraw;
+  const drew = owed > 0 ? drawCards(draft, playerId, owed, events) : 0;
+
+  draft.pendingDraw = 0;
+  draft.pendingPlus = false;
+  draft.freePlay = false;
+  events.push({ type: 'turnSkipped', playerId, drew });
+  advanceTurn(draft, events);
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events };
+}
+
+/**
+ * Marks a player as gone without disturbing the round.
+ *
+ * Everything they were holding up is released first — a sequence they owned, a
+ * breaker window waiting on them, a declaration — because leaving those dangling
+ * is what deadlocks a table permanently. Their cards stay frozen in their hand,
+ * out of play: no reshuffle, no random numbers consumed, and the total number of
+ * cards in the system is unchanged, which is the invariant the tests assert.
+ */
+function applyLeaveGame(state: GameState, playerId: PlayerId): CommandResult {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  if (!player) {
+    return reject('unknownPlayer');
+  }
+  if (player.left === true) {
+    return reject('alreadyLeft');
+  }
+
+  const draft = toDraft(state);
+  const events: GameEvent[] = [];
+  const wasCurrent = currentPlayer(state)?.id === playerId;
+
+  draft.players = draft.players.map((candidate) =>
+    candidate.id === playerId ? { ...candidate, left: true } : candidate,
+  );
+  draft.declaredLastCard = draft.declaredLastCard.filter((candidate) => candidate !== playerId);
+  events.push({ type: 'playerLeft', playerId });
+
+  // A sequence whose owner has gone can never be closed and can never be drawn
+  // out of, so it has to go with them.
+  if (draft.takiMode?.playerId === playerId) {
+    draft.takiMode = null;
+  }
+
+  if (draft.plusThree !== null) {
+    if (draft.plusThree.playerId === playerId) {
+      // The +3's author has left: cancel it outright rather than charging a table
+      // for a card nobody can now answer.
+      draft.plusThree = null;
+    } else {
+      const awaiting = draft.plusThree.awaiting.filter((candidate) => candidate !== playerId);
+      if (awaiting.length === 0) {
+        resolvePlusThree(draft, null, events);
+      } else {
+        draft.plusThree = { ...draft.plusThree, awaiting };
+      }
+    }
+  }
+
+  const remaining = draft.players.filter((candidate) => candidate.left !== true);
+  if (remaining.length < MIN_PLAYERS) {
+    // No winner. "Last player standing" would hand a two-player host the round
+    // for a twenty-second blip they themselves measured.
+    draft.phase = 'finished';
+    draft.winnerId = null;
+    draft.endReason = 'abandoned';
+    draft.takiMode = null;
+    draft.plusThree = null;
+    draft.pendingDraw = 0;
+    draft.pendingPlus = false;
+    draft.freePlay = false;
+    events.push({ type: 'roundAbandoned' });
+    draft.version += 1;
+    return { ok: true, state: freeze(draft), events };
+  }
+
+  // The turn pointer must never rest on an empty seat.
+  if (wasCurrent && draft.plusThree === null) {
+    draft.pendingDraw = 0;
+    draft.pendingPlus = false;
+    draft.freePlay = false;
+    advanceTurn(draft, events);
+  } else if ((draft.players[draft.currentPlayerIndex] as EnginePlayer).left === true) {
+    draft.currentPlayerIndex = nextActiveIndex(draft, draft.currentPlayerIndex);
+    draft.turnSeq += 1;
+    events.push({
+      type: 'turnChanged',
+      playerId: (draft.players[draft.currentPlayerIndex] as EnginePlayer).id,
+    });
+  }
+
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events };
+}
+
+/**
+ * Stops the round with no winner and everybody's hand intact.
+ *
+ * Nobody is marked as having left: the point is that the *round* ended, not that
+ * these players did anything. The standings show exactly where everyone was.
+ */
+function applyAbandonRound(state: GameState): CommandResult {
+  const draft = toDraft(state);
+  draft.phase = 'finished';
+  draft.winnerId = null;
+  draft.endReason = 'abandoned';
+  draft.takiMode = null;
+  draft.plusThree = null;
+  draft.pendingDraw = 0;
+  draft.pendingPlus = false;
+  draft.freePlay = false;
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events: [{ type: 'roundAbandoned' }] };
 }
 
 function applyDrawCard(state: GameState, playerId: PlayerId): CommandResult {
@@ -632,6 +842,17 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
     return reject('unknownPlayer');
   }
 
+  // Marking a player as gone is the one command a departed seat is the subject of.
+  if (command.type === 'leaveGame') {
+    return applyLeaveGame(state, command.playerId);
+  }
+  if (command.type === 'abandonRound') {
+    return applyAbandonRound(state);
+  }
+  if (actor.left === true) {
+    return reject('alreadyLeft');
+  }
+
   // Declaring, and calling out somebody who did not, are shouts rather than
   // moves: they belong to the cards in hand and are legal from any seat, whatever
   // else the table happens to be waiting for.
@@ -657,6 +878,15 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   }
   if (command.type === 'passBreak') {
     return reject('noPlusThreeOpen');
+  }
+  /*
+   * Skipping answers with its own code rather than the generic "not your turn",
+   * because the caller is the host acting on a timer and the distinction is what
+   * the diagnostics log needs: being asked to skip the wrong seat is a bug in the
+   * absence machinery, not a player mistake.
+   */
+  if (command.type === 'skipTurn') {
+    return applySkipTurn(state, command.playerId);
   }
   if (currentPlayer(state)?.id !== command.playerId) {
     return reject('notYourTurn');

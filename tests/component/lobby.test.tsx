@@ -160,16 +160,37 @@ describe('lobby', () => {
     expect(statusRegions()[0]).toHaveTextContent('ממתינים שהמנחה יתחיל');
   });
 
-  it('confirms leaving, warning the host about closing the room', async () => {
+  it('offers the host a handover rather than only closing the room', async () => {
+    /*
+     * This used to assert that a host is told plainly the room closes for
+     * everybody. That was honest and it was also the end of the matter: the only
+     * thing a host who had to leave could do was end somebody else's evening.
+     * With another player present it is now a choice, and closing the room is
+     * still there — just no longer the only option.
+     */
     const leaveRoom = vi.fn();
-    enterLobby({ leaveRoom });
+    const handOver = vi.fn();
+    enterLobby({ leaveRoom, handOver });
     const { user } = renderApp();
 
     await user.click(screen.getByRole('button', { name: 'יציאה' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('יציאה תסגור את החדר לכולם');
-    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
+    expect(dialog).toHaveTextContent('יהפוך למנחה והסבב ימשיך');
+
+    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
     expect(leaveRoom).toHaveBeenCalled();
+    expect(handOver).not.toHaveBeenCalled();
+  });
+
+  it('hands the room to the next seated player when the host chooses to', async () => {
+    const handOver = vi.fn();
+    enterLobby({ handOver });
+    const { user } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'יציאה' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'העברה ויציאה' }));
+    expect(handOver).toHaveBeenCalledWith(GUEST_ID);
   });
 
   it('lets the host change the maximum player count', async () => {
