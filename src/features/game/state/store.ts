@@ -183,6 +183,18 @@ export type AppStore = AppState & AppActions;
  * handles that must never be treated as renderable state.
  */
 let session: HostSession | ClientSession | null = null;
+/**
+ * Which session the store is currently listening to.
+ *
+ * A session's observer is fixed when it is constructed, so a session that has
+ * been superseded can still speak — and one of the things it says on the way out
+ * is `closed`, which clears `session`. During a handover that is actively
+ * harmful: this device creates its new host session, then tears down the client
+ * session it used to be, and the teardown's `closed` would null out the host that
+ * had just been installed. Stamping each observer with the epoch it belongs to
+ * makes a superseded session's parting words inert.
+ */
+let sessionEpoch = 0;
 let feedCounter = 0;
 let rejectionCounter = 0;
 let announcementCounter = 0;
@@ -303,18 +315,19 @@ export const useAppStore = create<AppStore>((set, get) => {
     let transport: Transport | null = null;
     try {
       transport = createTransport({ id: peerId });
+      const previous = session;
+      sessionEpoch += 1;
       const hostSession = await createHostSession({
         transport,
         roomCode,
         hostDisplayName: get().displayName || 'Host',
         maxPlayers: restore.maxPlayers,
         tableLanguage: restore.tableLanguage,
-        observer: applyUpdate,
+        observer: observerFor(sessionEpoch),
         restore,
         onSnapshot: persistHostedRoom,
         generation,
       });
-      const previous = session;
       session = hostSession;
       attachSleepHook();
       accept();
@@ -351,9 +364,14 @@ export const useAppStore = create<AppStore>((set, get) => {
       generation: active.generation,
       restore,
     });
-    const hostable = loadHostedRoom();
-    if (hostable) {
-      set({ hostable });
+    // Only touch the store when the *existence* of a recoverable room changes.
+    // Re-publishing an equivalent object on every accepted move would churn every
+    // subscriber for nothing.
+    if (get().hostable === null) {
+      const hostable = loadHostedRoom();
+      if (hostable) {
+        set({ hostable });
+      }
     }
   }
 
@@ -382,6 +400,22 @@ export const useAppStore = create<AppStore>((set, get) => {
       });
       active.announceRestarting();
     });
+  }
+
+  /**
+   * Binds an observer to one session's lifetime.
+   *
+   * Updates from a session that is no longer the current one are dropped. Without
+   * this, an abandoned connection attempt or a superseded session can still write
+   * to the store — most damagingly by reporting its own closure.
+   */
+  function observerFor(epoch: number): (update: SessionUpdate) => void {
+    return (update) => {
+      if (epoch !== sessionEpoch) {
+        return;
+      }
+      applyUpdate(update);
+    };
   }
 
   /** Applies one session update to the store. */
@@ -590,13 +624,14 @@ export const useAppStore = create<AppStore>((set, get) => {
         try {
           transport = createTransport({ id: peerId });
           set({ role: 'host', roomCode, hostPeerId: peerId, phase: 'initializing' });
+          sessionEpoch += 1;
           const hostSession = await createHostSession({
             transport,
             roomCode,
             hostDisplayName: cleaned,
             maxPlayers,
             tableLanguage,
-            observer: applyUpdate,
+            observer: observerFor(sessionEpoch),
             onSnapshot: persistHostedRoom,
           });
           session = hostSession;
@@ -663,13 +698,14 @@ export const useAppStore = create<AppStore>((set, get) => {
         let transport: Transport | null = null;
         try {
           transport = createTransport({ id: hostable.hostPeerId });
+          sessionEpoch += 1;
           const hostSession = await createHostSession({
             transport,
             roomCode: hostable.roomCode,
             hostDisplayName: get().displayName || 'Host',
             maxPlayers: hostable.restore.maxPlayers,
             tableLanguage: hostable.restore.tableLanguage,
-            observer: applyUpdate,
+            observer: observerFor(sessionEpoch),
             restore: hostable.restore,
             onSnapshot: persistHostedRoom,
             generation: hostable.generation,
@@ -732,12 +768,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       let transport: Transport | null = null;
       try {
         transport = createTransport({});
+        sessionEpoch += 1;
         const clientSession = new ClientSession({
           transport,
           roomCode,
           hostPeerId: targetHost,
           displayName: cleaned,
-          observer: applyUpdate,
+          observer: observerFor(sessionEpoch),
           ...(resume ? { resume } : {}),
         });
         session = clientSession;

@@ -140,6 +140,21 @@ describe('how often it writes', () => {
     }
   });
 
+  it('does not resurrect a room that has been forgotten', () => {
+    vi.useFakeTimers();
+    try {
+      saveHostedRoom(args(), 1_000);
+      // A deferred write is now queued. Forgetting the room has to cancel it, or
+      // the write lands afterwards and the player is offered a room they left.
+      saveHostedRoom(args(), 1_100);
+      clearHostedRoom();
+      vi.advanceTimersByTime(5_000);
+      expect(loadHostedRoom(Date.now())).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('writes immediately when the page is going away', () => {
     saveHostedRoom(args(), 1_000);
     const first = loadHostedRoom(1_000)?.savedAt;

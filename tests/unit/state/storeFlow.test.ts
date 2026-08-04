@@ -416,4 +416,43 @@ describe('preferences and navigation', () => {
       store().retryConnection();
     }).not.toThrow();
   });
+
+  it('keeps the new session when a superseded one reports its own closure', async () => {
+    /*
+     * The blocker this pins. A session's observer is fixed at construction, so a
+     * session that has been replaced can still speak — and the last thing it says
+     * is `closed`, which clears the store's session handle. During a handover this
+     * device installs its new host session and *then* tears down the client session
+     * it used to be, so the teardown would have nulled out the host that had just
+     * been created: the room would be served by an object nothing could reach, and
+     * every subsequent tap would do nothing at all.
+     */
+    const { host } = await startHost();
+    await store().joinRoom({ name: 'אלי', roomCode: TEST_ROOM });
+    await flush();
+    expect(store().role).toBe('client');
+
+    // Stand a second room up and adopt it, exactly as accepting a handover does.
+    const second = await createHostSession({
+      transport: network.create('crush-second-room-11'),
+      roomCode: TEST_ROOM,
+      hostDisplayName: 'Successor',
+      maxPlayers: 4,
+      tableLanguage: 'he',
+      observer: createRecorder().observer,
+      heartbeatIntervalMs: 100_000,
+    });
+    await store().createRoom({ name: 'דנה', maxPlayers: 2, tableLanguage: 'he' });
+    await flush();
+    const adopted = store().roomCode;
+    expect(store().role).toBe('host');
+
+    // The superseded client session now goes away. Its closure must be inert.
+    await flush();
+    expect(store().role).toBe('host');
+    expect(store().roomCode).toBe(adopted);
+
+    second.destroy('leftVoluntarily');
+    host.destroy('leftVoluntarily');
+  });
 });

@@ -167,10 +167,6 @@ export function loadHostedRoom(now: number = Date.now()): HostedRoom | null {
   return readSessionJson(STORAGE_KEYS.hostedRoom, (value) => validate(value, now));
 }
 
-export function clearHostedRoom(): void {
-  removeSessionRaw(STORAGE_KEYS.hostedRoom);
-}
-
 /**
  * How often the full game may be written.
  *
@@ -263,6 +259,20 @@ export function flushHostedRoom(args: WriteArgs, now: number = Date.now()): void
   }
   write(args, now);
   record('hostSnapshot', 'flushed', { phase: args.restore.phase });
+}
+
+export function clearHostedRoom(): void {
+  /*
+   * Cancel the throttled write first. A deferred write that fires after the room
+   * has been forgotten would put it straight back, so a player who left the room
+   * would be offered it again the next time they saw the home screen.
+   */
+  if (pending !== null) {
+    clearTimeout(pending);
+    pending = null;
+  }
+  lastShape = '';
+  removeSessionRaw(STORAGE_KEYS.hostedRoom);
 }
 
 /** Test seam: forgets the throttle. */

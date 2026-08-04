@@ -30,6 +30,7 @@ import {
   ABSENT_TURN_GRACE_CLOSED_MS,
   ABSENT_TURN_GRACE_UNSTABLE_MS,
   CHANNEL_DEAD_MS,
+  HANDOFF_TIMEOUT_MS,
   HOST_SELF_DEMOTE_MS,
   LOBBY_GRACE_MS,
   RESUME_ATTEMPT_SUPPRESSES_SKIP_MS,
@@ -196,6 +197,7 @@ export class HostSession implements Session {
   /** When the table started waiting for the seat on turn. */
   private waitingSince: number | null = null;
   private handoffTo: string | null = null;
+  private handoffTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     readonly roomCode: string,
@@ -1452,6 +1454,21 @@ export class HostSession implements Session {
       return false;
     }
     this.handoffTo = playerId;
+    if (this.handoffTimer !== null) {
+      clearTimeout(this.handoffTimer);
+    }
+    /*
+     * An offer nobody takes up has to expire. Otherwise the room is left in a state
+     * where a seat could claim it much later — after the host had carried on
+     * playing for ten minutes — and step in on a state that is long stale.
+     */
+    this.handoffTimer = setTimeout(() => {
+      this.handoffTimer = null;
+      if (this.handoffTo === playerId) {
+        record('handover', 'offer expired', { to: playerId });
+        this.handoffTo = null;
+      }
+    }, HANDOFF_TIMEOUT_MS);
     record('handover', 'offered', { to: playerId, generation: this.generation + 1 });
     this.send(entry.connection, 'handoffOffer', {
       generation: this.generation + 1,
@@ -1484,6 +1501,10 @@ export class HostSession implements Session {
     this.destroyed = true;
     this.watchdog?.stop();
     this.watchdog = null;
+    if (this.handoffTimer !== null) {
+      clearTimeout(this.handoffTimer);
+      this.handoffTimer = null;
+    }
     for (const entry of this.connections.values()) {
       if (entry.connection.open) {
         this.send(entry.connection, 'hostClosed', { reason: 'hostLeft' });

@@ -825,6 +825,9 @@ export class ClientSession implements Session {
 
   private clearOutbox(requestId?: string): void {
     if (!this.outbox) {
+      // Nothing in flight, so nothing is at stake: never leave the probe cadence
+      // stuck at its busy rate on the strength of an answer we cannot match.
+      this.busy = false;
       return;
     }
     if (requestId !== undefined && requestId !== this.outbox.requestId) {
