@@ -124,15 +124,15 @@ other players are the ones who enforce it.
    single card. Calling out a player who declared, who is not on one card, or yourself, is
    rejected with `nothingToCatch`. **Every seat is told who called it**, in a banner as well
    as in the log: from three players up, "somebody drew four" does not say whose call it was.
-6. **The first half second belongs to the player.** From the moment a hand comes down to
-   one card, nobody may call that player out for **500 ms**. At a real table the card
+6. **The first quarter second belongs to the player.** From the moment a hand comes down
+   to one card, nobody may call that player out for **250 ms**. At a real table the card
    landing and the shout are the same moment; on a screen the player has to see the card
    land and then find a button, while everybody else is already looking at a seat that reads
    "1 card". Without the head start the rule stops being about declaring and becomes about
    thumb speed. It is the host's clock that measures it, and a catch made inside the window
    is refused with `nothingToCatch` — there is nothing to catch _yet_. The button does not
    appear on the other players' screens until it has passed. Coming back down to one card
-   later buys a fresh half second, exactly as it needs a fresh declaration.
+   later buys a fresh window, exactly as it needs a fresh declaration.
 7. **It is public.** Who has declared is part of the table state everyone sees, the same
    way a shout at a real table is heard by everyone. That is what makes catching possible at
    all, and it is why every seat on one card shows either "declared" or a button to call it.
@@ -274,7 +274,7 @@ Each of these is a genuine fork. We picked one, implemented it, and tested it.
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | May a card drawn this turn be played immediately? | **No.** Drawing ends the turn.                                                                                                 | Simplest to explain and to see on screen; no "you could have played that" ambiguity.                                              |
 | Must the card owed after a Plus be played?        | **No.** It may be paid from the draw pile, whatever the hand holds.                                                            | It was the one place in the game where a lit draw pile refused a tap, to enforce something no table enforces.                     |
-| How long is a last card safe from being called?   | **500 ms**, measured on the host's clock from when the hand reached one card.                                                  | The shout and the card are one moment at a table and two on a screen; without the gap the rule rewards reflexes, not declaring.   |
+| How long is a last card safe from being called?   | **250 ms**, measured on the host's clock from when the hand reached one card.                                                  | The shout and the card are one moment at a table and two on a screen; without the gap the rule rewards reflexes, not declaring.   |
 | Does Super Taki change the colour?                | **No.** It takes the leading colour.                                                                                           | The reading that came in with the King, and the one the current edition prints.                                                   |
 | Does the +3 change the colour?                    | **No.**                                                                                                                        | Same principle: Change Colour is the only card that repaints the table.                                                           |
 | Who may answer a +3, and when?                    | **Any holder of a breaker, out of turn**, in a window that closes on the first answer.                                         | This is the card's whole point; restricting it to the next player would make it an ordinary defensive card.                       |
@@ -442,12 +442,12 @@ draws one of them; two remain in the draw pile.
    כי היד כבר לא קלף בודד. תפיסה של מי שהכריז, של מי שלא נשאר לו קלף בודד, או של עצמך, נדחית
    בקוד `nothingToCatch`. **כל השולחן מקבל הודעה מי תפס**, לא רק ביומן: משלושה שחקנים ומעלה
    "מישהו לקח ארבעה" לא אומר של מי הייתה הקריאה.
-6. **חצי השנייה הראשונה שייכת לשחקן.** מרגע שהיד יורדת לקלף אחד, אי אפשר לתפוס אותו במשך
-   **500 מילישניות**. בשולחן אמיתי הנחת הקלף והצעקה הן אותו רגע; על מסך השחקן צריך לראות את
+6. **רבע השנייה הראשונה שייכת לשחקן.** מרגע שהיד יורדת לקלף אחד, אי אפשר לתפוס אותו במשך
+   **250 מילישניות**. בשולחן אמיתי הנחת הקלף והצעקה הן אותו רגע; על מסך השחקן צריך לראות את
    הקלף נוחת ואז למצוא כפתור, בזמן שכל האחרים כבר מסתכלים על מושב שכתוב עליו "קלף אחד". בלי
    היתרון הזה הכלל מפסיק להיות על הכרזה והופך להיות על מהירות אצבע. השעון של המנחה הוא זה
    שמודד, ותפיסה בתוך החלון נדחית בקוד `nothingToCatch` — עדיין אין את מי לתפוס. הכפתור לא
-   מופיע אצל השאר עד שהחלון נסגר. חזרה לקלף בודד בהמשך קונה חצי שנייה חדשה, בדיוק כמו שהיא
+   מופיע אצל השאר עד שהחלון נסגר. חזרה לקלף בודד בהמשך קונה חלון חדש, בדיוק כמו שהיא
    דורשת הכרזה חדשה.
 7. **ההכרזה פומבית.** מי שהכריז מופיע במצב השולחן שכולם רואים, בדיוק כמו הכרזה בקול בשולחן
    אמיתי. זה מה שמאפשר לתפוס בכלל, ולכן כל מושב עם קלף בודד מציג או "הכריז/ה" או כפתור לתפוס.
@@ -574,7 +574,7 @@ draws one of them; two remain in the draw pile.
 | ------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | האם קלף שנמשך עכשיו אפשר להניח מיד?         | **לא.** משיכה מסיימת את התור.                              | הכי פשוט להסביר ולראות על המסך.                                                        |
 | האם חייבים להניח את הקלף שחייבים אחרי פלוס? | **לא.** אפשר לשלם אותו מהקופה, לא משנה מה ביד.             | זה היה המקום היחיד במשחק שבו חבילת משיכה דלוקה סירבה ללחיצה.                           |
-| כמה זמן קלף אחרון מוגן מתפיסה?              | **500 מילישניות**, לפי שעון המנחה מרגע שהיד ירדה לקלף אחד. | בשולחן הצעקה והקלף הם רגע אחד, על מסך הם שניים; בלי הפער הכלל מתגמל רפלקסים ולא הכרזה. |
+| כמה זמן קלף אחרון מוגן מתפיסה?              | **250 מילישניות**, לפי שעון המנחה מרגע שהיד ירדה לקלף אחד. | בשולחן הצעקה והקלף הם רגע אחד, על מסך הם שניים; בלי הפער הכלל מתגמל רפלקסים ולא הכרזה. |
 | האם סופר טאקי משנה צבע?                     | **לא.** הוא מקבל את הצבע המוביל.                           | הקריאה שנכנסה עם קלף המלך, וזו שבמהדורה הנוכחית.                                       |
 | האם פלוס 3 משנה צבע?                        | **לא.**                                                    | אותו עיקרון: רק שינוי צבע צובע מחדש את השולחן.                                         |
 | מי יכול לענות לפלוס 3, ומתי?                | **כל מחזיק שבירה, שלא בתור**, עד לתשובה הראשונה.           | זה כל הרעיון של הקלף; הגבלה לשחקן הבא הייתה הופכת אותו לקלף רגיל.                      |

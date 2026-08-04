@@ -18,15 +18,15 @@ const NONE = { seats: '', served: false } as const;
  * only ever makes the button appear later than the host would allow, never
  * earlier, so the two can disagree about the exact instant without a player ever
  * meeting a refusal. Measuring anything sharper would need the host's clock on
- * the wire, for half a second of a social rule.
+ * the wire, for a quarter second of a social rule.
  *
  * The window is held for the whole set of exposed seats rather than one each, and
  * the served flag is stored *with* the set it was measured for — which is what
  * makes a seat that leaves the set and comes back get a fresh window instead of
  * inheriting the old one. The cost is that a second seat coming down to a silent
  * last card restarts the window for both, so an existing button can blink off for
- * half a second. That needs two players to reach their last card inside the same
- * 500 ms, and it errs in the direction the rule already leans.
+ * a moment. That needs two players to reach their last card inside the same
+ * 250 ms, and it errs in the direction the rule already leans.
  */
 export function useCatchGrace(opponents: readonly OpponentView[]): readonly OpponentView[] {
   const seats = opponents

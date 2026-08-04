@@ -154,7 +154,7 @@ describe('the other players', () => {
   }
 
   /*
-   * The button arrives half a second after the seat does. A player has to see
+   * The button arrives a beat after the seat does. A player has to see
    * their own last card land and then find the declare button, while everybody
    * else is already looking at a seat that says "1 card" — so the head start is
    * what keeps the rule about declaring rather than about thumb speed. The host

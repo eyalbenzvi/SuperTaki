@@ -912,7 +912,7 @@ describe('the table can decide for itself', () => {
   });
 
   /**
-   * The half second a last card buys its owner.
+   * The head start a last card buys its owner.
    *
    * Enforced on the host rather than in the engine, because it is a reading of a
    * clock: a timestamp inside the engine would make a replayed command produce a
@@ -920,7 +920,7 @@ describe('the table can decide for itself', () => {
    * client measuring its own window is measuring from whenever its snapshot
    * happened to arrive — and from a modified client, from whenever it liked.
    */
-  it('gives a player half a second on their last card before anyone may call it', async () => {
+  it('gives a player a head start on their last card before anyone may call it', async () => {
     let clock = 1_700_000_000_000;
     const room = await openRoom({ now: () => clock });
     const client = await joinRoom(room, 'client-1', 'Dana');
