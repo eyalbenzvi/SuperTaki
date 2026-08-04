@@ -215,6 +215,37 @@ describe('joining a room through the store', () => {
     host.destroy('leftVoluntarily');
   });
 
+  /**
+   * A catch is raised out of the event batch into its own notice, because the
+   * log cannot carry it: the visible log line is the newest one, and the four
+   * cards the catch costs are drawn in the same batch. Every seat has to be told
+   * who called it, not just that somebody did.
+   */
+  it('raises a notice naming who caught whom', async () => {
+    const { host } = await startHost();
+    await store().joinRoom({ name: 'אלי', roomCode: TEST_ROOM });
+    await flush();
+    host.startGame();
+    await flush();
+
+    const me = store().localPlayerId as string;
+    expect(store().caught).toBeNull();
+
+    host.forceHandForTests(me, 1);
+    await flush();
+    host.submitLocalAction({ type: 'catchLastCard', targetId: me });
+    await flush();
+
+    const hostId = store().lobby?.hostPlayerId as string;
+    expect(store().caught).toMatchObject({ targetId: me, byId: hostId, penalty: 4 });
+    // And the catch is still in the log, behind the draw it caused.
+    expect(store().feed.map((entry) => entry.event.type)).toContain('lastCardCaught');
+
+    store().dismissCaught();
+    expect(store().caught).toBeNull();
+    host.destroy('leftVoluntarily');
+  });
+
   it('reports a rejected action with a fresh notice each time', async () => {
     const { host } = await startHost();
     await store().joinRoom({ name: 'אלי', roomCode: TEST_ROOM });

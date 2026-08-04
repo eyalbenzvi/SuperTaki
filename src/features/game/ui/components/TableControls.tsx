@@ -5,7 +5,7 @@ import { Modal } from '../../../../components/Modal.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
 import { playerName, seatedPlayers } from '../../state/selectors.ts';
-import { IDLE_TURN_NUDGE_MS, NUDGE_NOTICE_MS } from '../../network/timing.ts';
+import { CAUGHT_NOTICE_MS, IDLE_TURN_NUDGE_MS, NUDGE_NOTICE_MS } from '../../network/timing.ts';
 
 /**
  * The two things a table needs and did not have: a way to wait, and a way to stop.
@@ -201,6 +201,75 @@ export function NudgeNotice(): ReactNode {
       }
     >
       {t('nudge.received', { name: from })}
+    </Callout>
+  );
+}
+
+/**
+ * Who just called out whom, said to the whole table.
+ *
+ * A catch is the one thing that happens at this table on somebody else's say-so,
+ * and the log could not carry it: the visible log line is the newest one, and a
+ * catch is followed immediately by the four cards it costs, so the line naming
+ * the caller was replaced before it could be read. With two players that was
+ * survivable — there is only one person it can have been — but from three up the
+ * table was told a penalty had landed and never told who called it.
+ *
+ * An `alert` rather than a status: the player who was caught is the one person
+ * who most needs to know, and they were not necessarily looking at the table.
+ */
+export function CaughtNotice(): ReactNode {
+  const t = useT();
+  const caught = useAppStore((state) => state.caught);
+  const lobby = useAppStore((state) => state.lobby);
+  const publicState = useAppStore((state) => state.publicState);
+  const localPlayerId = useAppStore((state) => state.localPlayerId);
+  const dismissCaught = useAppStore((state) => state.dismissCaught);
+
+  const nonce = caught?.nonce ?? null;
+  useEffect(() => {
+    if (nonce === null) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      dismissCaught();
+    }, CAUGHT_NOTICE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [nonce, dismissCaught]);
+
+  if (!caught) {
+    return null;
+  }
+  const by = playerName({ publicState, lobby }, caught.byId);
+  const target = playerName({ publicState, lobby }, caught.targetId);
+  const mine = caught.targetId === localPlayerId;
+  return (
+    <Callout
+      tone="warning"
+      icon="alert"
+      role="alert"
+      actions={
+        <Button variant="ghost" onClick={dismissCaught}>
+          {t('common.close')}
+        </Button>
+      }
+    >
+      {/*
+       * Both halves of the count take names too, so the plural is chosen here
+       * rather than through `countLabel`, which only ever passes the number.
+       */}
+      {mine
+        ? t(caught.penalty === 1 ? 'caught.you.one' : 'caught.you.other', {
+            by,
+            count: caught.penalty,
+          })
+        : t(caught.penalty === 1 ? 'caught.other.one' : 'caught.other.other', {
+            by,
+            name: target,
+            count: caught.penalty,
+          })}
     </Callout>
   );
 }

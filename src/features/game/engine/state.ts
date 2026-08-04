@@ -201,8 +201,6 @@ export type GameEvent =
   | { readonly type: 'playerSkipped'; readonly playerId: PlayerId }
   /** A +2 was added to the run; `total` is what the next player now owes. */
   | { readonly type: 'drawStacked'; readonly playerId: PlayerId; readonly total: number }
-  /** A King wiped the pending penalty and/or obligation off the table. */
-  | { readonly type: 'effectsCancelled'; readonly playerId: PlayerId }
   /** A +3 was played and is waiting for a possible breaker. */
   | { readonly type: 'plusThreePlayed'; readonly playerId: PlayerId }
   /** A +3 Breaker sent the penalty back at `targetId`. */

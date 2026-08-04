@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { GUEST_ID, HOST_ID, enterGame, lobbyFixture, renderApp, resetStore, setState } from './helpers.tsx';
 import type { Card } from '../../src/features/game/engine/cards.ts';
+import { useAppStore } from '../../src/features/game/state/store.ts';
 
 beforeEach(resetStore);
 
@@ -113,7 +114,7 @@ describe('what to do now', () => {
     // A pending draw and a pending Plus at once: the debt is the thing to answer.
     table({ hand: [red5], patch: { pendingDraw: 2, pendingPlus: true } });
     renderApp();
-    expect(screen.getByText('מחכים לך 2 קלפים. אפשר לענות בקח 2 או במלך, או לקחת אותם.')).toBeInTheDocument();
+    expect(screen.getByText('מחכים לך 2 קלפים. אפשר לענות בקח 2, או לקחת אותם.')).toBeInTheDocument();
     expect(screen.queryByText('הונח פלוס — חייבים להניח עוד קלף.')).not.toBeInTheDocument();
   });
 
@@ -170,6 +171,71 @@ describe('the other players', () => {
     const seats = screen.getByRole('region', { name: 'שאר השחקנים' });
     expect(within(seats).getByText('הכריז/ה')).toBeInTheDocument();
     expect(within(seats).queryByRole('button', { name: 'תפיסת אלי' })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A catch is the one penalty another player hands out, and with three at the
+ * table "somebody drew four" does not say who called it. The log cannot carry it:
+ * its visible line is the newest, and the draw follows the catch immediately.
+ */
+describe('a "last card" catch, said to the whole table', () => {
+  const CAROL_ID = 'pl_carol00000';
+
+  /** Three seats, so the caller is genuinely ambiguous without being named. */
+  function threeHanded(): void {
+    const fixture = enterGame({ myTurn: true });
+    setState({
+      hand: [red5],
+      publicState: {
+        ...fixture.publicState,
+        currentPlayerId: HOST_ID,
+        discardTop: red9,
+        activeColor: 'red',
+        players: [
+          { id: HOST_ID, name: 'דנה', cardCount: 1 },
+          { id: GUEST_ID, name: 'אלי', cardCount: 5 },
+          { id: CAROL_ID, name: 'נועה', cardCount: 5 },
+        ],
+      },
+      lobby: lobbyFixture({
+        phase: 'inGame',
+        players: [
+          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'אלי', isHost: false, health: 'connected', seat: 1 },
+          { id: CAROL_ID, name: 'נועה', isHost: false, health: 'connected', seat: 2 },
+        ],
+      }),
+    });
+  }
+
+  it('names the player who called it, and the one who paid', () => {
+    threeHanded();
+    setState({ caught: { targetId: CAROL_ID, byId: GUEST_ID, penalty: 4, nonce: 1 } });
+    renderApp();
+
+    expect(screen.getByText('אלי תפס/ה את נועה על "אחרון בידי" — נועה לוקח/ת 4 קלפים.')).toBeInTheDocument();
+  });
+
+  it('tells the player who was caught who caught them', async () => {
+    threeHanded();
+    setState({ caught: { targetId: HOST_ID, byId: CAROL_ID, penalty: 4, nonce: 1 } });
+    const { user } = renderApp();
+
+    const notice = screen.getByText('נועה תפס/ה אותך על "אחרון בידי" — לקחת 4 קלפים.');
+    expect(notice).toBeInTheDocument();
+    // An alert, not a status: the player who just lost four cards may not have
+    // been looking at the table when it happened.
+    expect(notice.closest('[role="alert"]')).not.toBeNull();
+
+    await user.click(within(notice.closest('.callout') as HTMLElement).getByRole('button'));
+    expect(useAppStore.getState().caught).toBeNull();
+  });
+
+  it('says nothing when nobody has been caught', () => {
+    threeHanded();
+    renderApp();
+    expect(screen.queryByText(/על "אחרון בידי"/)).not.toBeInTheDocument();
   });
 });
 
