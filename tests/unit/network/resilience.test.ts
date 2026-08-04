@@ -723,3 +723,55 @@ describe('handing the room over', () => {
     room.destroy();
   });
 });
+
+describe('the turn token', () => {
+  it('refuses a move computed against a turn that has moved on', async () => {
+    const room = await openRoom();
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    room.host.startGame();
+    await flush();
+
+    const guestId = client.session.localPlayerId;
+    room.host.submitLocalAction({ type: 'drawCard' });
+    await flush();
+    expect(room.hostRecorder.last('publicState')?.state.currentPlayerId).toBe(guestId);
+
+    const version = room.hostRecorder.last('publicState')?.state.version ?? 0;
+    /*
+     * A move built against an older turn. Replaying a stale intent is the danger
+     * the token exists for: a card that was legal three moves ago may be illegal
+     * now, or already played.
+     */
+    client.session.submitStaleActionForTests({ type: 'drawCard' }, 'rq-stale');
+    await flush();
+
+    expect(room.hostRecorder.last('publicState')?.state.version).toBe(version);
+    expect(client.recorder.last('actionRejected')?.code).toBe('notYourTurn');
+
+    client.session.destroy('leftVoluntarily');
+    room.destroy();
+  });
+
+  it('lets an out-of-turn declaration through, token or no token', async () => {
+    const room = await openRoom();
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    room.host.startGame();
+    await flush();
+
+    // It is the host's turn, and the guest declares anyway. Gating this on a turn
+    // would hand every race to whoever broke the rule, so it carries no token and
+    // is judged only by the engine's own predicate.
+    room.host.forceHandForTests(client.session.localPlayerId, 1);
+    await flush();
+    client.session.submitAction({ type: 'declareLastCard' }, 'rq-declare');
+    await flush();
+
+    expect(client.recorder.ofType('actionAccepted')).toHaveLength(1);
+    expect(room.hostRecorder.last('publicState')?.state.declaredLastCard).toContain(
+      client.session.localPlayerId,
+    );
+
+    client.session.destroy('leftVoluntarily');
+    room.destroy();
+  });
+});

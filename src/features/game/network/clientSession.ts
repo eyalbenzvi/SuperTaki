@@ -123,6 +123,8 @@ export class ClientSession implements Session {
   private lastHandVersion = -1;
   private lastEventVersion = -1;
   private lastTurnSeq: number | null = null;
+  /** Who we last saw on turn, so the token says what it claims to say. */
+  private lastCurrentPlayerId: string | null = null;
   private joinTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private watchdog: Watchdog | null = null;
@@ -602,6 +604,7 @@ export class ClientSession implements Session {
         }
         this.lastStateVersion = state.version;
         this.lastTurnSeq = state.turnSeq ?? null;
+        this.lastCurrentPlayerId = state.currentPlayerId;
         this.observer({ type: 'publicState', state });
         return;
       }
@@ -838,8 +841,14 @@ export class ClientSession implements Session {
     this.send('action', {
       action: pending.action,
       requestId: pending.requestId,
+      /*
+       * `currentPlayerId` is who *we believed* was on turn — not who we are. The
+       * host checks only the sequence number, so a field that named the sender
+       * would have been a lie nobody caught, and the next reader would have built
+       * on it.
+       */
       ...(turnScoped && this.lastTurnSeq !== null
-        ? { turnToken: { currentPlayerId: this.playerId, turnSeq: this.lastTurnSeq } }
+        ? { turnToken: { currentPlayerId: this.lastCurrentPlayerId, turnSeq: this.lastTurnSeq } }
         : {}),
     });
   }
@@ -902,6 +911,23 @@ export class ClientSession implements Session {
   /** Tells the heartbeat that this player has something at stake. */
   setBusy(busy: boolean): void {
     this.busy = busy;
+  }
+
+  /**
+   * Test seam: sends an intent against a turn that has already moved on.
+   *
+   * The state a client would have to be holding to do this by accident is exactly
+   * the one that is hard to arrange deliberately, so it is arranged here.
+   */
+  submitStaleActionForTests(action: GameAction, requestId: string): void {
+    const stale = this.lastTurnSeq === null ? 0 : this.lastTurnSeq - 1;
+    this.outbox = { requestId, action, turnSeq: stale, sentAt: this.now() };
+    this.busy = true;
+    this.send('action', {
+      action,
+      requestId,
+      turnToken: { currentPlayerId: this.lastCurrentPlayerId, turnSeq: stale },
+    });
   }
 
   /** Test seam: re-sends the join handshake, as a client whose accept was lost does. */
