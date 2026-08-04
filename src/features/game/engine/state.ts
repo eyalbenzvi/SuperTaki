@@ -91,8 +91,10 @@ export interface GameState {
   readonly currentPlayerIndex: number;
   readonly takiMode: TakiModeState | null;
   /**
-   * Set after a Plus card resolves: the same player owes one more card
-   * (or a draw, if they hold nothing legal).
+   * Set after a Plus card resolves: the same player plays again.
+   *
+   * An obligation, not a compulsion — they may pay it from the draw pile instead,
+   * whatever they are holding, and drawing ends the turn as it always does.
    */
   readonly pendingPlus: boolean;
   /**
@@ -245,6 +247,14 @@ export const REJECTION_CODES = [
   'illegalCard',
   'colorRequired',
   'colorNotAllowed',
+  /**
+   * Retired: a Plus obligation may now be paid from the draw pile.
+   *
+   * The engine never emits it any more, and the code stays in the vocabulary
+   * because an older host on a mixed table still does — removing a value from the
+   * enum would fail that message's schema and lock the receiving player's table
+   * rather than tell them a rule they no longer have to follow.
+   */
   'mustPlayAfterPlus',
   'mustAnswerDraw',
   'awaitingBreak',

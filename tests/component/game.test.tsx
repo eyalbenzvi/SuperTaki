@@ -360,10 +360,24 @@ describe('Taki mode', () => {
 });
 
 describe('outstanding Plus', () => {
-  it('tells the player another card is owed', () => {
+  it('tells the player another card is owed, and that the pile will do', () => {
     situation({ hand: [red5, blue3], discardTop: red9, activeColor: 'red', pendingPlus: true });
     renderApp();
-    expect(screen.getByText('הונח פלוס — חייבים להניח עוד קלף.')).toBeInTheDocument();
+    expect(screen.getByText('הונח פלוס — אפשר להניח עוד קלף, או לקחת קלף מהקופה.')).toBeInTheDocument();
+  });
+
+  /*
+   * The obligation used to disable the pile while a legal card was held, which
+   * made this the one screen in the game with a lit control that refused a tap.
+   */
+  it('leaves the draw pile open, with a button of its own', async () => {
+    const drawCard = vi.fn();
+    situation({ hand: [red5, blue3], discardTop: red9, activeColor: 'red', pendingPlus: true });
+    setState({ drawCard });
+    const { user } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'לקיחת קלף' }));
+    expect(drawCard).toHaveBeenCalled();
   });
 });
 

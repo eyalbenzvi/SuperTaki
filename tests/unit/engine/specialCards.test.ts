@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, currentPlayer } from '../../../src/features/game/engine/engine.ts';
-import {
-  cards,
-  eventTypes,
-  expectOk,
-  expectRejected,
-  makeState,
-  players,
-} from '../helpers/engineFixtures.ts';
+import { cards, eventTypes, expectOk, makeState, players } from '../helpers/engineFixtures.ts';
 
 function playFirst(
   state: ReturnType<typeof makeState>,
@@ -78,14 +71,35 @@ describe('plus card', () => {
     expect(eventTypes(events)).toEqual(['cardPlayed', 'extraTurn']);
   });
 
-  it('forbids drawing while a legal card is held', () => {
+  /*
+   * The obligation is to *act*, not to play. Paying it from the pile is a choice
+   * the player is allowed to make even holding a legal card, and it ends the turn
+   * like any other draw.
+   */
+  it('lets the owed card be taken from the pile instead, even holding a legal one', () => {
     const state = makeState({
       pendingPlus: true,
       hands: { 'p-alice': cards('red:4'), 'p-bob': cards('red:1') },
       discardPile: cards('red:plus'),
       activeColor: 'red',
+      drawPile: cards('yellow:3'),
     });
-    expectRejected(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' }), 'mustPlayAfterPlus');
+    const { state: next } = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' }));
+    expect(next.hands['p-alice']).toHaveLength(2);
+    expect(next.pendingPlus).toBe(false);
+    expect(currentPlayer(next)?.id).toBe('p-bob');
+  });
+
+  it('takes one card for the obligation, never two', () => {
+    const state = makeState({
+      pendingPlus: true,
+      hands: { 'p-alice': cards('red:4'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:plus'),
+      activeColor: 'red',
+      drawPile: cards('yellow:3', 'yellow:4', 'yellow:5'),
+    });
+    const { state: next } = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' }));
+    expect(next.drawPile).toHaveLength(2);
   });
 
   it('allows drawing when nothing legal is held and then ends the turn', () => {

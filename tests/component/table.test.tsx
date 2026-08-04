@@ -153,6 +153,14 @@ describe('the other players', () => {
     });
   }
 
+  /*
+   * The button arrives a beat after the seat does. A player has to see
+   * their own last card land and then find the declare button, while everybody
+   * else is already looking at a seat that says "1 card" — so the head start is
+   * what keeps the rule about declaring rather than about thumb speed. The host
+   * refuses a catch inside the same window whatever a client renders; this is
+   * only what stops the button from being there to press.
+   */
   it('offers to call out an opponent sitting silently on their last card', async () => {
     const catchLastCard = vi.fn();
     lastCards();
@@ -161,7 +169,9 @@ describe('the other players', () => {
 
     const seats = screen.getByRole('region', { name: 'שאר השחקנים' });
     expect(within(seats).getByText('קלף אחד')).toBeInTheDocument();
-    await user.click(within(seats).getByRole('button', { name: 'תפיסת אלי' }));
+    expect(within(seats).queryByRole('button', { name: 'תפיסת אלי' })).not.toBeInTheDocument();
+
+    await user.click(await within(seats).findByRole('button', { name: 'תפיסת אלי' }));
     expect(catchLastCard).toHaveBeenCalledWith(GUEST_ID);
   });
 

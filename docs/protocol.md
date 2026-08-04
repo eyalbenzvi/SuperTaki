@@ -107,8 +107,10 @@ unconditional on the turn: both are accepted from any seat at any moment, includ
 +3 has the table frozen. `declareLastCard` requires that the sender holds exactly one card
 (`nothingToDeclare`) and has not already declared it (`alreadyDeclared`), and changes nothing
 but `declaredLastCard`. `catchLastCard` requires that `targetId` is somebody else who is on a
-single undeclared card (`nothingToCatch`), and makes them draw the penalty. See
-`docs/rules.md`.
+single undeclared card (`nothingToCatch`), and makes them draw the penalty. Two further
+conditions on a catch are the host's rather than the engine's, and answer with the same
+code: the target must be **connected**, and their hand must have been down to one card for
+at least `LAST_CARD_GRACE_MS` by the **host's** clock. See `docs/rules.md`.
 
 ## Host → client messages
 
@@ -338,6 +340,11 @@ Produced by the engine and mapped to localised strings by key `reject.<code>`:
 
 A test asserts every code has a Hebrew and an English message, so an unlocalised rejection
 cannot reach a player.
+
+`mustPlayAfterPlus` is retired: a Plus obligation may now be paid from the draw pile, so no
+host emits it any more. It stays in the vocabulary because an older host on a mixed table
+still does, and dropping a value from the enum would fail that message's schema — locking
+the receiving player's table instead of telling them about a rule they no longer have.
 
 ## Version 4: what resilience added
 
