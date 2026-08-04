@@ -304,7 +304,10 @@ describe('host-driven lifecycle messages', () => {
     await flush();
 
     const action = harness.host.ofType('action')[0];
-    expect(action?.payload).toEqual({ action: { type: 'playCard', cardId: 'n-red-5-0' } });
+    expect(action?.payload).toMatchObject({ action: { type: 'playCard', cardId: 'n-red-5-0' } });
+    // The request id identifies the *intent*, so a re-send after a reconnect can
+    // be recognised as the same one rather than applied twice.
+    expect(action?.payload).toHaveProperty('requestId');
     // Crucially, the client never states who it is: the host binds the identity.
     expect(JSON.stringify(action?.payload)).not.toContain('pl_client000');
     expect(harness.host.ofType('playAgainVote')[0]?.payload).toEqual({ agree: true });

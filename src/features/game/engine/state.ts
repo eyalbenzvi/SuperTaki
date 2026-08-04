@@ -166,7 +166,16 @@ export type GameCommand =
    */
   | { readonly type: 'skipTurn'; readonly playerId: PlayerId }
   /** Marks a player as having left for good, without disturbing the round. */
-  | { readonly type: 'leaveGame'; readonly playerId: PlayerId };
+  | { readonly type: 'leaveGame'; readonly playerId: PlayerId }
+  /**
+   * Ends the round with no winner, by agreement of the table.
+   *
+   * This is what a real table does when somebody has to leave: you stop, and
+   * nobody pretends the interrupted hand produced a champion. Having it removes
+   * most of the reason to attempt an automatic host takeover, which cannot be made
+   * safe in a topology with no authority.
+   */
+  | { readonly type: 'abandonRound'; readonly playerId: PlayerId };
 
 export type GameCommandType = GameCommand['type'];
 

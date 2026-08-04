@@ -24,6 +24,8 @@ export interface ResumableRoom {
   readonly resumeToken: string;
   readonly displayName: string;
   readonly savedAt: number;
+  /** Host generation this credential was last seen at, so a handover can be followed. */
+  readonly generation?: number;
 }
 
 export function loadLanguage(): Language {
@@ -86,6 +88,9 @@ function validateResumable(value: unknown, now: number): ResumableRoom | null {
     resumeToken: candidate.resumeToken,
     displayName: sanitizeDisplayName(candidate.displayName) || 'Player',
     savedAt: candidate.savedAt,
+    ...(typeof candidate.generation === 'number' && candidate.generation >= 0
+      ? { generation: candidate.generation }
+      : {}),
   };
 }
 

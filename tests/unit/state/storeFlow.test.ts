@@ -246,7 +246,17 @@ describe('joining a room through the store', () => {
     host.destroy('leftVoluntarily');
   });
 
-  it('explains a closed room and forgets the dead seat', async () => {
+  it('explains a closed room but keeps the way back into it', async () => {
+    /*
+     * This used to assert the opposite, and the opposite was a real bug: the
+     * credential was destroyed for every close reason except one, including a host
+     * that had merely reloaded. So the one thing a player needed in order to
+     * return was thrown away at precisely the moment they needed it, and every
+     * plan to let a host come back was impossible to build on top of it.
+     *
+     * The credential now survives everything except the two reasons that genuinely
+     * end a seat: leaving on purpose, and being removed.
+     */
     const { host } = await startHost();
     await store().joinRoom({ name: 'אלי', roomCode: TEST_ROOM });
     await flush();
@@ -259,11 +269,23 @@ describe('joining a room through the store', () => {
     expect(state.closedReason).toBe('hostLeft');
     expect(state.role).toBeNull();
     expect(state.lobby).toBeNull();
-    expect(state.resumable).toBeNull();
+    expect(state.resumable).not.toBeNull();
 
     state.dismissClosed();
     expect(store().closedReason).toBeNull();
     expect(store().screen).toBe('home');
+  });
+
+  it('forgets the seat only when the player leaves or is removed', async () => {
+    const { host } = await startHost();
+    await store().joinRoom({ name: 'אלי', roomCode: TEST_ROOM });
+    await flush();
+    expect(store().resumable).not.toBeNull();
+
+    store().leaveRoom();
+    await flush();
+    expect(store().resumable).toBeNull();
+    host.destroy('leftVoluntarily');
   });
 
   it('reports an unreachable room without leaving the player stuck', async () => {

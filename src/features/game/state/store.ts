@@ -1,23 +1,34 @@
 import { create } from 'zustand';
 import { DEFAULT_LANGUAGE, directionFor, type Language } from '../../../i18n/index.ts';
+import { record } from '../../../lib/diagnostics.ts';
+import { onSleep } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import type { Card } from '../engine/cards.ts';
 import type { GameEvent, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import { ClientSession } from '../network/clientSession.ts';
-import { HostSession, createHostSession } from '../network/hostSession.ts';
+import { HostSession, createHostSession, type HostRestoreState } from '../network/hostSession.ts';
 import type { GameAction, LobbySnapshot } from '../network/protocol.ts';
 import { buildInviteUrl, generateRoomCode, hostPeerIdForRoom } from '../network/roomCode.ts';
 import {
+  CREDENTIAL_ENDING_REASONS,
   sessionError,
   type ConnectionPhase,
   type SessionClosedReason,
   type SessionError,
   type SessionUpdate,
 } from '../network/session.ts';
+import { ACTION_LOCK_MS, HOST_ID_RETRY_SCHEDULE_MS } from '../network/timing.ts';
 import { TransportError, type Transport } from '../network/transport.ts';
 import { createTransport } from '../network/transportFactory.ts';
+import {
+  clearHostedRoom,
+  flushHostedRoom,
+  loadHostedRoom,
+  saveHostedRoom,
+  type HostedRoom,
+} from './hostSnapshot.ts';
 import {
   applyLanguage,
   applyTheme,
@@ -59,14 +70,14 @@ const FEED_LIMIT = 60;
 const ROOM_CODE_ATTEMPTS = 4;
 
 /**
- * How long a submitted move keeps the table locked when no answer arrives.
+ * How many times a returning host tries to reclaim its own room code.
  *
- * The lock exists so one tap cannot become two moves. It is released as soon as
- * the host's answer lands — new state, new hand or a rejection — and this
- * deadline only covers the case where nothing comes back at all, so a dropped
- * packet cannot leave a player unable to act.
+ * The schedule spans seventy-five seconds because the broker holds a dropped peer
+ * id for up to a minute: the id being refused is usually our own ghost, so giving
+ * up early means conceding the room code — and invalidating every invite already
+ * sent — at the moment it was still recoverable.
  */
-const ACTION_LOCK_MS = 5000;
+const HOST_ID_ATTEMPTS = HOST_ID_RETRY_SCHEDULE_MS.length;
 
 export interface AppState {
   language: Language;
@@ -93,6 +104,12 @@ export interface AppState {
   rejection: RejectionNotice | null;
   closedReason: SessionClosedReason | null;
   resumable: ResumableRoom | null;
+  /** A room this device was hosting and can take back. */
+  hostable: HostedRoom | null;
+  /** Who asked the table to hold, or `null`. */
+  pausedBy: string | null;
+  /** Set when another player nudges you; the nonce forces a re-announcement. */
+  nudge: { readonly fromPlayerId: string; readonly nonce: number } | null;
 
   /** True from the moment a move is submitted until the table answers. */
   actionPending: boolean;
@@ -113,6 +130,8 @@ export interface AppActions {
   readonly dismissRejection: () => void;
   readonly dismissClosed: () => void;
   readonly forgetResumable: () => void;
+  readonly forgetHostable: () => void;
+  readonly dismissNudge: () => void;
 
   readonly createRoom: (options: {
     name: string;
@@ -126,10 +145,22 @@ export interface AppActions {
     resume?: { playerId: string; resumeToken: string };
   }) => Promise<void>;
   readonly retryConnection: () => void;
+  /** Takes back a room this device was hosting, on the same room code. */
+  readonly resumeHosting: () => Promise<void>;
 
   readonly setMaxPlayers: (value: number) => void;
   readonly removePlayer: (playerId: string) => void;
   readonly startGame: () => void;
+  /** Passes the turn of a player who is away. Host only. */
+  readonly skipAbsentTurn: (playerId: string) => void;
+  /** Takes an absent player out of the round, keeping their cards out of play. */
+  readonly removeFromRound: (playerId: string) => void;
+  /** Asks the table to hold, or lets it carry on. */
+  readonly setPaused: (paused: boolean) => void;
+  readonly voteAbandon: (agree: boolean) => void;
+  readonly nudgePlayer: (playerId: string) => void;
+  /** Offers the room to another player and leaves. Host only. */
+  readonly handOver: (playerId: string) => void;
   readonly playCard: (cardId: string, chosenColor?: 'red' | 'blue' | 'green' | 'yellow') => void;
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
@@ -154,7 +185,18 @@ let session: HostSession | ClientSession | null = null;
 let feedCounter = 0;
 let rejectionCounter = 0;
 let announcementCounter = 0;
+let nudgeCounter = 0;
 let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
+/**
+ * The intent currently in flight.
+ *
+ * The lock is keyed on this rather than on the table moving, because in this game
+ * other players legally act out of turn — so a new snapshot may have nothing to do
+ * with my move, and treating it as proof of delivery is how a lost action comes to
+ * look like a delivered one.
+ */
+let pendingRequestId: string | null = null;
+let detachSleepHook: (() => void) | null = null;
 
 /** Test seam: replaces the active session (used by component tests). */
 export function __setSessionForTests(next: HostSession | ClientSession | null): void {
@@ -185,6 +227,9 @@ function initialState(): AppState {
     rejection: null,
     closedReason: null,
     resumable: loadResumableRoom(),
+    hostable: loadHostedRoom(),
+    pausedBy: null,
+    nudge: null,
     actionPending: false,
     leaveIntent: false,
     online: typeof navigator === 'undefined' || navigator.onLine !== false,
@@ -207,6 +252,7 @@ const CLEARED_SESSION: Partial<AppState> = {
   playAgain: null,
   actionPending: false,
   leaveIntent: false,
+  pausedBy: null,
 };
 
 function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
@@ -227,9 +273,55 @@ export const useAppStore = create<AppStore>((set, get) => {
       clearTimeout(actionLockTimer);
       actionLockTimer = null;
     }
+    pendingRequestId = null;
     if (get().actionPending) {
       set({ actionPending: false });
     }
+  }
+
+  /** Persists the room whenever the host's authoritative state changes. */
+  function persistHostedRoom(restore: HostRestoreState): void {
+    const active = session;
+    if (!(active instanceof HostSession)) {
+      return;
+    }
+    saveHostedRoom({
+      roomCode: active.roomCode,
+      hostPeerId: active.hostPeerId,
+      generation: active.generation,
+      restore,
+    });
+    const hostable = loadHostedRoom();
+    if (hostable) {
+      set({ hostable });
+    }
+  }
+
+  /**
+   * Tells the table this device is reloading, and writes the room down first.
+   *
+   * `pagehide` is the only hook that fires reliably on a phone, and this single
+   * message is what turns an ambiguous silence into "the host is coming back" —
+   * which is the difference between a held seat and a lost game.
+   */
+  function attachSleepHook(): void {
+    detachSleepHook?.();
+    detachSleepHook = onSleep((reason) => {
+      if (reason !== 'pagehide') {
+        return;
+      }
+      const active = session;
+      if (!(active instanceof HostSession)) {
+        return;
+      }
+      flushHostedRoom({
+        roomCode: active.roomCode,
+        hostPeerId: active.hostPeerId,
+        generation: active.generation,
+        restore: active.snapshot(),
+      });
+      active.announceRestarting();
+    });
   }
 
   /** Applies one session update to the store. */
@@ -243,11 +335,9 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'publicState':
-        clearActionLock();
         set({ publicState: update.state });
         return;
       case 'hand':
-        clearActionLock();
         set({ hand: update.cards });
         return;
       case 'events': {
@@ -259,12 +349,33 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'actionRejected':
-        clearActionLock();
+        if (update.requestId === undefined || update.requestId === pendingRequestId) {
+          clearActionLock();
+        }
         rejectionCounter += 1;
         set({ rejection: { code: update.code, nonce: rejectionCounter } });
         return;
+      case 'actionAccepted':
+        if (update.requestId === pendingRequestId) {
+          clearActionLock();
+        }
+        return;
       case 'error':
         set({ error: update.error, busy: false });
+        return;
+      case 'paused':
+        set({ pausedBy: update.pausedBy });
+        return;
+      case 'nudged':
+        nudgeCounter += 1;
+        set({ nudge: { fromPlayerId: update.fromPlayerId, nonce: nudgeCounter } });
+        return;
+      case 'handover':
+        // The client session already re-points itself at the new host; the store
+        // only needs to remember where the room went, so a later resume follows it.
+        set((state) =>
+          state.resumable ? { resumable: { ...state.resumable, generation: update.generation } } : {},
+        );
         return;
       case 'playAgain':
         set({ playAgain: { agreed: update.agreed, required: update.required } });
@@ -280,6 +391,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             playerId: update.playerId,
             resumeToken: update.resumeToken,
             displayName: update.displayName,
+            ...(state.resumable?.generation !== undefined ? { generation: state.resumable.generation } : {}),
           };
           saveResumableRoom(room);
           set({ resumable: loadResumableRoom() });
@@ -288,13 +400,26 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       case 'closed': {
         session = null;
-        if (update.reason !== 'transportFailed') {
+        detachSleepHook?.();
+        detachSleepHook = null;
+        /*
+         * Only an explicit departure or a removal means the seat is gone. This
+         * used to clear the credential for every reason but one — including a host
+         * that had merely blinked, and including the tab-took-over case — so the
+         * one thing a player needed in order to come back was destroyed at exactly
+         * the moment they needed it.
+         */
+        if (CREDENTIAL_ENDING_REASONS.has(update.reason)) {
           clearResumableRoom();
+        }
+        if (get().role === 'host') {
+          clearHostedRoom();
         }
         set({
           ...CLEARED_SESSION,
           closedReason: update.reason,
           resumable: loadResumableRoom(),
+          hostable: loadHostedRoom(),
         });
         return;
       }
@@ -310,19 +435,27 @@ export const useAppStore = create<AppStore>((set, get) => {
    * they legitimately played.
    */
   function submit(action: GameAction): void {
-    if (!session || get().actionPending) {
+    if (!session || get().actionPending || get().pausedBy !== null) {
       return;
     }
     if (actionLockTimer !== null) {
       clearTimeout(actionLockTimer);
     }
+    // A request id, minted once here, is what lets a re-send after a reconnect be
+    // recognised as the same intent rather than applied a second time.
+    const requestId = `rq-${String(Date.now())}-${String(rejectionCounter)}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    pendingRequestId = requestId;
     actionLockTimer = setTimeout(clearActionLock, ACTION_LOCK_MS);
     set({ actionPending: true });
 
     if (session instanceof HostSession) {
       session.submitLocalAction(action);
+      // The host answers itself synchronously, so nothing is left in flight.
+      clearActionLock();
     } else {
-      session.submitAction(action);
+      session.submitAction(action, requestId);
     }
   }
 
@@ -368,6 +501,15 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ resumable: null });
     },
 
+    forgetHostable: () => {
+      clearHostedRoom();
+      set({ hostable: null });
+    },
+
+    dismissNudge: () => {
+      set({ nudge: null });
+    },
+
     createRoom: async ({ name, maxPlayers, tableLanguage }) => {
       if (get().busy) {
         return;
@@ -392,8 +534,10 @@ export const useAppStore = create<AppStore>((set, get) => {
             maxPlayers,
             tableLanguage,
             observer: applyUpdate,
+            onSnapshot: persistHostedRoom,
           });
           session = hostSession;
+          attachSleepHook();
           set({
             busy: false,
             screen: 'lobby',
@@ -417,6 +561,90 @@ export const useAppStore = create<AppStore>((set, get) => {
           }
         }
       }
+    },
+
+    /**
+     * Takes back a room this device was hosting, on the *same* room code.
+     *
+     * Keeping the code is the whole point: every invite already sent stays valid,
+     * and every client's stored credential still fits, so the players reconnect on
+     * their own without being told anything. It has to be patient, though — the
+     * broker holds a dropped peer id for up to a minute, so the id we are trying to
+     * reclaim is very often our own ghost. Giving up early would concede the code
+     * and silently invalidate all those invites at the exact moment they were
+     * recoverable.
+     */
+    resumeHosting: async () => {
+      const hostable = get().hostable;
+      if (!hostable || get().busy) {
+        return;
+      }
+      set({
+        busy: true,
+        error: null,
+        closedReason: null,
+        feed: [],
+        role: 'host',
+        roomCode: hostable.roomCode,
+        hostPeerId: hostable.hostPeerId,
+        phase: 'initializing',
+      });
+      record('hostRestart', 'reclaiming room code', { room: hostable.roomCode });
+
+      for (let attempt = 0; attempt < HOST_ID_ATTEMPTS; attempt += 1) {
+        if (attempt > 0) {
+          const previous = HOST_ID_RETRY_SCHEDULE_MS[attempt - 1] ?? 0;
+          const target = HOST_ID_RETRY_SCHEDULE_MS[attempt] ?? previous;
+          await new Promise((resolve) => setTimeout(resolve, Math.max(target - previous, 0)));
+        }
+        let transport: Transport | null = null;
+        try {
+          transport = createTransport({ id: hostable.hostPeerId });
+          const hostSession = await createHostSession({
+            transport,
+            roomCode: hostable.roomCode,
+            hostDisplayName: get().displayName || 'Host',
+            maxPlayers: hostable.restore.maxPlayers,
+            tableLanguage: hostable.restore.tableLanguage,
+            observer: applyUpdate,
+            restore: hostable.restore,
+            onSnapshot: persistHostedRoom,
+            generation: hostable.generation,
+          });
+          session = hostSession;
+          attachSleepHook();
+          set({
+            busy: false,
+            inviteUrl: buildInviteUrl(
+              { roomCode: hostable.roomCode, hostPeerId: hostSession.hostPeerId },
+              window.location.href,
+            ),
+          });
+          record('hostRestart', 'room reclaimed', { attempt });
+          return;
+        } catch (error) {
+          transport?.destroy();
+          const isTaken = error instanceof TransportError && error.code === 'idUnavailable';
+          log.warn('reclaiming the room failed', attempt, error);
+          if (!isTaken) {
+            set({
+              ...CLEARED_SESSION,
+              error:
+                error instanceof TransportError
+                  ? sessionError(error.code, error.message)
+                  : sessionError('unknown', error instanceof Error ? error.message : undefined),
+              phase: 'failed',
+            });
+            return;
+          }
+        }
+      }
+      record('hostRestart', 'could not reclaim the room code');
+      set({
+        ...CLEARED_SESSION,
+        error: sessionError('idUnavailable'),
+        phase: 'failed',
+      });
     },
 
     joinRoom: async ({ name, roomCode, hostPeerId, resume }) => {
@@ -494,6 +722,54 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
+    skipAbsentTurn: (playerId) => {
+      if (session instanceof HostSession) {
+        session.skipAbsentTurn(playerId);
+      }
+    },
+
+    removeFromRound: (playerId) => {
+      if (session instanceof HostSession) {
+        session.removeFromRound(playerId);
+      }
+    },
+
+    setPaused: (paused) => {
+      const active = session;
+      if (active instanceof HostSession) {
+        active.setPaused(paused ? active.localPlayerId : null);
+      } else if (active instanceof ClientSession) {
+        active.requestPause(paused);
+      }
+    },
+
+    voteAbandon: (agree) => {
+      const active = session;
+      if (active instanceof HostSession) {
+        active.voteAbandon(agree);
+      } else if (active instanceof ClientSession) {
+        active.voteAbandon(agree);
+      }
+    },
+
+    nudgePlayer: (playerId) => {
+      const active = session;
+      if (active instanceof HostSession) {
+        active.nudge(playerId);
+      } else if (active instanceof ClientSession) {
+        active.nudge(playerId);
+      }
+    },
+
+    handOver: (playerId) => {
+      if (session instanceof HostSession) {
+        // A living host, vouching on a channel both sides already trust. That is
+        // what makes this safe without any of the verification an automatic
+        // takeover from a silent host would need — and could not get.
+        session.offerHandoff(playerId);
+      }
+    },
+
     playCard: (cardId, chosenColor) => {
       submit(chosenColor ? { type: 'playCard', cardId, chosenColor } : { type: 'playCard', cardId });
     },
@@ -537,9 +813,20 @@ export const useAppStore = create<AppStore>((set, get) => {
     leaveRoom: () => {
       session?.destroy('leftVoluntarily');
       session = null;
+      detachSleepHook?.();
+      detachSleepHook = null;
       clearResumableRoom();
+      clearHostedRoom();
       clearActionLock();
-      set({ ...CLEARED_SESSION, screen: 'home', error: null, closedReason: null, resumable: null });
+      set({
+        ...CLEARED_SESSION,
+        screen: 'home',
+        error: null,
+        closedReason: null,
+        resumable: null,
+        hostable: null,
+        nudge: null,
+      });
     },
 
     setOnline: (online) => {

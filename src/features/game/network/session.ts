@@ -2,6 +2,11 @@ import type { Card } from '../engine/cards.ts';
 import type { GameEvent, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import type { JoinRejectionReason, LobbySnapshot } from './protocol.ts';
+import {
+  PROBE_INTERVAL_BUSY_MS,
+  silentAfterMs as baseSilentAfterMs,
+  unstableAfterMs as baseUnstableAfterMs,
+} from './timing.ts';
 import type { TransportErrorCode } from './transport.ts';
 
 /** Connection lifecycle, surfaced verbatim in the UI. */
@@ -19,7 +24,37 @@ export interface SessionError {
 }
 
 export type SessionClosedReason =
-  'hostLeft' | 'roomReset' | 'removedByHost' | 'duplicateConnection' | 'leftVoluntarily' | 'transportFailed';
+  | 'hostLeft'
+  | 'roomReset'
+  | 'removedByHost'
+  | 'duplicateConnection'
+  | 'leftVoluntarily'
+  | 'transportFailed'
+  /** The round ran out of players. */
+  | 'abandoned';
+
+/**
+ * Close reasons that end the room, as opposed to interrupting it.
+ *
+ * The distinction is load-bearing. A client that is told the host has gone used
+ * to destroy its transport and latch `destroyed`, after which no amount of
+ * preserved credentials or patient backoff could bring it back — so "the host
+ * reloads and everyone reconnects" was impossible to build. A host that is merely
+ * restarting, or handing over, now says so and the client stays alive.
+ */
+export const TERMINAL_CLOSE_REASONS: ReadonlySet<SessionClosedReason> = new Set<SessionClosedReason>([
+  'hostLeft',
+  'roomReset',
+  'removedByHost',
+  'leftVoluntarily',
+  'abandoned',
+]);
+
+/** Close reasons after which the seat is genuinely gone, so its credential is worthless. */
+export const CREDENTIAL_ENDING_REASONS: ReadonlySet<SessionClosedReason> = new Set<SessionClosedReason>([
+  'leftVoluntarily',
+  'removedByHost',
+]);
 
 /** Everything a session tells the outside world. */
 export type SessionUpdate =
@@ -28,8 +63,16 @@ export type SessionUpdate =
   | { readonly type: 'publicState'; readonly state: PublicGameState }
   | { readonly type: 'hand'; readonly cards: readonly Card[] }
   | { readonly type: 'events'; readonly events: readonly GameEvent[] }
-  | { readonly type: 'actionRejected'; readonly code: RejectionCode }
+  | { readonly type: 'actionRejected'; readonly code: RejectionCode; readonly requestId?: string }
+  /** One specific intent was applied. The only trustworthy acknowledgement. */
+  | { readonly type: 'actionAccepted'; readonly requestId: string; readonly version: number }
   | { readonly type: 'error'; readonly error: SessionError }
+  /** Somebody asked the table to hold. */
+  | { readonly type: 'paused'; readonly pausedBy: string | null }
+  /** It is this player's turn and another player is waiting on them. */
+  | { readonly type: 'nudged'; readonly fromPlayerId: string }
+  /** The room is moving to another device; the client should follow. */
+  | { readonly type: 'handover'; readonly successorPeerId: string; readonly generation: number }
   | { readonly type: 'playAgain'; readonly agreed: readonly string[]; readonly required: number }
   | {
       readonly type: 'identity';
@@ -56,20 +99,27 @@ export function sessionError(code: SessionErrorCode, detail?: string): SessionEr
   return { code, retryable: RETRYABLE.has(code), ...(detail ? { detail } : {}) };
 }
 
-/** Health thresholds, shared by host and client heartbeats. */
+export {
+  RECONNECT_BACKOFF_MS,
+  backoffDelay,
+  probeInterval,
+  reconnectDeadlineMs,
+  silentAfterMs,
+  unstableAfterMs,
+} from './timing.ts';
+
+/**
+ * Health thresholds, kept as a compatibility shim over `timing.ts`.
+ *
+ * The numbers themselves now live in one file with the rest of the hierarchy,
+ * because these three were being compared against constants declared elsewhere
+ * and drifting from them.
+ */
 export const HEARTBEAT = {
-  intervalMs: 5_000,
-  unstableAfterMs: 9_000,
-  disconnectedAfterMs: 20_000,
+  intervalMs: PROBE_INTERVAL_BUSY_MS,
+  unstableAfterMs: baseUnstableAfterMs(PROBE_INTERVAL_BUSY_MS),
+  disconnectedAfterMs: baseSilentAfterMs(PROBE_INTERVAL_BUSY_MS),
 } as const;
-
-/** Bounded exponential backoff for reconnection attempts. */
-export const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 12_000] as const;
-
-export function backoffDelay(attempt: number): number {
-  const index = Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1);
-  return RECONNECT_BACKOFF_MS[index] as number;
-}
 
 /** Common shape of the host- and client-side session objects. */
 export interface Session {

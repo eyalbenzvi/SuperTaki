@@ -783,6 +783,26 @@ function applyLeaveGame(state: GameState, playerId: PlayerId): CommandResult {
   return { ok: true, state: freeze(draft), events };
 }
 
+/**
+ * Stops the round with no winner and everybody's hand intact.
+ *
+ * Nobody is marked as having left: the point is that the *round* ended, not that
+ * these players did anything. The standings show exactly where everyone was.
+ */
+function applyAbandonRound(state: GameState): CommandResult {
+  const draft = toDraft(state);
+  draft.phase = 'finished';
+  draft.winnerId = null;
+  draft.endReason = 'abandoned';
+  draft.takiMode = null;
+  draft.plusThree = null;
+  draft.pendingDraw = 0;
+  draft.pendingPlus = false;
+  draft.freePlay = false;
+  draft.version += 1;
+  return { ok: true, state: freeze(draft), events: [{ type: 'roundAbandoned' }] };
+}
+
 function applyDrawCard(state: GameState, playerId: PlayerId): CommandResult {
   if (state.takiMode) {
     return reject('cannotDrawDuringTaki');
@@ -825,6 +845,9 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   // Marking a player as gone is the one command a departed seat is the subject of.
   if (command.type === 'leaveGame') {
     return applyLeaveGame(state, command.playerId);
+  }
+  if (command.type === 'abandonRound') {
+    return applyAbandonRound(state);
   }
   if (actor.left === true) {
     return reject('alreadyLeft');
