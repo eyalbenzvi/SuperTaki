@@ -477,13 +477,6 @@ export class HostSession implements Session {
     return this.seats.filter((seat) => seat.health !== 'disconnected').length;
   }
 
-  /** Seats currently away, for the UI to explain and count down. */
-  get absentSeats(): readonly { playerId: string; name: string; absentSince: number }[] {
-    return this.seats
-      .filter((seat) => seat.absentSince !== null && !seat.left)
-      .map((seat) => ({ playerId: seat.playerId, name: seat.name, absentSince: seat.absentSince as number }));
-  }
-
   // ------------------------------------------------------------- connections
 
   private registerConnection(connection: TransportConnection): void {
@@ -794,11 +787,6 @@ export class HostSession implements Session {
 
   canStartGame(): boolean {
     return this.phase === 'lobby' && this.seats.length >= MIN_PLAYERS;
-  }
-
-  /** True while any seat is away, which the host should see before dealing. */
-  get hasAbsentSeats(): boolean {
-    return this.seats.some((seat) => seat.health !== 'connected');
   }
 
   startGame(): void {

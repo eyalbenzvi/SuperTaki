@@ -3,7 +3,7 @@ import { Badge } from '../../../../components/Badge.tsx';
 import { Button } from '../../../../components/Button.tsx';
 import { Icon } from '../../../../components/Icon.tsx';
 import { useT } from '../../../../app/useT.ts';
-import { standings, winnerName } from '../../state/selectors.ts';
+import { standings, wasAbandoned, winnerName } from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 
@@ -19,6 +19,7 @@ export function GameOverScreen(): ReactNode {
   const state = useAppStore();
   const rows = standings(state);
   const winner = state.publicState?.winnerId ?? null;
+  const abandoned = wasAbandoned(state);
   const iWon = winner !== null && winner === state.localPlayerId;
   const agreed = state.playAgain?.agreed ?? [];
   const required = state.playAgain?.required ?? 0;
@@ -28,13 +29,22 @@ export function GameOverScreen(): ReactNode {
     <div className="page">
       <ConnectionPhaseNotice />
 
-      <div className={`result ${iWon ? 'result--mine' : ''}`.trim()}>
+      {/*
+       * A round that ran out of players, or that the table agreed to stop, has no
+       * winner — and saying so plainly is the point. Naming one anyway would be a
+       * lie, and leaving the line blank would read as a bug.
+       */}
+      <div className={`result ${iWon && !abandoned ? 'result--mine' : ''}`.trim()}>
         <span className="result__icon" aria-hidden="true">
-          <Icon name="trophy" size={2.4} />
+          <Icon name={abandoned ? 'info' : 'trophy'} size={2.4} />
         </span>
         <h1 className="result__title">{t('over.title')}</h1>
         <p className="result__winner">
-          {iWon ? t('over.winnerYou') : t('over.winner', { name: winnerName(state) ?? '—' })}
+          {abandoned
+            ? t('abandon.abandoned')
+            : iWon
+              ? t('over.winnerYou')
+              : t('over.winner', { name: winnerName(state) ?? '—' })}
         </p>
       </div>
 
