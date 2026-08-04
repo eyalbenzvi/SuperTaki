@@ -19,6 +19,7 @@ export type IconName =
   | 'crown'
   | 'clockwise'
   | 'anticlockwise'
+  | 'arrowNext'
   | 'leave'
   | 'chevronDown'
   | 'chevronUp'
@@ -72,6 +73,19 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M3 12a9 9 0 1 0 3.5-7.14" />
       <path d="M3 3v6h6" />
+    </>
+  ),
+  /*
+   * Points along a row rather than around a circle, and it is mirrored in a
+   * right-to-left layout by the stylesheet. A rotating arrow is the wrong
+   * picture for a line of seats: it invites the reader to work out which way
+   * round the table the row is supposed to be bent, and half of them bend it the
+   * other way.
+   */
+  arrowNext: (
+    <>
+      <path d="M4 12h15" />
+      <path d="m12.5 5.5 6.5 6.5-6.5 6.5" />
     </>
   ),
   leave: (

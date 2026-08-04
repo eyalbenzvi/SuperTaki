@@ -203,6 +203,16 @@ export type GameEvent =
   | { readonly type: 'playerSkipped'; readonly playerId: PlayerId }
   /** A +2 was added to the run; `total` is what the next player now owes. */
   | { readonly type: 'drawStacked'; readonly playerId: PlayerId; readonly total: number }
+  /**
+   * A King answered an open +2 run: `cancelled` cards were owed and are owed no
+   * longer. The free play the King grants follows as usual.
+   */
+  | { readonly type: 'runCancelled'; readonly playerId: PlayerId; readonly cancelled: number }
+  /**
+   * A player's last card was a Plus, so it could not end the round: the card the
+   * Plus owes came from the pile instead. `drew` is how many they actually drew.
+   */
+  | { readonly type: 'plusDeniedWin'; readonly playerId: PlayerId; readonly drew: number }
   /** A +3 was played and is waiting for a possible breaker. */
   | { readonly type: 'plusThreePlayed'; readonly playerId: PlayerId }
   /** A +3 Breaker sent the penalty back at `targetId`. */

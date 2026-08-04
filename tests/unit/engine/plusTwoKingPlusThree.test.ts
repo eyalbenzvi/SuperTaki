@@ -51,7 +51,7 @@ describe('+2', () => {
     expect(events.find((event) => event.type === 'drawStacked')).toMatchObject({ total: 4 });
   });
 
-  it('refuses anything but another +2 while a run is open', () => {
+  it('refuses anything but another +2 or a King while a run is open', () => {
     let state = makeState({
       hands: {
         'p-alice': cards('red:plusTwo', 'blue:3'),
@@ -62,8 +62,8 @@ describe('+2', () => {
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
     expectRejected(play(state, 'p-bob', 'red:1'), 'mustAnswerDraw');
     expectRejected(play(state, 'p-bob', 'colorChange', 'blue'), 'mustAnswerDraw');
-    // The King is refused like anything else: it is not an answer to a run.
-    expectRejected(play(state, 'p-bob', 'king'), 'mustAnswerDraw');
+    // A King is the other answer, and the only one that is not a +2.
+    expectOk(play(state, 'p-bob', 'king'));
   });
 
   it('hands the whole run to whoever cannot answer', () => {
@@ -110,17 +110,62 @@ describe('king', () => {
     expect(eventTypes(events)).toEqual(['cardPlayed', 'extraTurn']);
   });
 
-  it('is no answer to a pending run: the holder pays it like anybody else', () => {
+  /*
+   * The King is the run's release valve: it does not pass the debt on the way a +2
+   * does, it cancels it outright, and its owner still gets the free play. Before
+   * this a King was refused against a run and its holder drew the lot.
+   */
+  it('answers a pending run by cancelling it, and still buys the free turn', () => {
     let state = makeState({
-      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('king', 'blue:3') },
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('king', 'blue:3', 'green:7') },
+      drawPile: cards('green:4', 'green:5'),
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
+    expect(state.pendingDraw).toBe(2);
+
+    const { state: next, events } = expectOk(play(state, 'p-bob', 'king'));
+    expect(next.pendingDraw).toBe(0);
+    // Nothing drawn: the debt is wiped, not paid.
+    expect(handOf(next, 'p-bob')).toHaveLength(2);
+    expect(next.freePlay).toBe(true);
+    expect(next.pendingPlus).toBe(true);
+    expect(currentPlayer(next)?.id).toBe('p-bob');
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'runCancelled', 'extraTurn']);
+    expect(events.find((event) => event.type === 'runCancelled')).toMatchObject({ cancelled: 2 });
+
+    // And the free play that follows takes anything, exactly as it does off a run.
+    const after = expectOk(play(next, 'p-bob', 'blue:3')).state;
+    expect(after.activeColor).toBe('blue');
+    expect(currentPlayer(after)?.id).toBe('p-alice');
+  });
+
+  it('cancels a stacked run whole, however high it went', () => {
+    let state = makeState({
+      hands: {
+        'p-alice': cards('red:plusTwo', 'king', 'blue:3'),
+        'p-bob': cards('green:plusTwo', 'blue:3'),
+      },
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
+    state = expectOk(play(state, 'p-bob', 'green:plusTwo')).state;
+    expect(state.pendingDraw).toBe(4);
+
+    const { state: next, events } = expectOk(play(state, 'p-alice', 'king'));
+    expect(next.pendingDraw).toBe(0);
+    expect(handOf(next, 'p-alice')).toHaveLength(1);
+    expect(events.find((event) => event.type === 'runCancelled')).toMatchObject({ cancelled: 4 });
+  });
+
+  it('still leaves a run to be paid by a player holding neither answer', () => {
+    let state = makeState({
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('red:1', 'blue:3') },
       drawPile: cards('green:4', 'green:5'),
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
 
-    expectRejected(play(state, 'p-bob', 'king'), 'mustAnswerDraw');
-
-    // Bob holds a King and no +2, so the only way out is the whole run.
     const { state: next } = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-bob' }));
     expect(handOf(next, 'p-bob')).toHaveLength(4);
     expect(next.pendingDraw).toBe(0);

@@ -1,6 +1,7 @@
 import type { Card, CardColor, CardKind } from '../engine/cards.ts';
 import { cardColor, isNumberCard, requiresColorChoice } from '../engine/cards.ts';
-import { getPlayableCardIds } from '../engine/rules.ts';
+import { getPlayableCardIds, stepIndex } from '../engine/rules.ts';
+import type { TurnDirection } from '../engine/state.ts';
 import { computeStandings, playContextFromPublic, type StandingRow } from '../engine/views.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import type { LobbyPlayer, LobbySnapshot } from '../network/protocol.ts';
@@ -174,6 +175,25 @@ export interface OpponentView {
 }
 
 /**
+ * The seats after `from`, walked the way the turn is moving *now*.
+ *
+ * Seat order and play order are the same thing only until a Change Direction
+ * card is played. Reading the row off `slice` regardless of direction is what
+ * made the on-screen order say the opposite of the truth for the rest of the
+ * round — the seat next to yours was the one who had just played, not the one
+ * about to.
+ */
+function walkFrom<T>(players: readonly T[], from: number, direction: TurnDirection): T[] {
+  const ordered: T[] = [];
+  let index = from;
+  for (let step = 0; step < players.length - 1; step += 1) {
+    index = stepIndex(index, direction, players.length);
+    ordered.push(players[index] as T);
+  }
+  return ordered;
+}
+
+/**
  * Opponents in play order starting after the local player, so the seating on
  * screen matches the order of play regardless of who is looking.
  */
@@ -186,8 +206,7 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
   const localIndex = players.findIndex((player) => player.id === localPlayerId);
   // A viewer who holds no seat (nothing dealt yet, or a stale identity) sees the
   // whole table in seat order rather than a truncated list.
-  const ordered =
-    localIndex >= 0 ? [...players.slice(localIndex + 1), ...players.slice(0, localIndex)] : [...players];
+  const ordered = localIndex >= 0 ? walkFrom(players, localIndex, publicState.direction) : [...players];
 
   return ordered
     .filter((player) => player.id !== localPlayerId)
@@ -216,6 +235,35 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
           (lobbyPlayer?.health ?? 'connected') === 'connected',
       };
     });
+}
+
+/**
+ * Who takes their turn after the local player, the way play is moving now.
+ *
+ * The one fact that makes the direction of play concrete: a name changes the
+ * moment a Change Direction card lands, where "forwards" and "reversed" are
+ * words a player has to translate into a seat before they mean anything. Seats
+ * that have left are stepped over, exactly as the engine steps over them.
+ */
+export function nextAfterMe(state: Pick<TableSnapshot, 'publicState' | 'localPlayerId'>): string | null {
+  const { publicState, localPlayerId } = state;
+  if (!publicState || !localPlayerId) {
+    return null;
+  }
+  const players = publicState.players;
+  const localIndex = players.findIndex((player) => player.id === localPlayerId);
+  if (localIndex < 0 || players.length < 2) {
+    return null;
+  }
+  let index = localIndex;
+  for (let step = 0; step < players.length - 1; step += 1) {
+    index = stepIndex(index, publicState.direction, players.length);
+    const player = players[index];
+    if (player && player.left !== true) {
+      return player.name;
+    }
+  }
+  return null;
 }
 
 /** The seat the table is waiting for, and why, straight from the host. */

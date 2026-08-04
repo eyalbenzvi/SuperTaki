@@ -3,6 +3,7 @@ import { createPlayerId, createResumeToken, randomHex, randomInt } from '../../.
 import { onSleep, onWake } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName, uniquifyDisplayName } from '../../../lib/sanitize.ts';
+import type { Card } from '../engine/cards.ts';
 import { applyCommand, createGame, currentPlayer } from '../engine/engine.ts';
 import { seedFromString } from '../engine/prng.ts';
 import {
@@ -224,15 +225,22 @@ export class HostSession implements Session {
   private handoffTo: string | null = null;
   private handoffTimer: ReturnType<typeof setTimeout> | null = null;
   /**
-   * Host clock at which each seat's hand became a single card.
+   * Host clock at which each seat's hand became a single card, and which card that
+   * was.
    *
    * Kept here rather than in {@link GameState} because it is a clock reading, and
    * the engine is a pure function of its inputs — a timestamp inside it would make
    * a replayed command produce a different game. It is the host's, not the
    * caller's: a client that measured its own half second would be measuring from
    * whenever its snapshot happened to arrive.
+   *
+   * The card id is stored with the stamp because the head start belongs to a card,
+   * not to a hand size. A Plus played as a last card empties the hand and refills
+   * it from the pile inside one command, so counting alone would read "still one
+   * card" and hand the player a window that had already run out on a card they no
+   * longer hold.
    */
-  private readonly lastCardSince = new Map<string, number>();
+  private readonly lastCardSince = new Map<string, { readonly at: number; readonly cardId: string }>();
 
   constructor(
     readonly roomCode: string,
@@ -923,12 +931,16 @@ export class HostSession implements Session {
     }
     const now = this.now();
     for (const player of game.players) {
-      if ((game.hands[player.id] ?? []).length === 1) {
-        if (!this.lastCardSince.has(player.id)) {
-          this.lastCardSince.set(player.id, now);
-        }
-      } else {
+      const hand = game.hands[player.id] ?? [];
+      const only = hand.length === 1 ? (hand[0] as Card) : null;
+      if (only === null) {
         this.lastCardSince.delete(player.id);
+        continue;
+      }
+      // A different card is a different last card: it buys its own head start,
+      // exactly as it needs its own declaration.
+      if (this.lastCardSince.get(player.id)?.cardId !== only.id) {
+        this.lastCardSince.set(player.id, { at: now, cardId: only.id });
       }
     }
   }
@@ -936,7 +948,7 @@ export class HostSession implements Session {
   /** Whether `playerId` is still inside the head start their last card bought them. */
   private withinLastCardGrace(playerId: string): boolean {
     const since = this.lastCardSince.get(playerId);
-    return since !== undefined && this.now() - since < LAST_CARD_GRACE_MS;
+    return since !== undefined && this.now() - since.at < LAST_CARD_GRACE_MS;
   }
 
   private broadcastGameState(): void {

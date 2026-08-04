@@ -127,6 +127,14 @@ export interface AppState {
     readonly penalty: number;
     readonly nonce: number;
   } | null;
+  /**
+   * The most recent last card that turned out to be a Plus, for the same reason
+   * a catch gets a banner: the line explaining it is followed straight away by
+   * the draw and the change of turn, so the ticker never shows it. And this is
+   * the one outcome at the table that contradicts what a player has just
+   * watched happen — they played their final card and did not win.
+   */
+  heldBack: { readonly playerId: string; readonly nonce: number } | null;
 
   /** True from the moment a move is submitted until the table answers. */
   actionPending: boolean;
@@ -150,6 +158,7 @@ export interface AppActions {
   readonly forgetHostable: () => void;
   readonly dismissNudge: () => void;
   readonly dismissCaught: () => void;
+  readonly dismissHeldBack: () => void;
 
   readonly createRoom: (options: {
     name: string;
@@ -217,6 +226,7 @@ let rejectionCounter = 0;
 let announcementCounter = 0;
 let nudgeCounter = 0;
 let caughtCounter = 0;
+let heldBackCounter = 0;
 let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * The intent currently in flight.
@@ -262,6 +272,7 @@ function initialState(): AppState {
     pausedBy: null,
     nudge: null,
     caught: null,
+    heldBack: null,
     actionPending: false,
     leaveIntent: false,
     online: typeof navigator === 'undefined' || navigator.onLine !== false,
@@ -286,6 +297,7 @@ const CLEARED_SESSION: Partial<AppState> = {
   leaveIntent: false,
   pausedBy: null,
   caught: null,
+  heldBack: null,
 };
 
 function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
@@ -468,6 +480,11 @@ export const useAppStore = create<AppStore>((set, get) => {
         if (lastCatch !== undefined) {
           caughtCounter += 1;
         }
+        // Same reasoning, and the same "last one in the batch wins".
+        const heldBack = [...update.events].reverse().find((event) => event.type === 'plusDeniedWin');
+        if (heldBack !== undefined) {
+          heldBackCounter += 1;
+        }
         set((state) => ({
           feed: [...state.feed, ...entries].slice(-FEED_LIMIT),
           ...(lastCatch !== undefined
@@ -479,6 +496,9 @@ export const useAppStore = create<AppStore>((set, get) => {
                   nonce: caughtCounter,
                 },
               }
+            : {}),
+          ...(heldBack !== undefined
+            ? { heldBack: { playerId: heldBack.playerId, nonce: heldBackCounter } }
             : {}),
         }));
         return;
@@ -658,6 +678,10 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     dismissCaught: () => {
       set({ caught: null });
+    },
+
+    dismissHeldBack: () => {
+      set({ heldBack: null });
     },
 
     createRoom: async ({ name, maxPlayers, tableLanguage }) => {
@@ -901,7 +925,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     startGame: () => {
       if (session instanceof HostSession) {
         clearActionLock();
-        set({ feed: [], caught: null });
+        set({ feed: [], caught: null, heldBack: null });
         session.startGame();
       }
     },

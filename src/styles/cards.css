@@ -488,16 +488,6 @@ button.card:active {
   background: var(--card-yellow);
 }
 
-.direction-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
 .color-picker-intro {
   display: flex;
   align-items: center;

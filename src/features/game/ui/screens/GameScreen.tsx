@@ -13,6 +13,7 @@ import {
   isMyTurn,
   isTakiOpenForMe,
   mustDeclareLastCard,
+  nextAfterMe,
   opponents,
   playableCardIds,
   playerName,
@@ -25,10 +26,10 @@ import { describeEvent } from '../eventText.ts';
 import { useCatchGrace } from '../useCatchGrace.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
-import { CaughtNotice, NudgeButton, NudgeNotice } from '../components/TableControls.tsx';
+import { CaughtNotice, NudgeButton, NudgeNotice, PlusHeldNotice } from '../components/TableControls.tsx';
 import { WaitingNotice } from '../components/WaitingNotice.tsx';
 import { GameLog } from '../components/GameLog.tsx';
-import { DirectionIndicator, Hand, OpponentList, Piles } from '../components/TableParts.tsx';
+import { Hand, OpponentList, Piles, PlayOrderIndicator } from '../components/TableParts.tsx';
 
 /** How long a "you cannot play that" explanation stays on screen. */
 const REFUSAL_MS = 2600;
@@ -90,6 +91,7 @@ export function GameScreen(): ReactNode {
   const cards = useMemo(() => sortHandForDisplay(table.hand), [table.hand]);
   const seats = useCatchGrace(useMemo(() => opponents(table), [table]));
   const turnName = currentPlayerName(table);
+  const nextName = nextAfterMe(table);
 
   useEffect(
     () => () => {
@@ -181,6 +183,7 @@ export function GameScreen(): ReactNode {
         <ConnectionPhaseNotice />
         <NudgeNotice />
         <CaughtNotice />
+        <PlusHeldNotice />
         <WaitingNotice />
       </div>
 
@@ -212,7 +215,7 @@ export function GameScreen(): ReactNode {
           <p className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
             {myTurn ? t('game.yourTurn') : t('game.turnOf', { name: turnName ?? '—' })}
           </p>
-          <DirectionIndicator direction={publicState.direction} t={t} />
+          <PlayOrderIndicator direction={publicState.direction} nextName={nextName} t={t} />
         </div>
 
         <GameLog

@@ -88,6 +88,34 @@ describe('declaring the last card', () => {
     expect(next.declaredLastCard).toEqual([]);
   });
 
+  /*
+   * The hardest case for the "one declaration per card" rule, because the hand
+   * never *looks* like it changed size: a Plus played as a last card empties the
+   * hand and refills it from the pile inside a single command. What the player is
+   * holding afterwards is a different card, so it needs its own shout — and the
+   * sweep that drops stale declarations counts cards, so it cannot see this on its
+   * own.
+   */
+  it('goes again when a Plus takes the hand to nothing and back to one', () => {
+    const declared = expectOk(
+      declare(
+        makeState({
+          hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1', 'blue:3') },
+          discardPile: cards('red:9'),
+          drawPile: cards('green:4', 'green:5'),
+        }),
+        'p-alice',
+      ),
+    ).state;
+    expect(declared.declaredLastCard).toEqual(['p-alice']);
+
+    const { state: next } = expectOk(play(declared, 'p-alice'));
+    expect(next.hands['p-alice']).toHaveLength(1);
+    expect(next.declaredLastCard).toEqual([]);
+    // And the fresh declaration is accepted, on the card she is now holding.
+    expect(expectOk(declare(next, 'p-alice')).state.declaredLastCard).toEqual(['p-alice']);
+  });
+
   it('is published to the whole table', () => {
     const state = makeState({
       hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:3') },

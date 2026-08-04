@@ -394,12 +394,17 @@ function resolveCardEffect(draft: Draft, card: Card, events: GameEvent[]): void 
     }
     case 'king': {
       /*
-       * The King buys its owner a turn with no matching at all. It is not an
-       * answer to a +2 run: a run can only be met with another +2, so a King
-       * can never be played while `pendingDraw` is outstanding and there is no
-       * penalty here for it to wipe.
+       * The King buys its owner a turn with no matching at all, and it is the one
+       * card that answers a +2 run without joining it: what is owed is wiped
+       * rather than passed on, and the same free play follows. A +2 is still the
+       * other answer, and it still raises the run — so the run mechanic keeps its
+       * teeth against a table holding neither.
        */
       const player = draft.players[draft.currentPlayerIndex] as EnginePlayer;
+      if (draft.pendingDraw > 0) {
+        events.push({ type: 'runCancelled', playerId: player.id, cancelled: draft.pendingDraw });
+        draft.pendingDraw = 0;
+      }
       draft.pendingPlus = true;
       draft.freePlay = true;
       events.push({ type: 'extraTurn', playerId: player.id });
@@ -463,7 +468,7 @@ function applyPlayCard(
       if (card.color !== state.takiMode.color && card.kind !== 'taki') {
         return reject('wrongTakiColor');
       }
-    } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo') {
+    } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
       return reject('mustAnswerDraw');
     } else if (!isCardPlayable(card, playContextFromState(state))) {
       return reject('illegalCard');
@@ -496,6 +501,47 @@ function applyPlayCard(
     const penaltyEvents: GameEvent[] = [];
     const penalty = drawCards(draft, playerId, PLUS_THREE_PENALTY, penaltyEvents);
     events.push({ type: 'breakerSpent', playerId, penalty }, ...penaltyEvents);
+  }
+
+  /*
+   * A Plus cannot be the card you go out on.
+   *
+   * A Plus owes one more card, and an empty hand has none to give — so the
+   * obligation is paid the only way left, from the draw pile, and the round is not
+   * over after all. The turn then ends as any draw ends a turn, and its owner is
+   * back on a single card: a *different* single card, so they owe a fresh
+   * declaration and everybody else gets a fresh chance to catch them silent.
+   *
+   * Ahead of the win check rather than inside it, because that check is final —
+   * once the round is `finished` nothing else resolves.
+   */
+  if ((draft.hands[playerId] ?? []).length === 0 && card.kind === 'plus') {
+    const drawEvents: GameEvent[] = [];
+    const drew = drawCards(draft, playerId, 1, drawEvents);
+    // Nothing left anywhere to draw: an obligation that cannot be paid at all
+    // cannot hold the round open, so the empty hand stands and the win below runs.
+    if (drew > 0) {
+      /*
+       * A sequence that ended on this Plus goes with it. Passing the turn while it
+       * is still open would leave a sequence nobody can close — the one shape of
+       * stuck table there is.
+       */
+      if (draft.takiMode) {
+        events.push({ type: 'takiClosed', playerId, cardsPlayed: draft.takiMode.cardsPlayed + 1 });
+        draft.takiMode = null;
+      }
+      events.push({ type: 'plusDeniedWin', playerId, drew }, ...drawEvents);
+      /*
+       * Said explicitly: the hand left one card and came back to one inside a
+       * single command, and the sweep at `freeze` only counts cards, so it would
+       * carry the declaration over onto a card it was never made for.
+       */
+      draft.declaredLastCard = draft.declaredLastCard.filter((candidate) => candidate !== playerId);
+      advanceTurn(draft, events);
+      draft.version += 1;
+      return { ok: true, state: freeze(draft), events };
+    }
+    events.push(...drawEvents);
   }
 
   if ((draft.hands[playerId] ?? []).length === 0) {

@@ -28,8 +28,15 @@ import { REJECTION_CODES } from '../engine/state.ts';
  *
  * 4 — resilience: acknowledged actions, seats that can be absent or gone, host
  * restarts and handover, table pauses.
+ *
+ * 5 — two rules changed: a King answers an open +2 run and wipes what is owed,
+ * and a Plus can no longer be the card a player goes out on. Both are semantic,
+ * so a table split across 4 and 5 disagrees about what is legal — the host's
+ * ruling wins, as it always does, and the other side sees a refusal rather than a
+ * broken table. The two new log events are dropped by a version-4 reader, which
+ * costs it a line in the log and nothing else.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /**
  * Versions this build will *accept*, as opposed to the one it sends.
@@ -45,7 +52,7 @@ export const PROTOCOL_VERSION = 4;
  * does not know about, and both versions are honoured on the wire. Mixed tables
  * lose the new behaviour, not the game.
  */
-export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [3, 4];
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [3, 4, 5];
 
 /** Hard cap on a single decoded message, to bound memory from a hostile peer. */
 export const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -194,6 +201,16 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     type: z.literal('breakerSpent'),
     playerId: playerIdSchema,
     penalty: z.number().int().min(0).max(200),
+  }),
+  z.object({
+    type: z.literal('runCancelled'),
+    playerId: playerIdSchema,
+    cancelled: z.number().int().min(0).max(200),
+  }),
+  z.object({
+    type: z.literal('plusDeniedWin'),
+    playerId: playerIdSchema,
+    drew: z.number().int().min(0).max(200),
   }),
   z.object({ type: z.literal('directionChanged'), direction: directionSchema }),
   z.object({ type: z.literal('extraTurn'), playerId: playerIdSchema }),

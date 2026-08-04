@@ -49,8 +49,20 @@ describe('event descriptions', () => {
     [{ type: 'takiClosed', playerId: 'p1', cardsPlayed: 4 }, 'Dana closed the sequence after 4 cards.'],
     [{ type: 'colorChosen', playerId: 'p1', color: 'blue' }, 'Dana chose Blue.'],
     [{ type: 'playerSkipped', playerId: 'p2' }, 'Eli was skipped.'],
-    [{ type: 'directionChanged', direction: 1 }, 'The play order is now forwards.'],
-    [{ type: 'directionChanged', direction: -1 }, 'The play order is now reversed.'],
+    [
+      { type: 'runCancelled', playerId: 'p1', cancelled: 1 },
+      'Dana played a King and cancelled the 1 card owed.',
+    ],
+    [
+      { type: 'runCancelled', playerId: 'p1', cancelled: 4 },
+      'Dana played a King and cancelled the 4 cards owed.',
+    ],
+    [
+      { type: 'plusDeniedWin', playerId: 'p1', drew: 1 },
+      'A Plus owes another card, so Dana did not finish — one card drawn, and the declaration goes again.',
+    ],
+    [{ type: 'directionChanged', direction: 1 }, 'The play order is back to normal.'],
+    [{ type: 'directionChanged', direction: -1 }, 'The play order is reversed.'],
     [{ type: 'extraTurn', playerId: 'p1' }, 'Dana plays again.'],
     [{ type: 'turnChanged', playerId: 'p2' }, 'Eli is up.'],
     [{ type: 'drawPileRecycled', count: 12 }, 'The discard pile was shuffled back in (12 cards).'],

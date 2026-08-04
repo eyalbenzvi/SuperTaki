@@ -1,7 +1,14 @@
 # Wire protocol
 
-Version: **4** sent, **3 and 4** accepted (`PROTOCOL_VERSION` and
+Version: **5** sent, **3, 4 and 5** accepted (`PROTOCOL_VERSION` and
 `SUPPORTED_PROTOCOL_VERSIONS` in `src/features/game/network/protocol.ts`)
+
+Version 5 carries two rules changes rather than any new message shape: a King answers an open
++2 run and wipes what is owed, and a Plus can no longer be the card a player goes out on. It
+also adds two log events, `runCancelled` and `plusDeniedWin`. A table split across versions
+still plays: the host's ruling is the only one that counts, so the older side sees a refusal
+where it expected a legal card, and drops the two events it does not know — which costs it a
+line in the log and nothing else.
 
 Every message is JSON, travels over a WebRTC data channel with `serialization: 'json'`, and
 is validated with Zod **before it can influence any state**. Schemas are the single source of

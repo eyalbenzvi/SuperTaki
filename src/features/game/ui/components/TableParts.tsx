@@ -44,20 +44,40 @@ export function ColorIndicator({
   );
 }
 
-/** Which way round the table play is moving. */
-export function DirectionIndicator({
+/**
+ * Which way play is moving, said as a seat rather than as a rotation.
+ *
+ * A circular arrow labelled "forwards" was read off the screen as often as not:
+ * the seats are a row, so a reader bends that row into a table in whichever
+ * direction feels natural, and in a right-to-left layout that reading comes out
+ * the opposite way round from the one the arrow meant. So the indicator names the
+ * player who follows the local seat — a fact with no orientation to get wrong,
+ * which changes the instant a Change Direction card lands — and the arrow now
+ * only points the way the row beside it reads.
+ *
+ * The direction still shows as a word, because "reversed" is a state a player
+ * tracks in its own right, and it is the word the log uses.
+ */
+export function PlayOrderIndicator({
   direction,
+  nextName,
   t,
 }: {
   readonly direction: 1 | -1;
+  readonly nextName: string | null;
   readonly t: Translator;
 }): ReactNode {
-  const label = direction === 1 ? t('game.directionCw') : t('game.directionCcw');
+  const state = direction === 1 ? t('game.directionCw') : t('game.directionCcw');
   return (
-    <span className="direction-chip">
-      <Icon name={direction === 1 ? 'clockwise' : 'anticlockwise'} size={1.15} />
-      <span className="direction-chip__label">{label}</span>
-    </span>
+    <p className="order-chip" title={state}>
+      <Icon name="arrowNext" size={1.25} className="order-chip__arrow" />
+      <span className="order-chip__label">
+        {nextName === null ? state : t('game.playOrderNext', { name: nextName })}
+      </span>
+      {direction === -1 && nextName !== null ? (
+        <span className="order-chip__flag">{t('game.playOrderReversed')}</span>
+      ) : null}
+    </p>
   );
 }
 
@@ -128,7 +148,7 @@ const OpponentSeat = memo(function OpponentSeat({
           }}
           aria-label={t('game.catchLastCard', { name: opponent.name })}
         >
-          {t('game.catchLastCardShort')}
+          <span className="seat__catch__label">{t('game.catchLastCardShort')}</span>
         </button>
       ) : lastCard ? (
         <span className="sr-only">{t('game.lastCard')}</span>
@@ -147,6 +167,11 @@ const OpponentSeat = memo(function OpponentSeat({
 /**
  * The other players, in play order starting after the local seat, so what is on
  * screen matches the order of play whoever is looking.
+ *
+ * "In play order" means the order the turn is moving in right now, not the seat
+ * order it started in: the row reverses when a Change Direction card does, and
+ * the small arrows the stylesheet draws between the seats always point from one
+ * seat to the seat that plays after it.
  *
  * Laid out as a row of narrow seats rather than wide cards, so a full table of
  * six fits across a phone without a horizontal scroll — whose turn it is must

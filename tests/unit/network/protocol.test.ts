@@ -159,6 +159,8 @@ describe('host message validation', () => {
       { type: 'colorChosen', playerId: 'p-alice', color: 'blue' },
       { type: 'playerSkipped', playerId: 'p-bob' },
       { type: 'drawStacked', playerId: 'p-alice', total: 4 },
+      { type: 'runCancelled', playerId: 'p-bob', cancelled: 4 },
+      { type: 'plusDeniedWin', playerId: 'p-alice', drew: 1 },
       { type: 'plusThreePlayed', playerId: 'p-alice' },
       { type: 'plusThreeBroken', playerId: 'p-bob', targetId: 'p-alice' },
       { type: 'directionChanged', direction: -1 },

@@ -160,6 +160,19 @@ test.describe('the table fits the screen', () => {
       seen.add(report.handCards);
       expect(report.cardsOutsideViewport, `hand of ${report.handCards}`).toBe(0);
       expect(report.panelOverflow, `pile panel under a hand of ${report.handCards}`).toBeLessThanOrEqual(0);
+
+      /*
+       * The declaration is a panic button: a two-card penalty rides on hitting it
+       * at once, from a player who is looking at their cards. It was sized like an
+       * ordinary control — the 44px floor, with its own padding cut back to 4px to
+       * squeeze two lines inside that — so it is measured wherever the round
+       * happens to produce one.
+       */
+      const declare = host.getByRole('button', { name: /Last card!/ });
+      if (await declare.isVisible().catch(() => false)) {
+        const box = await declare.boundingBox();
+        expect(box?.height ?? 0, 'the declare button is a thumb target').toBeGreaterThanOrEqual(56);
+      }
       if (!(await playOrDraw(host)) && !(await playOrDraw(guest))) {
         break;
       }

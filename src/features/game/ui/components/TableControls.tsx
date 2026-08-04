@@ -273,3 +273,59 @@ export function CaughtNotice(): ReactNode {
     </Callout>
   );
 }
+
+/**
+ * The last card that was a Plus, and so did not end the round.
+ *
+ * The one moment at this table where what a player just watched — their final card
+ * going down — does not mean what it always means. The log cannot carry it for the
+ * same reason it cannot carry a catch: the line explaining it is followed
+ * immediately by the draw and the change of turn, so by the time anybody looks, the
+ * ticker is showing a card being drawn for no stated reason.
+ *
+ * Which makes it worth spelling out for the player it happened to — they have a
+ * declaration to make again — and worth saying to everybody else, who otherwise
+ * saw somebody empty their hand and not win.
+ */
+export function PlusHeldNotice(): ReactNode {
+  const t = useT();
+  const heldBack = useAppStore((state) => state.heldBack);
+  const lobby = useAppStore((state) => state.lobby);
+  const publicState = useAppStore((state) => state.publicState);
+  const localPlayerId = useAppStore((state) => state.localPlayerId);
+  const dismissHeldBack = useAppStore((state) => state.dismissHeldBack);
+
+  const nonce = heldBack?.nonce ?? null;
+  useEffect(() => {
+    if (nonce === null) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      dismissHeldBack();
+    }, CAUGHT_NOTICE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [nonce, dismissHeldBack]);
+
+  if (!heldBack) {
+    return null;
+  }
+  const mine = heldBack.playerId === localPlayerId;
+  return (
+    <Callout
+      tone="warning"
+      icon="alert"
+      role="alert"
+      actions={
+        <Button variant="ghost" onClick={dismissHeldBack}>
+          {t('common.close')}
+        </Button>
+      }
+    >
+      {mine
+        ? t('plusHeld.you')
+        : t('plusHeld.other', { name: playerName({ publicState, lobby }, heldBack.playerId) })}
+    </Callout>
+  );
+}

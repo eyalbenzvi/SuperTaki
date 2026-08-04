@@ -114,7 +114,7 @@ describe('what to do now', () => {
     // A pending draw and a pending Plus at once: the debt is the thing to answer.
     table({ hand: [red5], patch: { pendingDraw: 2, pendingPlus: true } });
     renderApp();
-    expect(screen.getByText('מחכים לך 2 קלפים. אפשר לענות בקח 2, או לקחת אותם.')).toBeInTheDocument();
+    expect(screen.getByText('מחכים לך 2 קלפים. אפשר לענות בקח 2 או במלך, או לקחת אותם.')).toBeInTheDocument();
     expect(screen.queryByText('הונח פלוס — חייבים להניח עוד קלף.')).not.toBeInTheDocument();
   });
 
@@ -246,6 +246,44 @@ describe('a "last card" catch, said to the whole table', () => {
     threeHanded();
     renderApp();
     expect(screen.queryByText(/על "אחרון בידי"/)).not.toBeInTheDocument();
+  });
+
+  /*
+   * The same problem, and the same answer: the line explaining a last card that
+   * turned out to be a Plus is followed straight away by the draw it caused and the
+   * change of turn, so the ticker never shows it — and this is the one outcome that
+   * contradicts what the player just watched happen.
+   */
+  describe('a last card that was a Plus', () => {
+    it('tells the player why they did not win, and that they must declare again', async () => {
+      threeHanded();
+      setState({ heldBack: { playerId: HOST_ID, nonce: 1 } });
+      const { user } = renderApp();
+
+      const notice = screen.getByText(
+        'אי אפשר לסיים בפלוס — פלוס מחייב עוד קלף, ולכן לקחת קלף מהקופה. צריך להכריז מחדש.',
+      );
+      expect(notice.closest('[role="alert"]')).not.toBeNull();
+
+      await user.click(within(notice.closest('.callout') as HTMLElement).getByRole('button'));
+      expect(useAppStore.getState().heldBack).toBeNull();
+    });
+
+    it('tells the rest of the table why the round is still going', () => {
+      threeHanded();
+      setState({ heldBack: { playerId: CAROL_ID, nonce: 1 } });
+      renderApp();
+
+      expect(
+        screen.getByText('אי אפשר לסיים בפלוס — נועה לקח/ה קלף מהקופה, והסבב נמשך.'),
+      ).toBeInTheDocument();
+    });
+
+    it('says nothing when it has not happened', () => {
+      threeHanded();
+      renderApp();
+      expect(screen.queryByText(/אי אפשר לסיים בפלוס/)).not.toBeInTheDocument();
+    });
   });
 });
 

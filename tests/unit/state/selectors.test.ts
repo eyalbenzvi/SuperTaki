@@ -9,6 +9,7 @@ import {
   isTakiOpenForMe,
   localLobbyPlayer,
   needsColorChoice,
+  nextAfterMe,
   opponents,
   playableCardIds,
   playerName,
@@ -88,6 +89,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     pausedBy: null,
     nudge: null,
     caught: null,
+    heldBack: null,
     actionPending: false,
     leaveIntent: false,
     online: true,
@@ -160,6 +162,48 @@ describe('opponent ordering', () => {
   it('lists opponents in play order after the local player', () => {
     expect(opponents(state()).map((player) => player.name)).toEqual(['Cat', 'Ann']);
     expect(opponents(state({ localPlayerId: 'a' })).map((player) => player.name)).toEqual(['Ben', 'Cat']);
+  });
+
+  /*
+   * The row on screen is read as "who plays after whom", so it has to follow the
+   * direction the turn is actually moving. Ordering it by seat regardless said the
+   * opposite of the truth for the whole rest of a round after a Change Direction.
+   */
+  it('reverses the row with the direction of play', () => {
+    const reversed = state({ publicState: { ...publicState, direction: -1 } });
+    expect(opponents(reversed).map((player) => player.name)).toEqual(['Ann', 'Cat']);
+    expect(opponents({ ...reversed, localPlayerId: 'a' }).map((player) => player.name)).toEqual([
+      'Cat',
+      'Ben',
+    ]);
+  });
+
+  it('names the player who follows the local seat, each way round', () => {
+    expect(nextAfterMe(state())).toBe('Cat');
+    expect(nextAfterMe(state({ publicState: { ...publicState, direction: -1 } }))).toBe('Ann');
+  });
+
+  it('steps over a seat that has left when naming who follows', () => {
+    const left = {
+      ...publicState,
+      players: [
+        { id: 'a', name: 'Ann', cardCount: 3 },
+        { id: 'b', name: 'Ben', cardCount: 2 },
+        { id: 'c', name: 'Cat', cardCount: 7, left: true },
+      ],
+    };
+    expect(nextAfterMe(state({ publicState: left }))).toBe('Ann');
+  });
+
+  it('names nobody without a table, without a seat, or alone at one', () => {
+    expect(nextAfterMe(state({ publicState: null }))).toBeNull();
+    expect(nextAfterMe(state({ localPlayerId: null }))).toBeNull();
+    expect(nextAfterMe(state({ localPlayerId: 'zz' }))).toBeNull();
+    expect(
+      nextAfterMe(
+        state({ publicState: { ...publicState, players: [{ id: 'b', name: 'Ben', cardCount: 2 }] } }),
+      ),
+    ).toBeNull();
   });
 
   it('carries connection health and the current-turn flag', () => {

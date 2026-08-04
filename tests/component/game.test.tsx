@@ -85,6 +85,8 @@ const redPlusTwo: Card = { id: 'c9', kind: 'plusTwo', color: 'red' };
 const king: Card = { id: 'c10', kind: 'king' };
 const breakPlusThree: Card = { id: 'c11', kind: 'breakPlusThree' };
 
+const CAROL_ID = 'pl_carol00000';
+
 describe('table layout', () => {
   it('shows the opponent face down with a card count, never their cards', () => {
     enterGame();
@@ -95,12 +97,69 @@ describe('table layout', () => {
     expect(within(opponents).getByRole('img', { name: 'קלף הפוך' })).toBeInTheDocument();
   });
 
-  it('shows the current colour, direction and whose turn it is', () => {
+  it('shows the current colour, the play order and whose turn it is', () => {
     enterGame();
     renderApp();
     expect(screen.getByText(/הצבע הנוכחי:/)).toBeInTheDocument();
-    expect(screen.getByText('כיוון המשחק: קדימה')).toBeInTheDocument();
+    expect(screen.getByText('אחריך: אלי')).toBeInTheDocument();
     expect(screen.getByText('תור שלך')).toBeInTheDocument();
+  });
+
+  /**
+   * The play order used to be a rotating arrow over the word "forwards", with the
+   * words hidden outright on a narrow phone. Read off a row of seats, that arrow
+   * says whichever way round the reader bends the row — and in a right-to-left
+   * layout that is the opposite of what it meant. So the order is a name now: the
+   * seat row and the pill above it both turn round when the direction does, and
+   * neither of them needs a clock face to be read.
+   */
+  describe('which way play is going', () => {
+    /** Three seats, so reversing the order is a visible difference. */
+    function threeHanded(direction: 1 | -1): void {
+      const fixture = enterGame({ myTurn: true });
+      setState({
+        publicState: {
+          ...fixture.publicState,
+          direction,
+          currentPlayerId: HOST_ID,
+          players: [
+            { id: HOST_ID, name: 'דנה', cardCount: 5 },
+            { id: GUEST_ID, name: 'אלי', cardCount: 5 },
+            { id: CAROL_ID, name: 'נועה', cardCount: 5 },
+          ],
+        },
+        lobby: lobbyFixture({
+          phase: 'inGame',
+          players: [
+            { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+            { id: GUEST_ID, name: 'אלי', isHost: false, health: 'connected', seat: 1 },
+            { id: CAROL_ID, name: 'נועה', isHost: false, health: 'connected', seat: 2 },
+          ],
+        }),
+      });
+    }
+
+    function seatOrder(): string[] {
+      return [...screen.getByRole('region', { name: 'שאר השחקנים' }).querySelectorAll('.seat__name')].map(
+        (node) => node.textContent ?? '',
+      );
+    }
+
+    it('names the seat that follows yours, and orders the row the same way', () => {
+      threeHanded(1);
+      renderApp();
+      expect(screen.getByText('אחריך: אלי')).toBeInTheDocument();
+      expect(seatOrder()).toEqual(['אלי', 'נועה']);
+      expect(screen.queryByText('הפוך')).not.toBeInTheDocument();
+    });
+
+    it('turns both round, and says so, once the direction is reversed', () => {
+      threeHanded(-1);
+      renderApp();
+      expect(screen.getByText('אחריך: נועה')).toBeInTheDocument();
+      expect(seatOrder()).toEqual(['נועה', 'אלי']);
+      expect(screen.getByText('הפוך')).toBeInTheDocument();
+    });
   });
 
   it('names the opponent when it is their turn', () => {
@@ -454,17 +513,17 @@ describe('the +2 run, the King and the +3', () => {
     setState({ drawCard });
     const { user } = renderApp();
 
-    expect(screen.getByText('מחכים לך 4 קלפים. אפשר לענות בקח 2, או לקחת אותם.')).toBeInTheDocument();
+    expect(screen.getByText('מחכים לך 4 קלפים. אפשר לענות בקח 2 או במלך, או לקחת אותם.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'לקיחת 4 קלפים' }));
     expect(drawCard).toHaveBeenCalled();
   });
 
-  it('offers only the +2 against a pending run — not the King', () => {
+  it('offers the +2 and the King against a pending run, and nothing else', () => {
     situation({ hand: [redPlusTwo, king, blue5], discardTop: red9, activeColor: 'red', pendingDraw: 2 });
     renderApp();
 
     expectPlayable('הנחת אדום קח 2');
-    expectRefused('הנחת מלך');
+    expectPlayable('הנחת מלך');
     expectRefused('הנחת כחול 5');
   });
 

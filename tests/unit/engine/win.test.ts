@@ -32,16 +32,70 @@ describe('win detection', () => {
     expect(eventTypes(events)).toEqual(['cardPlayed', 'playerWon']);
   });
 
-  it('wins on a plus card without granting an extra turn', () => {
+  /*
+   * A Plus is the one card that cannot end a round. It owes another card and an
+   * empty hand has none, so the debt is paid from the pile and the round goes on —
+   * with its owner back on a single card, and back to owing a declaration for it.
+   */
+  it('does not win on a plus: the card it owes comes from the pile instead', () => {
     const state = makeState({
       ...declared,
       hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1', 'blue:3') },
+      drawPile: cards('green:4', 'green:5'),
       discardPile: cards('red:9'),
     });
     const { state: next, events } = expectOk(playOnly(state, 'p-alice'));
-    expect(next.phase).toBe('finished');
+    expect(next.phase).toBe('playing');
+    expect(next.winnerId).toBeNull();
+    expect(next.hands['p-alice']).toHaveLength(1);
     expect(next.pendingPlus).toBe(false);
-    expect(eventTypes(events)).toEqual(['cardPlayed', 'playerWon']);
+    // A different card, so the old declaration does not carry over onto it.
+    expect(next.declaredLastCard).toEqual([]);
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'plusDeniedWin', 'cardDrawn', 'turnChanged']);
+    expect(events.find((event) => event.type === 'plusDeniedWin')).toMatchObject({ drew: 1 });
+  });
+
+  it('closes a sequence that ended on the plus rather than leaving it open', () => {
+    const state = makeState({
+      ...declared,
+      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 1, openedWithSuperTaki: false },
+      hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1', 'blue:3') },
+      drawPile: cards('green:4'),
+      discardPile: cards('red:taki'),
+      activeColor: 'red',
+    });
+    const { state: next, events } = expectOk(playOnly(state, 'p-alice'));
+    expect(next.phase).toBe('playing');
+    expect(next.takiMode).toBeNull();
+    expect(eventTypes(events)).toEqual([
+      'cardPlayed',
+      'takiClosed',
+      'plusDeniedWin',
+      'cardDrawn',
+      'turnChanged',
+    ]);
+  });
+
+  /*
+   * The one case where a Plus does win: an obligation nothing can pay cannot hold
+   * the round open, or the table would sit for ever on a player who is out of cards
+   * and out of pile.
+   */
+  it('wins on a plus after all when there is nothing left to draw', () => {
+    const state = makeState({
+      ...declared,
+      hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1', 'blue:3') },
+      // Nothing in the pile, and nothing recyclable either: the Plus itself is the
+      // only card the discard pile will hold, and the visible top card stays put.
+      drawPile: [],
+      discardPile: [],
+      activeColor: 'red',
+    });
+    const { state: next, events } = expectOk(playOnly(state, 'p-alice'));
+    expect(next.phase).toBe('finished');
+    expect(next.winnerId).toBe('p-alice');
+    expect(next.pendingPlus).toBe(false);
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'drawPileExhausted', 'playerWon']);
   });
 
   it('wins on a taki card without leaving the sequence open', () => {
