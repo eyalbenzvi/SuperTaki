@@ -307,15 +307,13 @@ export const en = {
   'event.nudged': '{name} is waiting for you.',
 
   'reject.nothingToSkip': 'That player is not the one the table is waiting for.',
+  'reject.tablePaused': 'The table is paused. Nothing moves until it carries on.',
   'reject.alreadyLeft': 'That player has already left the round.',
 
   'absent.title': 'Waiting for {name}',
   'absent.holdingSeat': 'Their seat is being held: {time} left.',
-  'absent.skipping': 'Passing their turn in {seconds}s.',
   'absent.skipNow': 'Pass their turn',
   'absent.removeFromRound': 'Remove from the round',
-  'absent.returned': '{name} is back.',
-  'absent.left': '{name} left the round. Their cards stay out of play.',
 
   'pause.request': 'Ask the table to wait',
   'pause.resume': 'Carry on',
@@ -334,7 +332,6 @@ export const en = {
   'nudge.send': 'Nudge',
   'nudge.sent': 'Nudge sent.',
   'nudge.received': '{name} nudged you — it is your turn.',
-  'nudge.yourTurn': 'It is your turn.',
 
   'host.resumeTitle': 'You were hosting a room',
   'host.resumeBody': 'Room {room} is still yours. Take it back and the table can carry on.',
@@ -345,10 +342,10 @@ export const en = {
   'host.selfDemoted':
     'This device cannot reach the connection service, so nobody new can join. Players already here are unaffected.',
   'host.handoffTitle': 'Hand the room over?',
-  'host.handoffBody': '{name} takes over as host and the round carries on. You leave as an ordinary player.',
+  'host.handoffBody':
+    '{name} takes over as host and the round carries on. You leave as an ordinary player. Closing the room instead ends the game for everyone.',
   'host.handoffAction': 'Hand over and leave',
   'host.handoffClose': 'Close the room for everyone',
-  'host.handoffMoved': 'The room moved to {name}. Reconnecting…',
 
   'closed.restarting': 'The host is coming back. Your seat is being held.',
   'closed.handoff': 'Another player has taken over as host.',

@@ -11,6 +11,21 @@ import { BROADCAST, awaitSettled, createRoom, joinRoom, onTurn, openApp } from '
  * inside the viewport, and the panel inside the region that holds it.
  */
 
+/**
+ * Resizes and waits for the reflow before anything reads geometry.
+ *
+ * `setViewportSize` resolves before layout has settled, so measuring straight
+ * afterwards samples mid-reflow numbers. That produced a failure about one run in
+ * four — a flake in the very test whose job is catching layout regressions, which
+ * is the worst place to have one.
+ */
+async function resize(page: Page, size: { width: number; height: number }): Promise<void> {
+  await page.setViewportSize(size);
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  );
+}
+
 interface Report {
   readonly cardsOutsideViewport: number;
   readonly panelOverflow: number;
@@ -83,7 +98,7 @@ test.describe('the table fits the screen', () => {
     await expect(host.locator('.hand .card')).toHaveCount(8);
 
     // A phone upright, with the hand it is dealt.
-    await host.setViewportSize({ width: 390, height: 664 });
+    await resize(host, { width: 390, height: 664 });
     let report = await measure(host);
     expect(report.cardsOutsideViewport, 'dealt hand, upright').toBe(0);
     expect(report.panelOverflow, 'pile panel, upright').toBeLessThanOrEqual(0);
@@ -91,13 +106,13 @@ test.describe('the table fits the screen', () => {
 
     // The same phone on its side: this is where the hand used to be pushed clean
     // off the bottom of the screen.
-    await host.setViewportSize({ width: 780, height: 360 });
+    await resize(host, { width: 780, height: 360 });
     report = await measure(host);
     expect(report.cardsOutsideViewport, 'dealt hand, landscape').toBe(0);
     expect(report.panelOverflow, 'pile panel, landscape').toBeLessThanOrEqual(0);
 
     // A hand well past the point where one row stops fitting.
-    await host.setViewportSize({ width: 390, height: 664 });
+    await resize(host, { width: 390, height: 664 });
     const held = await growHand(host, guest, 13);
     expect(held, 'the hand did not grow enough to test wrapping').toBeGreaterThanOrEqual(11);
 
@@ -109,7 +124,7 @@ test.describe('the table fits the screen', () => {
     // Wrapped rather than scrolled sideways: that is what puts them all on screen.
     expect(report.handRows).toBeGreaterThan(1);
 
-    await host.setViewportSize({ width: 780, height: 360 });
+    await resize(host, { width: 780, height: 360 });
     report = await measure(host);
     expect(report.cardsOutsideViewport, 'big hand, landscape').toBe(0);
     expect(report.panelOverflow, 'pile panel, big hand, landscape').toBeLessThanOrEqual(0);
@@ -136,7 +151,7 @@ test.describe('the table fits the screen', () => {
     await host.bringToFront();
     await host.getByRole('button', { name: 'Start game' }).click();
     await expect(host.locator('.hand .card')).toHaveCount(8);
-    await host.setViewportSize({ width: 390, height: 664 });
+    await resize(host, { width: 390, height: 664 });
 
     const seen = new Set<number>();
     const deadline = Date.now() + 25_000;

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import {
   GUEST_ID,
   HOST_ID,
@@ -585,5 +585,52 @@ describe('the last card declaration', () => {
     renderApp();
     const opponents = screen.getByRole('region', { name: 'שאר השחקנים' });
     expect(within(opponents).getByText('הכריז/ה')).toBeInTheDocument();
+  });
+
+  it('counts down the seat it is holding, and keeps counting', async () => {
+    /*
+     * The headline of the whole effort, and it had no test: a countdown that does
+     * not advance is not a countdown. The first implementation cancelled the clock
+     * skew against the *current* time rather than the arrival time, which reduced
+     * the arithmetic to a constant, so it re-rendered the same number every second.
+     */
+    vi.useFakeTimers();
+    try {
+      const sentAt = 1_000_000;
+      enterGame();
+      setState({
+        lobby: lobbyFixture({
+          phase: 'inGame',
+          sentAt,
+          seatGraceMs: 300_000,
+          waitingFor: GUEST_ID,
+          waitingReason: 'absent',
+          players: [
+            { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+            {
+              id: GUEST_ID,
+              name: 'אלי',
+              isHost: false,
+              health: 'disconnected',
+              seat: 1,
+              // Away for a minute already, by the host's own reckoning.
+              absentSince: sentAt - 60_000,
+            },
+          ],
+        }),
+      });
+      renderApp();
+
+      // Five minutes' grace less the minute already gone.
+      expect(screen.getByText(/4:00/)).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(3_000);
+        await Promise.resolve();
+      });
+      expect(screen.getByText(/3:57/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

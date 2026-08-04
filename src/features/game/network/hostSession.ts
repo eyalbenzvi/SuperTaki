@@ -196,6 +196,8 @@ export class HostSession implements Session {
   private selfDemoted = false;
   /** When the table started waiting for the seat on turn. */
   private waitingSince: number | null = null;
+  /** When the watchdog last reported a gap, so the cycle after it is forgiving. */
+  private lateTickAt: number | null = null;
   private handoffTo: string | null = null;
   private handoffTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -205,7 +207,11 @@ export class HostSession implements Session {
   ) {
     this.transport = options.transport;
     this.observer = options.observer;
-    this.now = options.now ?? Date.now;
+    // Wrapped rather than captured: taking a reference to `Date.now` freezes
+    // whichever implementation was installed when the session was built, which
+    // makes the clock unswappable afterwards and is a trap for anything that
+    // needs to reason about time passing.
+    this.now = options.now ?? ((): number => Date.now());
     this.seedFactory = options.seedFactory ?? (() => randomInt(0x7fffffff));
     this.maxPlayers = Math.min(Math.max(options.maxPlayers, MIN_PLAYERS), MAX_PLAYERS);
     this.tableLanguage = options.tableLanguage;
@@ -413,6 +419,7 @@ export class HostSession implements Session {
       pausedBy: this.pausedBy,
       waitingFor: waiting.playerId,
       waitingReason: waiting.reason,
+      waitingSince: this.waitingSince,
       abandonVotes: [...this.abandonVotes],
       generation: this.generation,
     };
@@ -544,6 +551,18 @@ export class HostSession implements Session {
     this.persist();
   }
 
+  /** Everything that has to be true when a seat is heard from again. */
+  private markPresent(seat: Seat): void {
+    seat.lastSeenAt = this.now();
+    if (seat.health === 'connected') {
+      return;
+    }
+    seat.health = 'connected';
+    seat.absentSince = null;
+    seat.skippedWhileAway = false;
+    record('seatReturned', seat.name, { seat: seat.seat });
+  }
+
   private markAbsent(seat: Seat): void {
     seat.peerId = null;
     if (seat.health !== 'disconnected') {
@@ -631,12 +650,9 @@ export class HostSession implements Session {
     if (!seat) {
       return;
     }
-    seat.lastSeenAt = this.now();
-    if (seat.health !== 'connected') {
-      seat.health = 'connected';
-      seat.absentSince = null;
-      seat.skippedWhileAway = false;
-      record('seatReturned', seat.name, { seat: seat.seat });
+    const wasAway = seat.health !== 'connected';
+    this.markPresent(seat);
+    if (wasAway) {
       this.emitLobby();
     }
   }
@@ -712,6 +728,16 @@ export class HostSession implements Session {
   private handleResumeRequest(entry: ConnectionRecord, playerId: string, resumeToken: string): void {
     const seat = this.seatFor(playerId);
     if (!seat || seat.isHost) {
+      this.rejectJoin(entry.connection, 'unknownSeat');
+      return;
+    }
+    if (seat.left) {
+      /*
+       * The seat was retired from this round. Seating them anyway would put a
+       * player at a table where every move they make is refused as coming from
+       * somebody who has left — a dead end with no explanation. `unknownSeat` makes
+       * the client drop the credential, so the offer they get is a fresh join.
+       */
       this.rejectJoin(entry.connection, 'unknownSeat');
       return;
     }
@@ -814,6 +840,9 @@ export class HostSession implements Session {
     for (const seat of this.seats) {
       seat.left = false;
       seat.skippedWhileAway = false;
+      // A mis-tapped "leave" in one round must not cost this player their grace for
+      // the rest of the evening.
+      seat.saidGoodbye = false;
     }
     this.emitLobby();
     this.broadcastGameState();
@@ -846,7 +875,10 @@ export class HostSession implements Session {
     }
     const version = this.game?.version ?? 0;
     this.observer({ type: 'events', events });
-    this.broadcast('gameEvents', { version, events: events.slice(0, 64) });
+    // The *newest* 64, not the first: the client's own event floor means anything
+    // dropped here is never re-sent, and the lines a player needs are the recent
+    // ones.
+    this.broadcast('gameEvents', { version, events: events.slice(-64) });
   }
 
   /** Applies a local (host player) action through the same authoritative path. */
@@ -854,9 +886,27 @@ export class HostSession implements Session {
     this.applyAction(this.localPlayerId, action, null);
   }
 
+  /**
+   * Intents that belong to a turn, and may therefore be checked against one.
+   *
+   * Declaring last card, catching somebody who did not, and answering a +3 are
+   * deliberately absent: they are legal at any moment, they race each other on
+   * purpose, and gating them on a turn would hand every tie to whichever player
+   * broke the rule.
+   */
+  private static readonly TURN_SCOPED: ReadonlySet<GameAction['type']> = new Set<GameAction['type']>([
+    'playCard',
+    'drawCard',
+    'closeTaki',
+  ]);
+
   private handleAction(
     entry: ConnectionRecord,
-    payload: { readonly action: GameAction; readonly requestId?: string; readonly turnToken?: unknown },
+    payload: {
+      readonly action: GameAction;
+      readonly requestId?: string;
+      readonly turnToken?: { readonly currentPlayerId: string | null; readonly turnSeq: number };
+    },
   ): void {
     if (!entry.playerId) {
       return;
@@ -884,6 +934,28 @@ export class HostSession implements Session {
       }
       return;
     }
+    /*
+     * A turn-scoped intent computed against a turn that has since moved on is
+     * refused rather than applied. Replaying a stale one is the real danger: a
+     * card that was legal three moves ago may be illegal now, or already played.
+     * A breaker answering an open +3 is exempt even though it is a `playCard`,
+     * because the whole point of that card is that it is played out of turn.
+     */
+    const token = payload.turnToken;
+    const answeringBreaker =
+      this.game?.plusThree !== null &&
+      this.game?.plusThree !== undefined &&
+      payload.action.type === 'playCard';
+    if (
+      token !== undefined &&
+      !answeringBreaker &&
+      HostSession.TURN_SCOPED.has(payload.action.type) &&
+      this.game !== null &&
+      token.turnSeq !== this.game.turnSeq
+    ) {
+      this.rejectAction(entry, 'notYourTurn', payload.requestId);
+      return;
+    }
     this.applyAction(entry.playerId, payload.action, entry, payload.requestId);
   }
 
@@ -897,8 +969,10 @@ export class HostSession implements Session {
       return;
     }
     if (this.pausedBy !== null) {
-      // A pause everybody can see is worth honouring, or it is decoration.
-      this.rejectAction(entry, 'gameFinished', requestId);
+      // A pause everybody can see is worth honouring, or it is decoration — and it
+      // needs its own code, because telling a player the round is over when the
+      // table is merely waiting is worse than saying nothing.
+      this.rejectAction(entry, 'tablePaused', requestId);
       return;
     }
     /*
@@ -1000,9 +1074,15 @@ export class HostSession implements Session {
     if (!seat || seat.health === 'connected' || seat.left) {
       return false;
     }
-    seat.skippedWhileAway = true;
-    record('turnSkipped', seat.name, { seat: seat.seat });
-    return this.applyHostCommand({ type: 'skipTurn', playerId });
+    const applied = this.applyHostCommand({ type: 'skipTurn', playerId });
+    if (applied) {
+      // Only after the engine has agreed. Latching the flag first drops this seat's
+      // future grace to nought for ever on a rejection, and writes a skip into the
+      // diagnostics log that never happened.
+      seat.skippedWhileAway = true;
+      record('turnSkipped', seat.name, { seat: seat.seat });
+    }
+    return applied;
   }
 
   /** Takes an absent player out of the round, keeping their cards out of play. */
@@ -1011,9 +1091,11 @@ export class HostSession implements Session {
     if (!seat || seat.left) {
       return false;
     }
-    seat.left = true;
     const applied = this.applyHostCommand({ type: 'leaveGame', playerId });
     if (applied) {
+      // Marked only once the engine has agreed, or the lobby would say a seat had
+      // left while the engine kept dealing it turns.
+      seat.left = true;
       this.emitLobby();
       this.persist();
     }
@@ -1222,15 +1304,29 @@ export class HostSession implements Session {
     const now = this.now();
 
     if (late) {
-      // We were asleep. Nobody is convicted on that evidence; everybody is asked.
+      /*
+       * We were asleep. Nobody is convicted on that evidence, and everybody is
+       * asked again — but the *last heard from* clock is deliberately not reset.
+       *
+       * Resetting it was the obvious thing and it was wrong: it fabricates
+       * evidence of recent contact, so a peer that had genuinely been gone the
+       * whole time was forgiven every occasion the host's own tab slept. What is
+       * cleared is the probe accounting, because those questions were asked into a
+       * gap and their silence proves nothing. The answer to the fresh ones does.
+       */
       record('suspicion', 'host watchdog tick was late');
       for (const seat of this.seats) {
         seat.probes.reset();
-        seat.lastSeenAt = now;
       }
+      this.lateTickAt = now;
       this.probeAll();
       return;
     }
+    /*
+     * Immediately after a gap, silence is still ambiguous: the fresh probes have
+     * not had time to be answered. One cycle of grace, then the normal rules.
+     */
+    const forgiveSilence = this.lateTickAt !== null && now - this.lateTickAt < intervalMs * 2;
 
     let changed = false;
     const nonce = randomHex(4);
@@ -1259,20 +1355,23 @@ export class HostSession implements Session {
       seat.probes.sent(nonce, now);
       const oldest = seat.probes.oldestAgeMs(now);
       const silence = now - seat.lastSeenAt;
-      const next: ConnectionHealth =
-        silence > silentAfterMs(intervalMs) || (oldest !== null && oldest > CHANNEL_DEAD_MS)
-          ? 'disconnected'
-          : seat.probes.unanswered >= UNSTABLE_AFTER_MISSES
-            ? 'unstable'
-            : 'connected';
+      const dead =
+        !forgiveSilence &&
+        (silence > silentAfterMs(intervalMs) || (oldest !== null && oldest > CHANNEL_DEAD_MS));
+      const next: ConnectionHealth = dead
+        ? 'disconnected'
+        : seat.probes.unanswered >= UNSTABLE_AFTER_MISSES
+          ? 'unstable'
+          : 'connected';
       if (next !== seat.health) {
         if (next === 'disconnected') {
           this.markAbsent(seat);
+        } else if (next === 'connected') {
+          // The same bookkeeping as an inbound message, so a seat recovered by the
+          // heartbeat is not left carrying flags that cost it its next grace.
+          this.markPresent(seat);
         } else {
           seat.health = next;
-          if (next === 'connected') {
-            seat.absentSince = null;
-          }
         }
         changed = true;
       }
@@ -1383,6 +1482,42 @@ export class HostSession implements Session {
 
   // ---------------------------------------------------------------- snapshot
 
+  /**
+   * Test seam: forces one seat's hand to a given size.
+   *
+   * Some rules only engage at a specific hand size — "last card" being the obvious
+   * one — and a test that cannot reach that state ends up asserting that the engine
+   * refuses an illegal move, which it would with the feature deleted.
+   */
+  forceHandForTests(playerId: string, size: number): void {
+    if (!this.game) {
+      return;
+    }
+    const hand = this.game.hands[playerId] ?? [];
+    this.game = { ...this.game, hands: { ...this.game.hands, [playerId]: hand.slice(0, size) } };
+    this.broadcastGameState();
+  }
+
+  /**
+   * Test seam: opens a breaker window that is waiting on one seat.
+   *
+   * Reaching this state through real play needs a specific deal, and the state
+   * itself is the one that freezes a whole table — so it is worth being able to
+   * construct directly rather than hoping a seed produces it.
+   */
+  forcePlusThreeForTests(awaitedPlayerId: string): void {
+    if (!this.game) {
+      return;
+    }
+    this.game = {
+      ...this.game,
+      plusThree: { playerId: this.localPlayerId, awaiting: [awaitedPlayerId] },
+      version: this.game.version + 1,
+    };
+    this.versionFloor = this.game.version;
+    this.broadcastGameState();
+  }
+
   /** The room in a form that can be written down and read back. */
   snapshot(): HostRestoreState {
     return {
@@ -1471,18 +1606,25 @@ export class HostSession implements Session {
     }
     record('handover', 'accepted', { by: entry.playerId, generation });
     for (const other of this.connections.values()) {
-      if (other.playerId && other.connection.open) {
+      // Not the successor: it is becoming the host, not looking for one. Telling it
+      // to go and find the new host would have it chase its own peer id.
+      if (other !== entry && other.playerId && other.connection.open) {
         // Only the generation travels: the id is derived from it, so there is
         // nothing to get wrong and nothing to look up.
         this.send(other.connection, 'hostClosed', { reason: 'handoff', generation });
       }
     }
-    this.destroy('leftVoluntarily');
+    // Silent: the table has already been told where the room went, and following
+    // that with the ordinary "the host left" would be a contradiction — and
+    // `hostLeft` is terminal for a client, so it would strand everybody. Over the
+    // in-memory transport `close()` is synchronous and hides this; over a real data
+    // channel it is not, and the goodbye really is sent.
+    this.destroy('leftVoluntarily', { silent: true });
   }
 
   // ---------------------------------------------------------------- teardown
 
-  destroy(reason: SessionClosedReason = 'leftVoluntarily'): void {
+  destroy(reason: SessionClosedReason = 'leftVoluntarily', options: { silent?: boolean } = {}): void {
     if (this.destroyed) {
       return;
     }
@@ -1494,7 +1636,7 @@ export class HostSession implements Session {
       this.handoffTimer = null;
     }
     for (const entry of this.connections.values()) {
-      if (entry.connection.open) {
+      if (entry.connection.open && options.silent !== true) {
         this.send(entry.connection, 'hostClosed', { reason: 'hostLeft' });
       }
       entry.unsubscribe();

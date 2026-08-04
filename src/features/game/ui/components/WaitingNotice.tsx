@@ -3,7 +3,7 @@ import { Button } from '../../../../components/Button.tsx';
 import { Callout } from '../../../../components/Callout.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
-import { absentPlayers, isHost, playerName, seatHoldRemainingMs, waitingFor } from '../../state/selectors.ts';
+import { absentPlayers, isHost, playerName, waitingFor } from '../../state/selectors.ts';
 
 /** `4:07`, or `0:09`. */
 function formatDuration(ms: number): string {
@@ -13,15 +13,60 @@ function formatDuration(ms: number): string {
   return `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
 }
 
+interface SeatHoldProps {
+  readonly name: string;
+  /** Milliseconds already elapsed when the host built the snapshot. */
+  readonly elapsedWhenSent: number;
+  readonly graceMs: number;
+  readonly actions: ReactNode;
+}
+
+/**
+ * One held seat, counting down.
+ *
+ * The arithmetic spans two clocks and neither is read while rendering. The host
+ * tells us how long the seat had already been absent when it built the snapshot —
+ * both of its readings are on its own clock, so the skew between the two devices
+ * cancels — and everything after that is local elapsed time, counted by a ticking
+ * integer rather than by asking what time it is.
+ *
+ * The caller keys this on the snapshot, so a fresh one restarts the count from the
+ * host's new number instead of drifting away from it.
+ */
+function SeatHold({ name, elapsedWhenSent, graceMs, actions }: SeatHoldProps): ReactNode {
+  const t = useT();
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSeconds((value) => value + 1);
+    }, 1_000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
+
+  const remaining = Math.max(graceMs - (elapsedWhenSent + seconds * 1_000), 0);
+  return (
+    <Callout
+      tone="warning"
+      icon="hourglass"
+      title={t('absent.title', { name })}
+      role="status"
+      actions={actions}
+    >
+      {t('absent.holdingSeat', { time: formatDuration(remaining) })}
+    </Callout>
+  );
+}
+
 /**
  * Who the table is waiting for, and for how long.
  *
  * This is the whole emotional difference the resilience work is for. Before it, a
  * player who lost their connection produced a flat "disconnected" badge and,
  * sooner or later, a game that had ended; now the table says "we're holding Noa's
- * seat, 2:41" and carries on playing round her. The countdown is rendered locally
- * from a single absolute timestamp the host sends, so it costs no traffic and
- * cannot drift against the host's own clock.
+ * seat, 2:41" and carries on playing round her.
  */
 export function WaitingNotice(): ReactNode {
   const t = useT();
@@ -32,24 +77,9 @@ export function WaitingNotice(): ReactNode {
   const localPlayerId = useAppStore((state) => state.localPlayerId);
   const skipAbsentTurn = useAppStore((state) => state.skipAbsentTurn);
   const removeFromRound = useAppStore((state) => state.removeFromRound);
-  const [, setTick] = useState(0);
 
   const absent = absentPlayers({ lobby });
   const waiting = waitingFor({ lobby });
-
-  // One second is the right cadence for a countdown and the wrong one for
-  // anything else, so it only runs while there is actually a countdown on screen.
-  useEffect(() => {
-    if (absent.length === 0) {
-      return;
-    }
-    const timer = setInterval(() => {
-      setTick((value) => value + 1);
-    }, 1_000);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [absent.length]);
 
   if (pausedBy !== null) {
     const who = pausedBy === localPlayerId ? null : playerName({ publicState, lobby }, pausedBy);
@@ -65,18 +95,21 @@ export function WaitingNotice(): ReactNode {
   }
 
   const host = isHost({ role });
+  const graceMs = lobby?.seatGraceMs ?? 0;
+  const sentAt = lobby?.sentAt;
+
   return (
     <>
       {absent.map((player) => {
-        const remaining = seatHoldRemainingMs({ lobby }, player.absentSince);
         const isWaitingOnThem = waiting?.playerId === player.id && waiting.reason === 'absent';
         return (
-          <Callout
-            key={player.id}
-            tone="warning"
-            icon="hourglass"
-            title={t('absent.title', { name: player.name })}
-            role="status"
+          <SeatHold
+            // Re-anchored on every snapshot, so the local count never drifts from
+            // the host's own measurement of the same absence.
+            key={`${player.id}:${String(sentAt ?? 0)}`}
+            name={player.name}
+            elapsedWhenSent={sentAt !== undefined ? Math.max(sentAt - player.absentSince, 0) : 0}
+            graceMs={graceMs}
             actions={
               host && isWaitingOnThem ? (
                 <>
@@ -99,9 +132,7 @@ export function WaitingNotice(): ReactNode {
                 </>
               ) : null
             }
-          >
-            {t('absent.holdingSeat', { time: formatDuration(remaining) })}
-          </Callout>
+          />
         );
       })}
     </>

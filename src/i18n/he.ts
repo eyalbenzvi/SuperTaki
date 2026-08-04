@@ -296,15 +296,13 @@ export const he: Translations = {
   'event.nudged': '{name} מחכה לך.',
 
   'reject.nothingToSkip': 'השולחן לא מחכה לשחקן הזה.',
+  'reject.tablePaused': 'המשחק מושהה. שום דבר לא מתקדם עד שממשיכים.',
   'reject.alreadyLeft': 'השחקן הזה כבר עזב את הסבב.',
 
   'absent.title': 'מחכים ל{name}',
   'absent.holdingSeat': 'שומרים את המושב: נשארו {time}.',
-  'absent.skipping': 'מעבירים את התור בעוד {seconds} שניות.',
   'absent.skipNow': 'העברת התור',
   'absent.removeFromRound': 'הסרה מהסבב',
-  'absent.returned': '{name} חזר.',
-  'absent.left': '{name} עזב את הסבב. הקלפים שלו יוצאים מהמשחק.',
 
   'pause.request': 'בקשה מהשולחן לחכות',
   'pause.resume': 'ממשיכים',
@@ -322,7 +320,6 @@ export const he: Translations = {
   'nudge.send': 'תזכורת',
   'nudge.sent': 'התזכורת נשלחה.',
   'nudge.received': '{name} שלח לך תזכורת — התור שלך.',
-  'nudge.yourTurn': 'התור שלך.',
 
   'host.resumeTitle': 'ניהלת חדר',
   'host.resumeBody': 'חדר {room} עדיין שלך. אפשר לחזור לנהל אותו והמשחק ימשיך.',
@@ -333,10 +330,10 @@ export const he: Translations = {
   'host.selfDemoted':
     'המכשיר הזה לא מצליח להגיע לשירות החיבור, ולכן אף שחקן חדש לא יכול להצטרף. מי שכבר כאן לא מושפע.',
   'host.handoffTitle': 'להעביר את ניהול החדר?',
-  'host.handoffBody': '{name} יהפוך למנחה והסבב ימשיך. את/ה יוצא/ת כשחקן רגיל.',
+  'host.handoffBody':
+    '{name} יהפוך למנחה והסבב ימשיך. את/ה יוצא/ת כשחקן רגיל. סגירת החדר, לחלופין, תסיים את המשחק לכולם.',
   'host.handoffAction': 'העברה ויציאה',
   'host.handoffClose': 'סגירת החדר לכולם',
-  'host.handoffMoved': 'החדר עבר ל{name}. מתחברים מחדש…',
 
   'closed.restarting': 'המנחה חוזר. המושב שלך נשמר.',
   'closed.handoff': 'שחקן אחר קיבל את ניהול החדר.',

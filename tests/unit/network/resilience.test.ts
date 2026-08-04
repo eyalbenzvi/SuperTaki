@@ -109,7 +109,7 @@ describe('a lost acknowledgement', () => {
     client.session.submitAction({ type: 'drawCard' }, 'rq-1');
     await flush();
     const afterFirst = room.hostRecorder.last('publicState')?.state.version ?? 0;
-    expect(afterFirst).toBeGreaterThan(before);
+    expect(afterFirst).toBe(before + 1);
 
     client.session.submitAction({ type: 'drawCard' }, 'rq-1');
     await flush();
@@ -119,7 +119,7 @@ describe('a lost acknowledgement', () => {
     // catch is eight cards, so this is not a tidiness matter.
     expect(room.hostRecorder.last('publicState')?.state.version).toBe(afterFirst);
     const accepted = client.recorder.ofType('actionAccepted');
-    expect(accepted.length).toBeGreaterThanOrEqual(2);
+    expect(accepted).toHaveLength(2);
     expect(new Set(accepted.map((entry) => entry.version)).size).toBe(1);
 
     client.session.destroy('leftVoluntarily');
@@ -130,21 +130,192 @@ describe('a lost acknowledgement', () => {
     const room = await openRoom();
     const client = await joinRoom(room, 'client-1', 'Dana');
     const first = client.recorder.ofType('identity').length;
-    expect(first).toBeGreaterThan(0);
+    expect(first).toBe(1);
 
-    // A client whose accept was lost re-sends on the same channel. Silence here
-    // used to be terminal — and it took the credential with it, because the
-    // credential arrives in the message that went missing.
-    client.session.submitAction({ type: 'declareLastCard' }, 'rq-x');
+    /*
+     * A client whose accept was lost re-sends `joinRequest` on the same channel.
+     * The host used to return silently because the record already held a seat, so
+     * the one message whose loss costs most was the one nothing recovered from —
+     * and no credential was stored either, since the credential travels in it.
+     */
+    client.session.resendJoinForTests();
     await flush();
+
+    expect(client.recorder.ofType('identity')).toHaveLength(2);
+    const identities = client.recorder.ofType('identity');
+    // The same seat, not a second one.
+    expect(identities[1]?.playerId).toBe(identities[0]?.playerId);
     expect(room.host.connectedPlayerCount).toBe(2);
+    expect(room.hostRecorder.last('lobby')?.lobby.players).toHaveLength(2);
 
     client.session.destroy('leftVoluntarily');
     room.destroy();
   });
 });
 
+describe('a reconnect loop that has to keep going', () => {
+  it('keeps trying after the first attempt fails', async () => {
+    const room = await openRoom();
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    expect(client.session.localPlayerId).not.toBe('');
+    const transport = room.network.get('client-1');
+    expect(transport).toBeDefined();
+
+    vi.useFakeTimers();
+    try {
+      // Every subsequent connect is refused, which is the state a phone is in for
+      // the whole of a network handover.
+      transport?.setConnectFault('unavailable');
+      const before = transport?.connectAttempts ?? 0;
+      client.session.forceReconnectForTests();
+
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      /*
+       * The blocker this pins: the failure path scheduled the next attempt while
+       * the "a connect is in flight" flag was still set, and the scheduler declines
+       * to arm a timer in that state. One attempt, then permanent silence — and the
+       * give-up deadline was never reached either, because it is only consulted
+       * from inside an attempt. Two minutes of backoff is many attempts.
+       */
+      expect((transport?.connectAttempts ?? 0) - before).toBeGreaterThan(3);
+    } finally {
+      vi.useRealTimers();
+      client.session.destroy('leftVoluntarily');
+      room.destroy();
+    }
+  });
+
+  it('reports a failure the player can act on once the seat can no longer be held', async () => {
+    const room = await openRoom();
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    const transport = room.network.get('client-1');
+
+    vi.useFakeTimers();
+    try {
+      transport?.setConnectFault('unavailable');
+      client.session.forceReconnectForTests();
+
+      // Past the point where the host would have vacated the seat: spinning on
+      // past it would be keeping a promise nobody else is keeping.
+      await vi.advanceTimersByTimeAsync(400_000);
+      expect(client.session.connectionPhase).toBe('failed');
+    } finally {
+      vi.useRealTimers();
+      client.session.destroy('leftVoluntarily');
+      room.destroy();
+    }
+  });
+});
+
 describe('a channel that stops carrying traffic', () => {
+  it('notices a channel that reports itself open and carries nothing', async () => {
+    /*
+     * Fake timers are installed *first*, on purpose. A `setInterval` registered
+     * before they are is held by the real clock and never fires under them — which
+     * is a trap worth naming, because a test written the other way round appears to
+     * exercise the heartbeat and in fact advances past a timer that is not there.
+     */
+    vi.useFakeTimers();
+    try {
+      const network = new MemoryNetwork();
+      const hostRecorder = createRecorder();
+      const host = await createHostSession({
+        transport: network.create(HOST_PEER_ID),
+        roomCode: TEST_ROOM,
+        hostDisplayName: 'Host',
+        maxPlayers: 4,
+        tableLanguage: 'he',
+        observer: hostRecorder.observer,
+        heartbeatIntervalMs: 500,
+      });
+      const guestTransport = network.create('client-1');
+      const client = await createClientSession({
+        transport: guestTransport,
+        roomCode: TEST_ROOM,
+        hostPeerId: HOST_PEER_ID,
+        displayName: 'Dana',
+        observer: createRecorder().observer,
+        heartbeatIntervalMs: 100_000,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(host.connectedPlayerCount).toBe(2);
+
+      /*
+       * The failure that matters most, and the one a naive fake cannot express: the
+       * guest's channel still reports itself open, and everything it sends
+       * disappears. Nobody is told anything — which is exactly what a WebRTC
+       * channel does when its ICE path dies.
+       */
+      guestTransport.faults.blackhole = true;
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      const guest = hostRecorder.last('lobby')?.lobby.players.find((player) => !player.isHost);
+      expect(guest?.health).toBe('disconnected');
+      expect(guest?.absentSince).toBeGreaterThan(0);
+
+      client.destroy('leftVoluntarily');
+      host.destroy('leftVoluntarily');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('applies a duplicated action exactly once', async () => {
+    const room = await openRoom();
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    room.host.startGame();
+    await flush();
+
+    const guestId = client.session.localPlayerId;
+    if (room.hostRecorder.last('publicState')?.state.currentPlayerId !== guestId) {
+      room.host.submitLocalAction({ type: 'drawCard' });
+      await flush();
+    }
+
+    // Delivery itself duplicates every frame, as a replaying peer would.
+    const transport = room.network.get('client-1');
+    (transport as unknown as { faults: { duplicate?: boolean } }).faults.duplicate = true;
+
+    const before = room.hostRecorder.last('publicState')?.state.version ?? 0;
+    client.session.submitAction({ type: 'drawCard' }, 'rq-dup');
+    await flush();
+    const after = room.hostRecorder.last('publicState')?.state.version ?? 0;
+
+    // One command's worth of movement, not two. The envelope dedup catches the
+    // wire-level copy; the seat's request id would catch a genuine replay.
+    expect(after).toBe(before + 1);
+
+    client.session.destroy('leftVoluntarily');
+    room.destroy();
+  });
+
+  it('treats a degraded channel as recoverable rather than dead', async () => {
+    const room = await openRoom();
+    const client = await joinRoom(room, 'client-1', 'Dana');
+    await flush();
+    expect(client.session.connectionPhase).toBe('connected');
+    client.recorder.clear();
+
+    // An ICE state of `disconnected` is recoverable — the agent may still
+    // re-nominate a pair — so it must be probed, never closed. Waiting for
+    // `failed` instead, as this once did, means waiting until the library has
+    // already torn the connection down.
+    client.session.degradeForTests();
+    await flush();
+
+    // It was noticed…
+    const phases = client.recorder.ofType('phase').map((entry) => entry.phase);
+    expect(phases).toContain('reconnecting');
+    // …the channel was not closed…
+    expect(client.recorder.ofType('closed')).toHaveLength(0);
+    // …and because the probe was answered, the session settled back by itself.
+    expect(client.session.connectionPhase).toBe('connected');
+
+    client.session.destroy('leftVoluntarily');
+    room.destroy();
+  });
+
   it('does not leak a seat when a client reconnects repeatedly', async () => {
     const room = await openRoom();
     const client = await joinRoom(room, 'client-1', 'Dana');
@@ -232,7 +403,7 @@ describe('the host coming back', () => {
     expect(revived.localPlayerId).toBe(snapshot?.hostPlayerId);
     const state = recorder.last('publicState')?.state;
     expect(state?.version).toBe(versionBefore);
-    expect(recorder.last('hand')?.cards.length).toBeGreaterThan(0);
+    expect(recorder.last('hand')?.cards).toHaveLength(8);
 
     // And the seat credentials still fit, so the players reconnect on their own
     // without being told anything.
@@ -255,56 +426,121 @@ describe('the host coming back', () => {
 
 describe('a table waiting for somebody who is not there', () => {
   it('passes their turn rather than freezing', async () => {
+    /*
+     * Fake timers first, so the host's watchdog interval is one they control.
+     * This test previously branched on whose turn it was and asserted nothing at
+     * all, because seat 0 — always the host — leads the first round: the whole
+     * flagship behaviour of this work had no coverage while appearing to have some.
+     */
     vi.useFakeTimers();
-    let clock = 1_000_000;
-    const now = (): number => clock;
+    try {
+      const network = new MemoryNetwork();
+      const hostRecorder = createRecorder();
+      const host = await createHostSession({
+        transport: network.create(HOST_PEER_ID),
+        roomCode: TEST_ROOM,
+        hostDisplayName: 'Host',
+        maxPlayers: 4,
+        tableLanguage: 'he',
+        observer: hostRecorder.observer,
+        seedFactory: () => 4242,
+        heartbeatIntervalMs: 500,
+      });
+      const client = await createClientSession({
+        transport: network.create('client-1'),
+        roomCode: TEST_ROOM,
+        hostPeerId: HOST_PEER_ID,
+        displayName: 'Dana',
+        observer: createRecorder().observer,
+        heartbeatIntervalMs: 100_000,
+      });
+      await vi.advanceTimersByTimeAsync(10);
 
-    const network = new MemoryNetwork();
-    const hostRecorder = createRecorder();
-    const host = await createHostSession({
-      transport: network.create(HOST_PEER_ID),
-      roomCode: TEST_ROOM,
-      hostDisplayName: 'Host',
-      maxPlayers: 4,
-      tableLanguage: 'he',
-      observer: hostRecorder.observer,
-      seedFactory: () => 4242,
-      heartbeatIntervalMs: 50,
-      now,
-    });
+      host.startGame();
+      await vi.advanceTimersByTimeAsync(10);
+      const guestId = client.localPlayerId;
 
-    const recorder = createRecorder();
-    const client = await createClientSession({
-      transport: network.create('client-1'),
-      roomCode: TEST_ROOM,
-      hostPeerId: HOST_PEER_ID,
-      displayName: 'Dana',
-      observer: recorder.observer,
-      heartbeatIntervalMs: 100_000,
-    });
-    await vi.advanceTimersByTimeAsync(10);
+      // Put the turn on the guest unconditionally, rather than hoping for it.
+      host.submitLocalAction({ type: 'drawCard' });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(hostRecorder.last('publicState')?.state.currentPlayerId).toBe(guestId);
 
-    host.startGame();
-    await vi.advanceTimersByTimeAsync(10);
-    const first = hostRecorder.last('publicState')?.state.currentPlayerId;
-
-    // The guest disappears without a goodbye, and it is their turn.
-    if (first !== host.localPlayerId) {
+      // And now they are gone, without a goodbye, on their own turn.
       client.destroy('leftVoluntarily');
       await vi.advanceTimersByTimeAsync(10);
 
-      // Well past the twelve-second window for a channel we know is closed.
-      clock += 60_000;
-      await vi.advanceTimersByTimeAsync(200);
+      // Well past the twelve seconds allowed for a channel we know is closed.
+      await vi.advanceTimersByTimeAsync(60_000);
 
       const state = hostRecorder.last('publicState')?.state;
       expect(state?.currentPlayerId).toBe(host.localPlayerId);
-    } else {
-      client.destroy('leftVoluntarily');
-    }
+      // Free, except for a penalty somebody else created — there was none here.
+      const skipped = hostRecorder
+        .ofType('events')
+        .flatMap((entry) => entry.events)
+        .filter((event) => event.type === 'turnSkipped');
+      expect(skipped.length).toBeGreaterThanOrEqual(1);
+      expect(skipped[0]).toMatchObject({ playerId: guestId, drew: 0 });
 
-    host.destroy('leftVoluntarily');
-    vi.useRealTimers();
+      host.destroy('leftVoluntarily');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resolves a breaker window that is waiting on somebody who has gone', async () => {
+    vi.useFakeTimers();
+    try {
+      const network = new MemoryNetwork();
+      const hostRecorder = createRecorder();
+      const host = await createHostSession({
+        transport: network.create(HOST_PEER_ID),
+        roomCode: TEST_ROOM,
+        hostDisplayName: 'Host',
+        maxPlayers: 4,
+        tableLanguage: 'he',
+        observer: hostRecorder.observer,
+        seedFactory: () => 4242,
+        heartbeatIntervalMs: 500,
+      });
+      const client = await createClientSession({
+        transport: network.create('client-1'),
+        roomCode: TEST_ROOM,
+        hostPeerId: HOST_PEER_ID,
+        displayName: 'Dana',
+        observer: createRecorder().observer,
+        heartbeatIntervalMs: 100_000,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      host.startGame();
+      await vi.advanceTimersByTimeAsync(10);
+
+      /*
+       * The worst stall in the game, and the one invisible to any check based on
+       * whose turn it is: while a +3 is open the seat on turn is the player who
+       * *played* it, and every command from every other seat is refused. If the
+       * seat being waited on is away, the table is frozen and nothing about the
+       * current player says so.
+       */
+      host.forcePlusThreeForTests(client.localPlayerId);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(hostRecorder.last('publicState')?.state.plusThree).not.toBeNull();
+
+      client.destroy('leftVoluntarily');
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      // Resolved without waiting, and with no event naming who held a breaker.
+      expect(hostRecorder.last('publicState')?.state.plusThree).toBeNull();
+      const named = hostRecorder
+        .ofType('events')
+        .flatMap((entry) => entry.events)
+        .filter((event) => event.type === 'plusThreeBroken');
+      expect(named).toHaveLength(0);
+
+      host.destroy('leftVoluntarily');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not convict anybody when the host itself was asleep', async () => {
@@ -344,7 +580,9 @@ describe('a table waiting for somebody who is not there', () => {
     await vi.advanceTimersByTimeAsync(60);
 
     const lobby = hostRecorder.last('lobby')?.lobby;
-    expect(lobby?.players.find((player) => !player.isHost)?.health).not.toBe('disconnected');
+    const guest = lobby?.players.find((player) => !player.isHost);
+    expect(guest).toBeDefined();
+    expect(guest?.health).toBe('connected');
 
     client.destroy('leftVoluntarily');
     host.destroy('leftVoluntarily');
@@ -363,10 +601,25 @@ describe('the table can decide for itself', () => {
     await flush();
     expect(room.hostRecorder.last('paused')?.pausedBy).toBe(room.host.localPlayerId);
 
+    // The action has to be one the engine would accept, or the test proves only
+    // that the engine rejects an illegal move — which it would with no pause at all.
+    const guestId = client.session.localPlayerId;
+    if (room.hostRecorder.last('publicState')?.state.currentPlayerId !== guestId) {
+      room.host.setPaused(null);
+      await flush();
+      room.host.submitLocalAction({ type: 'drawCard' });
+      await flush();
+      room.host.setPaused(room.host.localPlayerId);
+      await flush();
+    }
+    expect(room.hostRecorder.last('publicState')?.state.currentPlayerId).toBe(guestId);
+
     const versionBefore = room.hostRecorder.last('publicState')?.state.version;
-    client.session.submitAction({ type: 'declareLastCard' }, 'rq-paused');
+    client.session.submitAction({ type: 'drawCard' }, 'rq-paused');
     await flush();
     expect(room.hostRecorder.last('publicState')?.state.version).toBe(versionBefore);
+    // And the player is told the truth about why, rather than that the round ended.
+    expect(client.recorder.last('actionRejected')?.code).toBe('tablePaused');
 
     room.host.setPaused(null);
     await flush();
@@ -404,16 +657,28 @@ describe('the table can decide for itself', () => {
     room.host.startGame();
     await flush();
 
-    client.session.destroy('leftVoluntarily');
-    await flush();
-
     const guest = room.hostRecorder.last('lobby')?.lobby.players.find((player) => !player.isHost);
     expect(guest).toBeDefined();
+
+    /*
+     * The target has to be genuinely catchable, or the engine refuses on its own
+     * and the host's policy is never consulted — which is how a test of this can
+     * pass with the policy deleted.
+     */
+    room.host.forceHandForTests(guest!.id, 1);
+    await flush();
     room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
     await flush();
+    expect(room.hostRecorder.last('actionRejected')).toBeUndefined();
 
-    // Absence would otherwise convert a social rule into farming: four cards an
-    // orbit off somebody whose phone is rebooting and who cannot shout.
+    // Now the same player is away. Absence would otherwise convert a social rule
+    // into farming: four cards an orbit off somebody whose phone is rebooting and
+    // who is in no position to shout.
+    room.host.forceHandForTests(guest!.id, 1);
+    client.session.destroy('leftVoluntarily');
+    await flush();
+    room.host.submitLocalAction({ type: 'catchLastCard', targetId: guest!.id });
+    await flush();
     expect(room.hostRecorder.last('actionRejected')?.code).toBe('nothingToCatch');
     room.destroy();
   });
@@ -446,9 +711,12 @@ describe('handing the room over', () => {
 
     // Everybody else is told the generation, not an address: the new host's id is
     // derived from it, so the room can move without the room code changing.
-    const followed = [client, other].flatMap((entry) => entry.recorder.ofType('handover'));
-    expect(followed.length).toBeGreaterThan(0);
-    expect(followed[0]?.generation).toBe(1);
+    // The seat that was *not* named is the one that has to be redirected, and it is
+    // told a generation rather than an address.
+    const redirected = [client, other].filter((entry) => entry.recorder.ofType('handover').length > 0);
+    expect(redirected).toHaveLength(1);
+    expect(redirected[0]?.recorder.last('handover')?.generation).toBe(1);
+    expect(redirected[0]?.session.localPlayerId).not.toBe(successor?.playerId);
 
     client.session.destroy('leftVoluntarily');
     other.session.destroy('leftVoluntarily');

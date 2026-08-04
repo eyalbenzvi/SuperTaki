@@ -249,7 +249,16 @@ action; a replayed `catchLastCard` is eight cards. A known `requestId` is answer
 nowhere else. Client dedup session-scoped and never reset, plus the missing version floor on
 `gameEvents`, or a post-reconnect replay duplicates every line in the log.
 
-### S12 — Hot-seat, the mode that cannot disconnect
+### S12 — Hot-seat, the mode that cannot disconnect — **NOT DELIVERED**
+
+> **Deferred, and not shipped in this batch.** It is the one workstream here with no
+> dependency on anything else, and it is a mode rather than a repair: a new session type over
+> the engine, a curtain, a rewritten `+3` window and a rules change for the last-card catch.
+> Landing it half-built would be worse than not landing it, and the resilience work it was
+> queued behind now stands on its own. The capability-interface refactor it needs — replacing
+> the `session instanceof HostSession` checks in the store — is also still outstanding.
+> Recorded here rather than quietly dropped, so nobody reads the plan after the merge and
+> assumes it exists.
 
 A capability interface first, replacing the five `session instanceof HostSession` checks, then
 `LocalSession` over the engine with no transport. The curtain _clears_ the outgoing hand from
@@ -276,6 +285,8 @@ absent-player and hot-seat rules.
 ---
 
 ## Explicitly out of scope, and why
+
+- **Hot-seat (S12).** Deferred; see the marker on that section.
 
 - **Automatic mid-round host failover.** See above. It needs an at-most-one-host invariant that
   this topology cannot provide without an authority, and a half-correct version silently

@@ -1,6 +1,7 @@
 # Wire protocol
 
-Version: **3** (`PROTOCOL_VERSION` in `src/features/game/network/protocol.ts`)
+Version: **4** sent, **3 and 4** accepted (`PROTOCOL_VERSION` and
+`SUPPORTED_PROTOCOL_VERSIONS` in `src/features/game/network/protocol.ts`)
 
 Every message is JSON, travels over a WebRTC data channel with `serialization: 'json'`, and
 is validated with Zod **before it can influence any state**. Schemas are the single source of
@@ -337,6 +338,66 @@ Produced by the engine and mapped to localised strings by key `reject.<code>`:
 
 A test asserts every code has a Hebrew and an English message, so an unlocalised rejection
 cannot reach a player.
+
+## Version 4: what resilience added
+
+Every field below is **optional**, and that is load-bearing rather than lazy. The site is
+static and cached per browser, so the player who reloads — the very thing this work exists to
+make survivable — fetches the new bundle while everybody else keeps the old one. If a version
+were required to match exactly, that reload would answer `protocolMismatch` to the whole table
+and end the game on the way in. A mixed table loses the new behaviour, not the game.
+
+### New fields on existing messages
+
+| Message / object              | Field                                         | Meaning                                                                                                                                                                                                      |
+| ----------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `publicState.state`           | `turnSeq`                                     | Counts turn handovers, not commands. `version` moves for the out-of-turn declarations and catches that are legal at any moment, so it cannot answer "is my move still meant for the table I was looking at?" |
+| `publicState.state`           | `endReason`                                   | `won`, or `abandoned` for a round that ran out of players or was stopped by agreement.                                                                                                                       |
+| `publicState.state.players[]` | `left`                                        | The seat has left the round. Marked, never removed — which is why this array never falls below the two players the schema requires.                                                                          |
+| `lobbyState.lobby`            | `sentAt`                                      | The host's clock when the snapshot was built, so a client can cancel the skew between the two devices once.                                                                                                  |
+| `lobbyState.lobby`            | `seatGraceMs`                                 | How long the host will hold an absent seat. On the wire because there must be exactly one authority for it; the client _derives_ its own give-up deadline by subtraction.                                    |
+| `lobbyState.lobby`            | `pausedBy`                                    | Who asked the table to wait, or `null`.                                                                                                                                                                      |
+| `lobbyState.lobby`            | `waitingFor`, `waitingReason`, `waitingSince` | Who the table is waiting for and why (`turn`, `absent`, `breaker`, `paused`), so no screen has to infer it.                                                                                                  |
+| `lobbyState.lobby`            | `abandonVotes`                                | Seats that have agreed to end the round.                                                                                                                                                                     |
+| `lobbyState.lobby`            | `generation`                                  | Host generation, so a client can follow a handover.                                                                                                                                                          |
+| `lobbyState.lobby.players[]`  | `absentSince`                                 | When the seat went quiet, on the host's clock, paired with `sentAt`. A duration would be stale on arrival and would force a broadcast per heartbeat.                                                         |
+| `lobbyState.lobby.players[]`  | `left`                                        | As above.                                                                                                                                                                                                    |
+| `action`                      | `requestId`                                   | Identifies one _intent_, stable across re-sends. Not the envelope id, which is regenerated on every send and so cannot match a replay.                                                                       |
+| `action`                      | `turnToken`                                   | `{currentPlayerId, turnSeq}` as the client understood them. Checked by the host only for `playCard` in turn, `drawCard` and `closeTaki`.                                                                     |
+| `hostClosed`                  | `generation`                                  | Where the room went, for a handover.                                                                                                                                                                         |
+
+### New messages
+
+| Direction     | Type              | Purpose                                                                                                                                                                                            |
+| ------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| host → client | `actionAccepted`  | `{requestId, version}`. An acknowledgement cannot be inferred from the state moving forward, because other players legally act out of turn here — so a lost action would otherwise look delivered. |
+| host → client | `paused`          | Somebody asked the table to hold.                                                                                                                                                                  |
+| host → client | `nudged`          | It is your turn and another player is waiting.                                                                                                                                                     |
+| host → client | `handoffOffer`    | `{generation, snapshot}`, sent once to the named successor at the moment of a voluntary handover — never continuously.                                                                             |
+| client → host | `pauseRequest`    | Ask the table to wait, or let it carry on.                                                                                                                                                         |
+| client → host | `abandonVote`     | Agree to end a round with no winner.                                                                                                                                                               |
+| client → host | `nudge`           | Nudge the player the table is waiting on.                                                                                                                                                          |
+| client → host | `handoffAccepted` | The successor confirms it is serving, which is what lets the old host step down.                                                                                                                   |
+
+### New `hostClosed` reasons
+
+`restarting` and `handoff` are the two that are **not** the end of anything. Before them a
+client had no way to tell a goodbye from a see-you-in-a-moment and treated both as fatal,
+which made a host returning impossible to build.
+
+| Reason       | Terminal? | Meaning                                                                                                                                                                           |
+| ------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hostLeft`   | yes       | The host closed the room.                                                                                                                                                         |
+| `roomReset`  | yes       | The host reset the room.                                                                                                                                                          |
+| `restarting` | **no**    | The host is reloading. Hold the seat and keep trying. Sent from `pagehide`, the only hook that fires reliably on a phone.                                                         |
+| `handoff`    | **no**    | Another player is taking over at `generation`. Its peer id is _derived_ from the room code and that number, so nothing has to be told an address and the room code never changes. |
+
+### Turn-scoped and out-of-turn intents
+
+`turnToken` is checked for `playCard` in turn, `drawCard` and `closeTaki`. It is deliberately
+**not** checked for `declareLastCard`, `catchLastCard`, `passBreak`, or a breaker played into
+an open `+3`: those are legal at any moment, they race each other on purpose, and gating them
+on a turn would hand every tie to whichever player broke the rule.
 
 ## Version compatibility strategy
 

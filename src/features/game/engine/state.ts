@@ -265,6 +265,8 @@ export const REJECTION_CODES = [
   'nothingToSkip',
   /** Asked to act for, or remove, a player who has already left. */
   'alreadyLeft',
+  /** The table is holding at somebody's request. */
+  'tablePaused',
 ] as const;
 
 export type RejectionCode = (typeof REJECTION_CODES)[number];

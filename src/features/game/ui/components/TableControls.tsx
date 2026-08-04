@@ -3,7 +3,8 @@ import { Button } from '../../../../components/Button.tsx';
 import { Modal } from '../../../../components/Modal.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
-import { connectedCount, seatedPlayers } from '../../state/selectors.ts';
+import { seatedPlayers } from '../../state/selectors.ts';
+import { IDLE_TURN_NUDGE_MS } from '../../network/timing.ts';
 
 /**
  * The two things a table needs and did not have: a way to wait, and a way to stop.
@@ -29,7 +30,14 @@ export function TableControls(): ReactNode {
   }
 
   const agreed = lobby?.abandonVotes?.length ?? 0;
-  const required = connectedCount({ lobby });
+  /*
+   * Counted the way the host counts it — fully connected seats that are still in
+   * the round. `connectedCount` includes unstable seats, so "1 of 2 agreed" could
+   * sit there for ever while the host was waiting on a number that never arrives.
+   */
+  const required = seatedPlayers({ lobby }).filter(
+    (player) => player.health === 'connected' && player.left !== true,
+  ).length;
   const paused = pausedBy !== null;
 
   return (
@@ -101,16 +109,27 @@ export function NudgeButton(): ReactNode {
   const publicState = useAppStore((state) => state.publicState);
   const localPlayerId = useAppStore((state) => state.localPlayerId);
   const nudgePlayer = useAppStore((state) => state.nudgePlayer);
-  const [sent, setSent] = useState(false);
+  const [sentFor, setSentFor] = useState<string | null>(null);
 
   const waitingFor = lobby?.waitingFor ?? null;
   const reason = lobby?.waitingReason ?? null;
+  /*
+   * Only after the table has actually been waiting a while. Offering this the
+   * instant it becomes somebody's turn turns a courtesy into a way to hurry
+   * people, and a turn in this game takes five to fifteen seconds. Both readings
+   * are the host's, so the skew between devices cancels.
+   */
+  const waitedMs =
+    lobby?.waitingSince !== null && lobby?.waitingSince !== undefined && lobby.sentAt !== undefined
+      ? lobby.sentAt - lobby.waitingSince
+      : 0;
   if (
     !publicState ||
     publicState.phase !== 'playing' ||
     reason !== 'turn' ||
     waitingFor === null ||
-    waitingFor === localPlayerId
+    waitingFor === localPlayerId ||
+    waitedMs < IDLE_TURN_NUDGE_MS
   ) {
     return null;
   }
@@ -123,11 +142,14 @@ export function NudgeButton(): ReactNode {
       variant="ghost"
       onClick={() => {
         nudgePlayer(waitingFor);
-        setSent(true);
+        setSentFor(waitingFor);
       }}
-      disabled={sent}
+      // Remembered per player, not once for the session: a single flag meant one
+      // nudge disabled the button for the rest of the round, including for
+      // somebody else entirely.
+      disabled={sentFor === waitingFor}
     >
-      {sent ? t('nudge.sent') : t('nudge.send')}
+      {sentFor === waitingFor ? t('nudge.sent') : t('nudge.send')}
     </Button>
   );
 }

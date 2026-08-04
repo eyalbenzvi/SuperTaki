@@ -45,7 +45,9 @@ export interface WatchdogOptions {
 }
 
 export function createWatchdog(options: WatchdogOptions): Watchdog {
-  const now = options.now ?? Date.now;
+  // Wrapped, not captured: a reference freezes whichever clock was installed when
+  // the watchdog was built, and this module's whole job is reasoning about time.
+  const now = options.now ?? ((): number => Date.now());
   let timer: ReturnType<typeof setInterval> | null = null;
   let currentInterval = options.intervalMs();
   let lastTickAt = now();

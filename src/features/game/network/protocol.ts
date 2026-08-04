@@ -259,6 +259,8 @@ export const lobbySnapshotSchema = z.object({
   /** Who the table is waiting for, and why — so no screen has to guess. */
   waitingFor: playerIdSchema.nullish(),
   waitingReason: z.enum(['turn', 'absent', 'breaker', 'paused']).nullish(),
+  /** Host clock at which the table started waiting, paired with `sentAt`. */
+  waitingSince: z.number().int().min(0).nullish(),
   /** Players who have voted to abandon the round. */
   abandonVotes: z.array(playerIdSchema).max(6).readonly().optional(),
   /** Host generation, so a client can follow a handover. */

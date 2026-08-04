@@ -152,7 +152,11 @@ export class ClientSession implements Session {
     this.hostPeerId = options.hostPeerId;
     this.displayName = sanitizeDisplayName(options.displayName) || 'Player';
     this.resume = options.resume ?? null;
-    this.now = options.now ?? Date.now;
+    // Wrapped rather than captured: taking a reference to `Date.now` freezes
+    // whichever implementation was installed when the session was built, which
+    // makes the clock unswappable afterwards and is a trap for anything that
+    // needs to reason about time passing.
+    this.now = options.now ?? ((): number => Date.now());
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.joinTimeoutMs = options.joinTimeoutMs ?? JOIN_TIMEOUT_MS;
     this.fixedIntervalMs = options.heartbeatIntervalMs ?? null;
@@ -299,6 +303,14 @@ export class ClientSession implements Session {
       this.attempt = 0;
       this.reconnectingSince = null;
     } catch (error) {
+      /*
+       * Released here, not only in `finally`. Scheduling the next attempt happens
+       * synchronously below, and `scheduleRetry` refuses to arm a timer while a
+       * connect is in flight — so leaving this set until `finally` ran silently
+       * dropped every retry after the first, leaving the session in `reconnecting`
+       * for ever with no attempt, no deadline and nothing said to the player.
+       */
+      this.connecting = false;
       log.warn('connect attempt failed', this.attempt, error);
       const code = error instanceof TransportError ? error.code : 'unknown';
       record('connectFailed', code, { attempt: this.attempt, joined: this.joined });
@@ -388,7 +400,7 @@ export class ClientSession implements Session {
       record('transportError', error.code, { detail: error.message });
     });
     const offUnstable = connection.onUnstable(() => {
-      record('channelUnstable', this.hostPeerId);
+      this.sampleDiagnostics('channelUnstable');
       if (this.phase === 'connected') {
         this.setPhase('reconnecting');
       }
@@ -401,6 +413,35 @@ export class ClientSession implements Session {
       offUnstable();
     };
     this.startWatchdog();
+  }
+
+  /**
+   * Records what the path actually was, at the moment it went wrong.
+   *
+   * The candidate types are the whole difference between "we never had a path" and
+   * "our path died", and they are unrecoverable after the fact — so they are
+   * sampled while the connection is still there to ask.
+   */
+  private sampleDiagnostics(kind: 'channelUnstable' | 'channelClosed' | 'connected'): void {
+    const connection = this.connection;
+    if (!connection) {
+      record(kind === 'connected' ? 'phase' : kind, this.hostPeerId);
+      return;
+    }
+    void connection
+      .diagnostics()
+      .then((info) => {
+        record(kind === 'connected' ? 'phase' : kind, this.hostPeerId, {
+          local: info.localCandidateType,
+          remote: info.remoteCandidateType,
+          protocol: info.candidateProtocol,
+          ice: info.iceConnectionState,
+          buffered: info.bufferedAmount,
+        });
+      })
+      .catch(() => {
+        record(kind === 'connected' ? 'phase' : kind, this.hostPeerId);
+      });
   }
 
   private detachConnection(): void {
@@ -465,6 +506,8 @@ export class ClientSession implements Session {
   }
 
   private handleClosed(): void {
+    // Sampled before the connection is dropped: afterwards there is nothing to ask.
+    this.sampleDiagnostics('channelClosed');
     record('channelClosed', this.hostPeerId, { joined: this.joined });
     this.detachConnection();
     if (this.destroyed) {
@@ -528,6 +571,8 @@ export class ClientSession implements Session {
         });
         this.applyLobby(message.payload.lobby);
         this.setPhase('connected');
+        // Record which kind of path this turned out to be, once, while it works.
+        this.sampleDiagnostics('connected');
         // Re-ask about whatever was in flight when the channel went, now that
         // there is somewhere to ask.
         this.replayOutbox();
@@ -772,7 +817,8 @@ export class ClientSession implements Session {
    * tie to whichever player broke the rule.
    */
   submitAction(action: GameAction, requestId: string = randomHex(8)): void {
-    const turnScoped = action.type === 'drawCard' || action.type === 'closeTaki';
+    const turnScoped =
+      action.type === 'playCard' || action.type === 'drawCard' || action.type === 'closeTaki';
     this.outbox = {
       requestId,
       action,
@@ -856,6 +902,22 @@ export class ClientSession implements Session {
   /** Tells the heartbeat that this player has something at stake. */
   setBusy(busy: boolean): void {
     this.busy = busy;
+  }
+
+  /** Test seam: re-sends the join handshake, as a client whose accept was lost does. */
+  resendJoinForTests(): void {
+    this.sendJoin();
+  }
+
+  /** Test seam: drops the live channel the way a lost network would. */
+  forceReconnectForTests(): void {
+    this.connection?.close();
+  }
+
+  /** Test seam: reports the channel as degraded without closing it. */
+  degradeForTests(): void {
+    const connection = this.connection as unknown as { degrade?: () => void } | null;
+    connection?.degrade?.();
   }
 
   /** Manual retry, offered by the UI after a failure. */

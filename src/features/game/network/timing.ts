@@ -136,16 +136,14 @@ export const ABSENT_TURN_GRACE_UNSTABLE_MS = 30_000;
 export const RESUME_ATTEMPT_SUPPRESSES_SKIP_MS = 20_000;
 
 /**
- * How long a returning host keeps trying to reclaim its own room code.
+ * How long a returning host keeps trying to reclaim its own room code, as a
+ * schedule of attempt times.
  *
  * The PeerJS server's `alive_timeout` defaults to 60 s, so a host whose tab was
  * killed by the OS can find its id still registered for a full minute. Giving up
  * earlier means conceding the room code — and invalidating every invite already
  * sent — at the exact moment it was still recoverable.
  */
-export const HOST_ID_RETRY_WINDOW_MS = 75_000;
-
-/** Attempt schedule inside that window, in ms from the first try. */
 export const HOST_ID_RETRY_SCHEDULE_MS = [0, 2_000, 5_000, 10_000, 20_000, 35_000, 55_000, 75_000] as const;
 
 /**

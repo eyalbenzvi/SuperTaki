@@ -395,6 +395,16 @@ class PeerJsTransport implements Transport {
     if (!pending) {
       return;
     }
+    /*
+     * A caller asking again is new information, so the budget is re-armed. Without
+     * this the attempt counter only ever reset inside the `open` handler, so after
+     * a run of failures the transport gave up permanently — and nothing, not a
+     * wake, not the network returning, not a manual retry, could revive it, while
+     * the host went on holding the seat for five minutes.
+     */
+    if (this.reconnectAttempt >= RECONNECT_BACKOFF_MS.length) {
+      this.reconnectAttempt = 0;
+    }
     this.scheduleReconnect();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {

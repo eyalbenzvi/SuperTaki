@@ -35,6 +35,28 @@ export default defineConfig({
           functions: 85,
           lines: 90,
         },
+        /*
+         * A floor for the session layer, set just under where it stands.
+         *
+         * It exists because of a specific failure: the sessions roughly doubled in
+         * size during the resilience work and `verify` stayed green while the added
+         * lines — the absence machinery, the heartbeat's judgement, the lobby grace —
+         * had never once executed. Only the engine and the protocol were gated, so
+         * nothing in the pipeline could notice. A ratchet here makes the next such
+         * gap visible at the moment it is introduced rather than in an audit.
+         */
+        'src/features/game/network/{client,host}Session.ts': {
+          statements: 75,
+          branches: 65,
+          functions: 78,
+          lines: 75,
+        },
+        'src/features/game/network/watchdog.ts': {
+          statements: 85,
+          branches: 74,
+          functions: 90,
+          lines: 85,
+        },
       },
     },
   },

@@ -151,8 +151,16 @@ class MemoryTransport implements Transport {
   /** When set, `connect()` behaves as the fault describes instead of succeeding. */
   private connectFault: 'hang' | 'unavailable' | 'signalling' | null = null;
   private signallingDown = false;
-  /** Applied to every connection this transport creates from now on. */
-  faults: MemoryFaults = {};
+  /**
+   * Applied to connections this transport creates.
+   *
+   * Shared by reference on purpose, so a test can turn a fault on *after* a
+   * channel is already open — which is the only way to model a path that dies
+   * mid-game rather than one that was never there.
+   */
+  readonly faults: MemoryFaults = {};
+  /** How many times `connect()` has been asked for a channel. */
+  connectAttempts = 0;
 
   constructor(
     readonly localId: string,
@@ -172,12 +180,17 @@ class MemoryTransport implements Transport {
   }
 
   connect(remoteId: string): Promise<TransportConnection> {
+    this.connectAttempts += 1;
     if (this.destroyed) {
       return Promise.reject(new TransportError('closed', 'Transport destroyed'));
     }
     if (this.connectFault === 'hang') {
       return new Promise<TransportConnection>(() => {
-        /* never settles, like an offer nobody answers */
+        /*
+         * Never settles, like an offer the broker queued and nobody answered.
+         * The caller is expected to impose its own deadline; a transport that
+         * hangs for ever is precisely what makes a missing one visible.
+         */
       });
     }
     if (this.connectFault === 'unavailable') {
@@ -243,7 +256,7 @@ class MemoryTransport implements Transport {
 export class MemoryNetwork {
   private readonly transports = new Map<string, MemoryTransport>();
 
-  create(id: string = `mem-${randomHex(4)}`): Transport {
+  create(id: string = `mem-${randomHex(4)}`): MemoryTransport {
     if (this.transports.has(id)) {
       throw new TransportError('idUnavailable', `Id ${id} already in use`);
     }

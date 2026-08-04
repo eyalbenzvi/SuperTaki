@@ -246,26 +246,6 @@ export function absentPlayers(
     }));
 }
 
-/**
- * How much longer a seat will be held, in local milliseconds.
- *
- * The host sends when the seat went quiet *on its own clock*, together with the
- * clock reading at which the snapshot was built, so the offset between the two
- * devices can be cancelled out once here rather than accumulating into a countdown
- * that drifts visibly against the host's.
- */
-export function seatHoldRemainingMs(
-  state: Pick<TableSnapshot, 'lobby'>,
-  absentSince: number,
-  now: number = Date.now(),
-): number {
-  const lobby = state.lobby;
-  const graceMs = lobby?.seatGraceMs ?? 0;
-  const offset = lobby?.sentAt !== undefined ? now - lobby.sentAt : 0;
-  const elapsed = now - (absentSince + offset);
-  return Math.max(graceMs - elapsed, 0);
-}
-
 export function isPaused(state: { readonly pausedBy: string | null }): boolean {
   return state.pausedBy !== null;
 }

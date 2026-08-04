@@ -688,8 +688,19 @@ export const useAppStore = create<AppStore>((set, get) => {
         phase: 'initializing',
       });
       record('hostRestart', 'reclaiming room code', { room: hostable.roomCode });
+      /*
+       * The loop below can run for over a minute, and the player may leave in the
+       * middle of it. Without this, a retry that finally succeeded would install a
+       * session and republish a room they had deliberately walked away from.
+       */
+      sessionEpoch += 1;
+      const attemptEpoch = sessionEpoch;
 
       for (let attempt = 0; attempt < HOST_ID_ATTEMPTS; attempt += 1) {
+        if (attemptEpoch !== sessionEpoch || get().hostable === null) {
+          record('hostRestart', 'abandoned: the room was let go');
+          return;
+        }
         if (attempt > 0) {
           const previous = HOST_ID_RETRY_SCHEDULE_MS[attempt - 1] ?? 0;
           const target = HOST_ID_RETRY_SCHEDULE_MS[attempt] ?? previous;
@@ -698,18 +709,21 @@ export const useAppStore = create<AppStore>((set, get) => {
         let transport: Transport | null = null;
         try {
           transport = createTransport({ id: hostable.hostPeerId });
-          sessionEpoch += 1;
           const hostSession = await createHostSession({
             transport,
             roomCode: hostable.roomCode,
             hostDisplayName: get().displayName || 'Host',
             maxPlayers: hostable.restore.maxPlayers,
             tableLanguage: hostable.restore.tableLanguage,
-            observer: observerFor(sessionEpoch),
+            observer: observerFor(attemptEpoch),
             restore: hostable.restore,
             onSnapshot: persistHostedRoom,
             generation: hostable.generation,
           });
+          if (attemptEpoch !== sessionEpoch) {
+            hostSession.destroy('leftVoluntarily');
+            return;
+          }
           session = hostSession;
           attachSleepHook();
           set({

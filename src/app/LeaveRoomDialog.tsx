@@ -48,7 +48,10 @@ export function LeaveRoomDialog(): ReactNode {
             <Button variant="ghost" onClick={cancelLeave}>
               {t('common.cancel')}
             </Button>
-            <Button variant="ghost" icon="leave" onClick={leaveRoom}>
+            {/* Still the destructive option, and still dressed as one: the earlier
+                version of this dialog warned the host in words *and* in weight, and
+                offering a gentler alternative is no reason to drop either. */}
+            <Button variant="danger" icon="leave" onClick={leaveRoom}>
               {t('host.handoffClose')}
             </Button>
             <Button
