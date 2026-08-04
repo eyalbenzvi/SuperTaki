@@ -775,3 +775,15 @@ describe('the turn token', () => {
     room.destroy();
   });
 });
+
+describe('diagnosing the network', () => {
+  it('says it cannot tell, rather than guessing, where there is no WebRTC', async () => {
+    // jsdom has no `RTCPeerConnection`, which is the same position an old browser is
+    // in. The honest answer is "unknown" — not "blocked", which would send a player
+    // to the one-device mode on no evidence.
+    const { probeConnectivity } = await import('../../../src/features/game/network/connectivityProbe.ts');
+    const report = await probeConnectivity(50);
+    expect(report.verdict).toBe('unknown');
+    expect(report.candidateTypes).toHaveLength(0);
+  });
+});

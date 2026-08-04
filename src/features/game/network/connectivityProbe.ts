@@ -9,7 +9,7 @@ const log = createLogger('probe');
  * Diagnoses this network *before* a room exists.
  *
  * No broker, no peer, no room code: one local `RTCPeerConnection` gathering its
- * own candidates tells us almost everything worth knowing, in about a second and
+ * own candidates tells us almost everything worth knowing, in a second or two and
  * for nothing.
  *
  * - No server-reflexive candidate at all means outbound UDP (and therefore STUN)
@@ -129,11 +129,17 @@ export async function probeConnectivity(timeoutMs = CONNECTIVITY_PROBE_MS): Prom
         if (parsed.type === 'srflx') {
           reflexive.add(`${parsed.address}:${parsed.port}`);
         }
-        // Once a relay candidate exists the verdict cannot get worse, so there is
-        // no reason to keep a probe running in front of a waiting player.
-        if (parsed.type === 'relay') {
-          finish();
-        }
+        /*
+         * Deliberately *not* stopping on the first relay candidate.
+         *
+         * Doing so was tempting — the verdict cannot get worse once a relay
+         * exists — but it can cut the gathering short before the second STUN
+         * server has answered, and comparing the two reflexive ports is the whole
+         * of the symmetric-NAT detection. Stopping early would have made the
+         * feature the documentation describes a coin flip on candidate ordering.
+         * Nobody is waiting on this: it only runs after a connection has already
+         * failed, and it is bounded by its own deadline.
+         */
       };
       void peer
         .createOffer()
