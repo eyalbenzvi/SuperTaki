@@ -82,7 +82,7 @@ describe('creating a room through the store', () => {
     expect(state.role).toBe('host');
     expect(state.screen).toBe('lobby');
     expect(state.busy).toBe(false);
-    expect(state.roomCode).toMatch(/^[A-Z]+-[A-Z]+-\d{2}$/);
+    expect(state.roomCode).toMatch(/^\d{6}$/);
     expect(state.hostPeerId).toBe(hostPeerIdForRoom(state.roomCode ?? ''));
     expect(state.inviteUrl).toContain(`#/join?room=${state.roomCode ?? ''}`);
     expect(state.lobby?.players).toHaveLength(1);
@@ -294,7 +294,7 @@ describe('joining a room through the store', () => {
   });
 
   it('reports an unreachable room without leaving the player stuck', async () => {
-    await store().joinRoom({ name: 'אלי', roomCode: 'TIGER-MANGO-99' });
+    await store().joinRoom({ name: 'אלי', roomCode: '482914' });
     await flush();
 
     expect(store().phase).toBe('failed');

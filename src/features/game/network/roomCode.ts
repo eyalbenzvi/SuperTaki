@@ -1,108 +1,49 @@
 import { randomInt } from '../../../lib/id.ts';
 
 /**
- * Room codes are human-readable invitations, not secrets.
+ * Room codes are digits you can read out loud, not secrets.
  *
- * Format: `WORD-WORD-NN` (e.g. `TIGER-MANGO-42`). The host's PeerJS id is
- * derived from the code, which is what makes "join by code" possible without
- * any server-side room registry.
+ * Format: six digits (e.g. `482913`), which is a number pad on a phone and one
+ * glance to copy off a screen. The host's PeerJS id is derived from the code,
+ * which is what makes "join by code" possible without any server-side room
+ * registry.
+ *
+ * Six rather than four, and the reason is not collisions — those the broker
+ * catches and the host retries through. It is that *every* string of digits is a
+ * valid code. At four digits a single mistyped digit is somebody else's live
+ * room rather than an error message, and the whole space of ten thousand rooms
+ * can be walked by hand in an evening; at six, a typo lands nowhere and the space
+ * is a million. Neither is a password — the room is only open while it is being
+ * played — but a private game should at least be hard to wander into.
  */
 
-/** Short, unambiguous words that read well in both Hebrew and English UIs. */
-const WORDS = [
-  'APPLE',
-  'AMBER',
-  'ARROW',
-  'BADGE',
-  'BASIL',
-  'BEACH',
-  'BERRY',
-  'BLOOM',
-  'BRAVE',
-  'BRICK',
-  'CANDY',
-  'CEDAR',
-  'CHESS',
-  'CLOUD',
-  'COMET',
-  'CORAL',
-  'CRANE',
-  'DAISY',
-  'DELTA',
-  'DINGO',
-  'EAGLE',
-  'EMBER',
-  'FABLE',
-  'FALCON',
-  'FERRY',
-  'FLINT',
-  'FOREST',
-  'GLASS',
-  'GRAPE',
-  'HAZEL',
-  'HONEY',
-  'IVORY',
-  'JAZZY',
-  'JOLLY',
-  'KAYAK',
-  'KOALA',
-  'LEMON',
-  'LILAC',
-  'LOTUS',
-  'MANGO',
-  'MAPLE',
-  'MELON',
-  'MOCHA',
-  'NOBLE',
-  'OCEAN',
-  'OLIVE',
-  'ONION',
-  'ORBIT',
-  'PEACH',
-  'PEARL',
-  'PIANO',
-  'PLUM',
-  'QUARTZ',
-  'RAVEN',
-  'RIVER',
-  'ROBIN',
-  'SALSA',
-  'SIREN',
-  'SOLAR',
-  'STORK',
-  'TIGER',
-  'TULIP',
-  'VIOLET',
-  'WALNUT',
-] as const;
-
+const ROOM_CODE_LENGTH = 6;
 const PEER_ID_PREFIX = 'crush';
-const ROOM_CODE_PATTERN = /^[A-Z]{3,8}-[A-Z]{3,8}-\d{2}$/;
+const ROOM_CODE_PATTERN = new RegExp(`^\\d{${String(ROOM_CODE_LENGTH)}}$`);
 
 /**
  * Number of distinguishable codes. Collisions are additionally detected by
  * PeerJS (`unavailable-id`), which lets the host regenerate.
  */
-export const ROOM_CODE_SPACE = WORDS.length * WORDS.length * 100;
+export const ROOM_CODE_SPACE = 10 ** ROOM_CODE_LENGTH;
 
 export function generateRoomCode(): string {
-  const firstIndex = randomInt(WORDS.length);
-  let secondIndex = randomInt(WORDS.length);
-  if (secondIndex === firstIndex) {
-    secondIndex = (secondIndex + 1) % WORDS.length;
+  // Digit by digit, so every code in the space is equally likely and leading
+  // zeros are as ordinary as any other digit.
+  let code = '';
+  for (let i = 0; i < ROOM_CODE_LENGTH; i += 1) {
+    code += String(randomInt(10));
   }
-  const digits = String(randomInt(100)).padStart(2, '0');
-  return `${WORDS[firstIndex] as string}-${WORDS[secondIndex] as string}-${digits}`;
+  return code;
 }
 
-/** Accepts sloppy user input (lowercase, spaces, missing dashes are not fixed). */
+/**
+ * Accepts sloppy user input: the spaces and dashes people put between groups of
+ * digits, and nothing else. Anything left over fails validation rather than
+ * being silently read as a code.
+ */
 export function normalizeRoomCode(input: string): string {
-  return input
-    .trim()
-    .toUpperCase()
-    .replace(/[\s_]+/g, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-|-$/g, '');
+  return input.trim().replace(/[\s\-_]+/g, '');
 }
 
 export function isValidRoomCode(input: string): boolean {
@@ -118,7 +59,7 @@ export function isValidRoomCode(input: string): boolean {
  * Generation 0 keeps the original, unadorned id, so old invites stay valid.
  */
 export function hostPeerIdForRoom(roomCode: string, generation = 0): string {
-  const base = `${PEER_ID_PREFIX}-${normalizeRoomCode(roomCode).toLowerCase()}`;
+  const base = `${PEER_ID_PREFIX}-${normalizeRoomCode(roomCode)}`;
   return generation > 0 ? `${base}-h${String(generation)}` : base;
 }
 

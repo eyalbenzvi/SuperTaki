@@ -55,8 +55,8 @@ export const GUEST_ID = 'pl_guest00000';
 
 export function lobbyFixture(overrides: Partial<LobbySnapshot> = {}): LobbySnapshot {
   return {
-    roomCode: 'TIGER-MANGO-42',
-    hostPeerId: 'crush-tiger-mango-42',
+    roomCode: '482913',
+    hostPeerId: 'crush-482913',
     hostPlayerId: HOST_ID,
     maxPlayers: 4,
     phase: 'lobby',
@@ -101,8 +101,8 @@ export function enterGame(options: { myTurn?: boolean; seed?: number } = {}): Ga
     role: 'host',
     phase: 'connected',
     localPlayerId: HOST_ID,
-    roomCode: 'TIGER-MANGO-42',
-    hostPeerId: 'crush-tiger-mango-42',
+    roomCode: '482913',
+    hostPeerId: 'crush-482913',
     lobby: lobbyFixture({ phase: 'inGame' }),
     publicState: {
       ...fixture.publicState,

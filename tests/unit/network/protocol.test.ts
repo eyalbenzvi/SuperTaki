@@ -11,14 +11,14 @@ import { createGame } from '../../../src/features/game/engine/engine.ts';
 import { toPrivateHandView, toPublicGameState } from '../../../src/features/game/engine/views.ts';
 import { players } from '../helpers/engineFixtures.ts';
 
-const ROOM = 'TIGER-MANGO-42';
+const ROOM = '482913';
 
 function envelope(type: string, payload: unknown, overrides: Record<string, unknown> = {}) {
   return {
     protocolVersion: PROTOCOL_VERSION,
     id: 'msg-1',
     roomId: ROOM,
-    senderPeerId: 'crush-tiger-mango-42',
+    senderPeerId: 'crush-482913',
     timestamp: 1_700_000_000_000,
     type,
     payload,
@@ -182,7 +182,7 @@ describe('host message validation', () => {
   it('rejects a lobby with too many players', () => {
     const lobby = {
       roomCode: ROOM,
-      hostPeerId: 'crush-tiger-mango-42',
+      hostPeerId: 'crush-482913',
       hostPlayerId: 'pl_1',
       maxPlayers: 6,
       phase: 'lobby',

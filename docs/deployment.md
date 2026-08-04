@@ -111,7 +111,7 @@ GitHub Pages cannot rewrite unknown paths to `index.html`, so this app uses **ha
 invite links look like
 
 ```
-https://user.github.io/super-taki/#/join?room=TIGER-MANGO-42
+https://user.github.io/super-taki/#/join?room=482913
 ```
 
 Everything after `#` never reaches the server, so Pages always serves `index.html` and the app

@@ -161,11 +161,15 @@ the README rather than papered over.
 
 - A room code identifies a room; it does **not** authenticate a person. Anyone holding the
   link can attempt to join while the room is open.
-- The code space is 64 × 64 × 100 = 409,600 combinations. That is fine against accidental
+- The code space is six digits — 1,000,000 combinations. That is fine against accidental
   collision and casual guessing for a room that lives for an hour, and it is **not**
   cryptographic. A determined attacker could enumerate it. For a private game among friends
   that is an accepted trade-off; the mitigations that matter are that rooms are short-lived,
   capped at six seats, and closed to new players once the game starts.
+- The length is a deliberate floor. Every string of digits is a valid code, so a four-digit
+  code turns a single mistyped digit into somebody else's live room rather than an error, and
+  ten thousand rooms can be walked through by hand in an evening. Six digits keeps the code
+  dictatable and the space a hundred times larger.
 - Invite links are shared through whatever channel the players choose (a message app, say).
   That channel's privacy is outside this app's control.
 - The app removes invite parameters from the address bar after reading them, so a room code is
@@ -199,21 +203,21 @@ silently corrupt games. Not implemented, not claimed.
 
 ## Summary
 
-| Threat                         | Status                                                                        |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| Client forges game state       | Prevented structurally (no such message)                                      |
-| Client sends illegal moves     | Prevented (host-side engine validation)                                       |
-| Client impersonates a player   | Prevented (host-bound seat ids)                                               |
-| Client reads another hand      | Prevented (public view carries counts only, hands unicast)                    |
-| Replay / stale messages        | Prevented (message-id LRU + monotonic versions)                               |
-| Oversized / malformed messages | Prevented (64 KiB cap, bounded Zod schemas)                                   |
-| XSS                            | Prevented (no raw HTML, sanitised names, CSP)                                 |
-| Duplicate connections          | Handled (older channel closed)                                                |
-| Room-code guessing             | Partially mitigated (409,600 codes, short-lived, 6 seats, closed after start) |
-| Flooding by a joined peer      | **Not mitigated** — kick or close the room                                    |
-| Host cheating                  | **Not mitigated** — inherent to a server-free design                          |
-| Blocked by strict NAT          | **Not mitigated** — needs a paid TURN relay; explained in the UI              |
-| Signalling broker misbehaving  | **Not mitigated** — inherent to free public signalling                        |
+| Threat                         | Status                                                                     |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| Client forges game state       | Prevented structurally (no such message)                                   |
+| Client sends illegal moves     | Prevented (host-side engine validation)                                    |
+| Client impersonates a player   | Prevented (host-bound seat ids)                                            |
+| Client reads another hand      | Prevented (public view carries counts only, hands unicast)                 |
+| Replay / stale messages        | Prevented (message-id LRU + monotonic versions)                            |
+| Oversized / malformed messages | Prevented (64 KiB cap, bounded Zod schemas)                                |
+| XSS                            | Prevented (no raw HTML, sanitised names, CSP)                              |
+| Duplicate connections          | Handled (older channel closed)                                             |
+| Room-code guessing             | Partially mitigated (10^6 codes, short-lived, 6 seats, closed after start) |
+| Flooding by a joined peer      | **Not mitigated** — kick or close the room                                 |
+| Host cheating                  | **Not mitigated** — inherent to a server-free design                       |
+| Blocked by strict NAT          | **Not mitigated** — needs a paid TURN relay; explained in the UI           |
+| Signalling broker misbehaving  | **Not mitigated** — inherent to free public signalling                     |
 
 ## The host's saved room
 

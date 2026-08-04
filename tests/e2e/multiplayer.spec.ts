@@ -50,6 +50,29 @@ test.describe('two-player game over the deterministic transport', () => {
     await expect(guest.locator('.turn-banner')).toHaveText("Dana's turn");
   });
 
+  /*
+   * That the drawing decodes to the invite link is settled in the component
+   * tests, with a real decoder. What only a browser can answer is whether it is
+   * painted at a size a camera can use and whether it stays inside the panel —
+   * the QR code shares its row with the room code, and the first version of that
+   * layout hung the plate over the edge of the card.
+   */
+  test('paints the QR code at a scannable size, inside its panel', async ({ page }) => {
+    await openApp(page, `/${BROADCAST}`);
+    await createRoom(page, 'Dana', 2);
+
+    const qr = page.locator('.qr');
+    await expect(qr).toBeVisible();
+    await expect(qr).toHaveAttribute('aria-label', /QR code with the invite link/);
+
+    const symbol = (await qr.boundingBox()) ?? { width: 0, height: 0, x: 0, y: 0 };
+    const panel = (await page.locator('.invite').boundingBox()) ?? { width: 0, x: 0 };
+    expect(symbol.width).toBeGreaterThanOrEqual(100);
+    expect(Math.abs(symbol.width - symbol.height)).toBeLessThanOrEqual(1);
+    expect(symbol.x).toBeGreaterThanOrEqual(panel.x - 1);
+    expect(symbol.x + symbol.width).toBeLessThanOrEqual(panel.x + panel.width + 1);
+  });
+
   test('joins through an invite link', async ({ context }) => {
     const host = await context.newPage();
     const guest = await context.newPage();
@@ -214,7 +237,7 @@ test.describe('two-player game over the deterministic transport', () => {
 
   test('reports an unreachable room honestly', async ({ page }) => {
     await openApp(page, `/${BROADCAST}`);
-    await joinRoom(page, 'Dana', 'TIGER-MANGO-99');
+    await joinRoom(page, 'Dana', '482914');
     await expect(page.getByText('The host could not be reached')).toBeVisible();
     await expect(page.getByText('Why can this happen?')).toBeVisible();
   });

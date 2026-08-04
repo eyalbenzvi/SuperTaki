@@ -3,8 +3,8 @@
 **A private game of Taki — peer-to-peer, in the browser, at exactly zero cost.**
 
 Super Taki is a mobile-first multiplayer card game for 2–6 players. One person opens a
-room, shares a link or a room code, and everyone else joins from their own phone, tablet
-or laptop. There is no server, no account, no database and no paid service anywhere in the
+room and shares it however suits the room they are in — a link, a six-digit code, or the QR
+code on their screen — and everyone else joins from their own phone, tablet or laptop. There is no server, no account, no database and no paid service anywhere in the
 stack: the site is static files on GitHub Pages, and the players' browsers talk directly
 to each other over WebRTC data channels.
 
@@ -111,9 +111,9 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 ## Running the tests
 
 ```bash
-npm test                # 510 unit + component tests
+npm test                # 669 unit + component tests
 npm run test:coverage   # same, with coverage thresholds enforced
-npm run test:e2e        # 18 scenarios x 2 viewports (needs a Chromium download once)
+npm run test:e2e        # 28 scenarios x 2 viewports (needs a Chromium download once)
 ```
 
 Playwright downloads Chromium on first use (`npx playwright install chromium`). If your
@@ -240,8 +240,9 @@ This is the honest part.
 - `localStorage` holds only: chosen language, theme, your display name, and — while a room
   is live — a room code, host peer id, seat id and rejoin token that expire after 6 hours.
   Nothing else, ever. "Start fresh" on the home screen erases it immediately.
-- A room code is an invitation, not a password. Anyone who has the link can try to join
-  while the room is open, so share it only with people you want at the table.
+- A room code is an invitation, not a password: six digits, so a typo lands nowhere, but
+  anyone who has the link or the code can try to join while the room is open. Share it only
+  with people you want at the table.
 - Display names are visible to everyone in the room. They are trimmed to 16 characters and
   stripped of invisible and direction-flipping characters.
 
@@ -283,7 +284,7 @@ src/
     state/                 Zustand store, selectors, local persistence
     ui/                    screens and game components
   i18n/                    Hebrew and English dictionaries
-  lib/                     ids, sanitising, storage, clipboard, focus trap, logger
+  lib/                     ids, sanitising, storage, clipboard, QR encoder, focus trap, logger
   styles/                  tokens, base, components, cards, screens
 docs/                      architecture, protocol, rules, QA, UI review, threat model, deployment
 tests/

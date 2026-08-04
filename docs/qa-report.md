@@ -141,7 +141,7 @@ React Testing Library against the real store, driven through the real `App`.
 - **Landing**: Hebrew title and entry points, connectivity and privacy notes, language switch with document direction, theme switch, arrow-key navigation in the segmented control, navigation, rules page round trip, resume offer, skip link, labelled top-bar controls.
 - **Create form**: name required, sanitised submission with chosen options, `maxlength`, busy state, **failure surfaced on the create screen**, taken-code message, 2–6 range only.
 - **Join form**: invalid code rejected, bare code accepted, full invite link with custom host, both errors at once, prefill and announcement from a link, resume with stored credentials.
-- **Lobby**: room code and invite link, seat order with host/self markers, player count, per-player health, host-only removal, direct start when all connected, confirmation when unstable, disabled below two players, guest view, leave confirmation with host warning, max-player control.
+- **Lobby**: room code, invite link and a QR code of that link, seat order with host/self markers, player count, per-player health, host-only removal, direct start when all connected, confirmation when unstable, disabled below two players, guest view, leave confirmation with host warning, max-player control.
 - **Invite sharing**: clipboard success and confirmation, failure explained, native share sheet, share button hidden without the API.
 - **Connection notices**: quiet when connected, reconnection notice, honest failure with a retry for retryable errors, no retry for non-retryable, closed-room dialog, silence after a voluntary leave.
 - **Game**: opponent shown face down with a count, colour/direction/turn indicators, legal-card enablement, symbol match, whole hand disabled off-turn, engine parity, play forwarding, draw pile states (on turn, off turn, during Taki), "draw" hint, colour picker for both wild cards with cancel/Escape/focus-trap/focus-restore, Taki banner and Close Taki, sequence-colour restriction, close hidden from non-owners, Plus notice, game log without private information, rejection toast with a colour-aware message, compact rules drawer, leave confirmation, waiting state.
@@ -180,8 +180,9 @@ Performed against the production build. WebRTC items require two devices.
 
 - [x] Two devices on the same Wi-Fi connect and play a full round.
 - [x] Two devices on different networks (home broadband ↔ mobile data) connect and play.
-- [x] Host creates a room, room code and invite link appear, code matches `WORD-WORD-NN`.
-- [x] Join by typed room code with no link.
+- [x] Host creates a room, room code and invite link appear, code is six digits.
+- [x] Join by typed room code with no link, and by a code typed with a space in it.
+- [x] Scan the lobby's QR code with a phone camera → the invite link opens the join screen.
 - [x] Join by tapping the invite link; the room is prefilled and the hash is cleared.
 - [x] Join by pasting the full invite URL into the field.
 - [x] Wrong room code → "The host could not be reached", immediately, with the explanation.
@@ -355,8 +356,9 @@ Inherent to the architecture, not defects. All are surfaced to players in the UI
    close the room.
 7. **Nothing is persisted.** No history, no scores, no replays.
 8. **Mobile background tabs.** Phones suspend them; the app reconnects when the tab returns.
-9. **No QR code.** Deliberately omitted rather than pulling in a dependency for it; the invite link
-   plus the Web Share sheet covers the same need.
+9. **QR codes go up to 213 bytes.** The in-house encoder stops at version 10, which covers any
+   invite link this app builds; a longer one falls back to the link and the share sheet, and the
+   lobby simply shows no QR code.
 10. **End-to-end tests do not use live WebRTC** (see above).
 
 ## Readiness

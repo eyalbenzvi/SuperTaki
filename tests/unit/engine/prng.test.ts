@@ -57,7 +57,7 @@ describe('seeded prng', () => {
   });
 
   it('derives stable seeds from strings', () => {
-    expect(seedFromString('TIGER-MANGO-42')).toBe(seedFromString('TIGER-MANGO-42'));
+    expect(seedFromString('482913')).toBe(seedFromString('482913'));
     expect(seedFromString('a')).not.toBe(seedFromString('b'));
     expect(seedFromString('')).toBeGreaterThanOrEqual(0);
   });

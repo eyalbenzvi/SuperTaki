@@ -26,8 +26,8 @@ const blue3: Card = { id: 'c2', kind: 'number', color: 'blue', value: 3 };
 const wild: Card = { id: 'c3', kind: 'colorChange' };
 
 const lobby: LobbySnapshot = {
-  roomCode: 'TIGER-MANGO-42',
-  hostPeerId: 'crush-tiger-mango-42',
+  roomCode: '482913',
+  hostPeerId: 'crush-482913',
   hostPlayerId: 'a',
   maxPlayers: 4,
   phase: 'inGame',
@@ -71,8 +71,8 @@ function state(patch: Partial<AppState> = {}): AppState {
     role: 'client',
     phase: 'connected',
     busy: false,
-    roomCode: 'TIGER-MANGO-42',
-    hostPeerId: 'crush-tiger-mango-42',
+    roomCode: '482913',
+    hostPeerId: 'crush-482913',
     inviteUrl: null,
     localPlayerId: 'b',
     lobby,

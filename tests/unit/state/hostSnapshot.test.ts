@@ -10,8 +10,8 @@ import {
 import type { HostRestoreState } from '../../../src/features/game/network/hostSession.ts';
 import { cards, makeState, players } from '../helpers/engineFixtures.ts';
 
-const ROOM = 'TIGER-MANGO-42';
-const PEER = 'crush-tiger-mango-42';
+const ROOM = '482913';
+const PEER = 'crush-482913';
 
 function restore(overrides: Partial<HostRestoreState> = {}): HostRestoreState {
   return {

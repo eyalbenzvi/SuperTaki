@@ -118,9 +118,10 @@ export function JoinRoomScreen(): ReactNode {
         />
 
         {/*
-          A room code is upper-case, hyphenated and not a word: the phone keyboard
-          has to be told so, or it capitalises the first letter only, offers
-          autocorrect and hides the hyphen behind a modifier key.
+          A room code is six digits, so the phone opens a number pad rather than a
+          keyboard with autocorrect on it. A link arrives in a message and is
+          tapped or pasted; nobody types one of those by hand, and pasting works
+          whatever keyboard is up.
         */}
         <Field
           label={t('join.inviteLabel')}
@@ -130,8 +131,8 @@ export function JoinRoomScreen(): ReactNode {
           value={invite}
           placeholder={t('join.invitePlaceholder')}
           autoComplete="off"
-          autoCapitalize="characters"
           autoCorrect="off"
+          inputMode="numeric"
           spellCheck={false}
           enterKeyHint="go"
           onChange={(event) => {

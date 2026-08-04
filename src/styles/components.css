@@ -305,13 +305,55 @@
   background: var(--danger-soft);
 }
 
-/* A room code: upper case, spaced out, and never reordered on an RTL page. */
+/*
+ * A room code: digits, spaced out, and never reordered on an RTL page. The field
+ * takes a pasted invite link too, so nothing here rewrites what was typed — an
+ * upper-casing transform used to, and a link shown in capitals looks broken.
+ */
 .code-input {
   font-family: var(--font-mono);
   letter-spacing: 0.08em;
-  text-transform: uppercase;
   direction: ltr;
   text-align: start;
+}
+
+/* QR codes ----------------------------------------------------------------- */
+
+/*
+ * A QR code sits on a white plate in both themes: scanners read contrast and
+ * expect dark modules on light, so this is one of the few surfaces in the app
+ * that does not follow the theme.
+ */
+.qr-figure {
+  margin: 0;
+}
+
+.qr-figure__plate {
+  display: block;
+  margin-inline: auto;
+  /*
+   * A definite width, always — the drawing inside is sized as a percentage of it
+   * and has nothing to resolve against otherwise. Callers laying the plate into a
+   * column of their own override this with `100%`.
+   */
+  inline-size: min(10rem, 100%);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.qr-figure__caption {
+  margin-block-start: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.qr {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
 }
 
 /* Badges and status -------------------------------------------------------- */

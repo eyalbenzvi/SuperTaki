@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Badge } from '../../../../components/Badge.tsx';
 import { Button } from '../../../../components/Button.tsx';
 import { Modal } from '../../../../components/Modal.tsx';
+import { QrCode } from '../../../../components/QrCode.tsx';
 import { SegmentedControl } from '../../../../components/SegmentedControl.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { canShare, copyText, shareLink } from '../../../../lib/share.ts';
@@ -23,10 +24,11 @@ const COPIED_MS = 2000;
 /**
  * The waiting room.
  *
- * Its whole job is to get other people into the room, so the room code is the
- * biggest thing on the screen and the invite link — three wrapped lines of URL
- * that nobody types by hand — is folded away behind Copy and Share. Below that,
- * who is in, and then the one action that matters.
+ * Its whole job is to get other people into the room, so the two things that do
+ * that lead: the room code, to read out or type, and the invite link as a QR
+ * code for a phone that is in the room already. The link itself — three wrapped
+ * lines of URL that nobody types by hand — stays folded away behind Copy and
+ * Share. Below that, who is in, and then the one action that matters.
  */
 export function LobbyScreen(): ReactNode {
   const t = useT();
@@ -97,10 +99,24 @@ export function LobbyScreen(): ReactNode {
         </h2>
         <p className="text-small muted">{t('lobby.inviteBody')}</p>
 
-        <p className="room-code">
-          <span className="room-code__label">{t('lobby.roomCode')}</span>
-          <span className="room-code__value code-value">{roomCode ?? '—'}</span>
-        </p>
+        {/*
+          The two ways in, side by side once there is room for them: the code to
+          read out or type, and the same invite link as a picture for a phone
+          that is in the room already.
+        */}
+        <div className="invite__ways">
+          <p className="room-code">
+            <span className="room-code__label">{t('lobby.roomCode')}</span>
+            <span className="room-code__value code-value">{roomCode ?? '—'}</span>
+          </p>
+          {inviteUrl ? (
+            <QrCode
+              value={inviteUrl}
+              label={t('lobby.qrLabel', { room: roomCode ?? '' })}
+              caption={t('lobby.qrCaption')}
+            />
+          ) : null}
+        </div>
 
         <div className="btn-group btn-group--fill">
           <Button
