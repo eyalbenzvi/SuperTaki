@@ -199,19 +199,30 @@ This is the honest part.
   hold WebSocket connections. Peers therefore find each other through the free public
   PeerJS broker. That service is generously provided, best-effort, and can be slow or
   briefly unavailable. When it is, the app says so and offers a retry.
-- **Some networks block direct peer-to-peer connections.** STUN lets two browsers discover
-  their public addresses, but it cannot relay traffic. Behind symmetric NAT — common on
-  corporate, school and some mobile networks — a direct connection simply cannot be
-  established. The reliable fix is a TURN relay, which costs money and would break the
-  zero-cost rule, so **this app does not include one.** When a connection fails, the UI
-  explains why and suggests what actually works: a different network (home Wi-Fi, a phone
-  hotspot) or playing on one device with two windows.
+- **Relaying is best-effort.** STUN lets two browsers discover their public addresses but
+  cannot relay traffic, so behind symmetric NAT — common on corporate, school and some
+  mobile networks — a direct connection cannot be established. PeerJS ships two community
+  TURN relays in its default configuration and the app now uses them, which covers most of
+  those cases. What they do not cover: they are UDP-only, so a network that blocks outbound
+  UDP entirely still cannot connect; and they are donated and best-effort, exactly like the
+  signalling broker. When a connection fails the app runs a local check — no broker, no peer
+  — and says which of the three situations you are in, rather than leaving you with a
+  spinner. A relay of our own would cost money and break the zero-cost rule.
 - **Fully reliable global connectivity is not possible under these constraints.** Nothing
   in this project pretends otherwise.
-- **The host's tab is the game.** If the host closes the page or loses connection
-  permanently, the room ends. Host migration is _not_ implemented: transferring authority
-  correctly would need the departing host's private state, which it cannot hand over once
-  it is gone. Rather than fake it, the app tells everyone plainly that the room is over.
+- **The host's tab is the game — but it can come back.** The host's room is written to
+  session storage, so reloading the page reclaims it on the _same room code_: every invite
+  already sent still works, every guest's stored credential still fits, and they reconnect
+  without being told anything. A host who has to leave can also hand the room to another
+  player, and the round carries on. What is deliberately absent is _automatic_ migration
+  away from a host that has gone silent: with no server to arbitrate, two devices can both
+  believe they are the host and serve divergent games, so the app does not attempt it. If
+  the host's tab is closed by the operating system rather than reloaded, the room does end,
+  and the app says so plainly. See `docs/architecture.md` for why.
+- **A disconnect is a pause, not the end.** A seat is held for five minutes, the table says
+  who it is waiting for and counts down, and the game keeps moving around the empty chair
+  rather than freezing on it. Any player can ask the table to wait, and a table that cannot
+  sensibly continue can agree to end the round with no winner.
 - **A player who refreshes can rejoin.** Their browser keeps a seat id and a rejoin token,
   and the host restores their hand and the table. If the token is stale, they are offered a
   fresh join instead.
