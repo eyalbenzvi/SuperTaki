@@ -25,5 +25,5 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src", "tests/unit", "tests/component", "tests/setup.ts", "vitest.config.ts"]
+  "include": ["src", "tests/unit", "tests/component", "tests/helpers", "tests/setup.ts", "vitest.config.ts"]
 }

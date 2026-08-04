@@ -11,8 +11,8 @@ import {
 } from '../../../src/features/game/network/protocol.ts';
 
 const context = {
-  roomId: 'TIGER-MANGO-42',
-  senderPeerId: 'crush-tiger-mango-42',
+  roomId: '482913',
+  senderPeerId: 'crush-482913',
   now: () => 1_700_000_000_000,
 };
 

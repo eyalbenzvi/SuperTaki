@@ -18,8 +18,8 @@ import { writeRaw } from '../../../src/lib/storage.ts';
 const NOW = 1_700_000_000_000;
 
 const validRoom = {
-  roomCode: 'TIGER-MANGO-42',
-  hostPeerId: 'crush-tiger-mango-42',
+  roomCode: '482913',
+  hostPeerId: 'crush-482913',
   playerId: 'pl_abc',
   resumeToken: 'a'.repeat(32),
   displayName: 'Dana',

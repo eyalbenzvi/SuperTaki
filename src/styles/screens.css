@@ -51,6 +51,22 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* So the two ways into the room below can pair up on the panel's own width. */
+  container-type: inline-size;
+}
+
+/*
+ * The code and the QR code are the same invitation twice, for the two people who
+ * need it differently: one is being read out down a hallway, the other is being
+ * pointed at by a phone already in the room. They pair up side by side as soon as
+ * the panel can hold both, matched in height so they read as one offer rather
+ * than two widgets — and that is not only tidier, it is what keeps the roster and
+ * the start button on a phone screen instead of a scroll below it.
+ */
+.invite__ways {
+  display: grid;
+  gap: var(--space-3);
+  align-items: stretch;
 }
 
 /*
@@ -62,12 +78,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-1);
   margin: 0;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--surface-sunken);
   border: 1px solid var(--border);
+  /* So the digits below can be sized against this box, whatever it was given. */
+  container-type: inline-size;
 }
 
 .room-code__label {
@@ -78,10 +97,43 @@
   color: var(--text-muted);
 }
 
+/*
+ * Six digits, spaced out. A room code is dictated down a phone and typed on a
+ * keypad, so the digits are wide apart and monospaced — one digit running into
+ * the next is how a code gets misread, and the tracking is what stops it.
+ *
+ * The size comes from the box the digits are in rather than from the viewport, so
+ * the code fills whichever column the layout gave it and never wraps: six digits
+ * at this tracking are about five times the font size, and 16% leaves room for
+ * the padding at any width the box can be.
+ */
 .room-code__value {
-  font-size: clamp(1.25rem, 7vw, 1.9rem);
+  font-size: clamp(1.25rem, 16cqi, 2.35rem);
+  letter-spacing: 0.18em;
+  /* The tracking is drawn after the last digit too; pull the group back centre. */
+  padding-inline-start: 0.18em;
   text-align: center;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+/*
+ * Side by side, once the panel is wide enough that neither has to give anything
+ * up. The plate rule overrides the component's own width at equal specificity, so
+ * it has to stay after it — components.css is loaded before this file.
+ */
+@container (min-width: 18rem) {
+  /*
+   * The QR column is given a width here rather than left to `auto`, which would
+   * take it from the caption underneath and hand the digits less room than they
+   * need.
+   */
+  .invite__ways {
+    grid-template-columns: minmax(0, 1fr) clamp(7rem, 38cqi, 9.5rem);
+  }
+
+  .qr-figure__plate {
+    inline-size: 100%;
+  }
 }
 
 /*

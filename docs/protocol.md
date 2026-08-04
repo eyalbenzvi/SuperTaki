@@ -168,7 +168,7 @@ Join request (client → host):
 {
   "protocolVersion": 1,
   "id": "9f2c1a7b4e0d8c33",
-  "roomId": "TIGER-MANGO-42",
+  "roomId": "482913",
   "senderPeerId": "abc123def456",
   "timestamp": 1758000000000,
   "type": "joinRequest",
@@ -182,8 +182,8 @@ Join accepted (host → client):
 {
   "protocolVersion": 1,
   "id": "1b7e4c2a9d5f0e81",
-  "roomId": "TIGER-MANGO-42",
-  "senderPeerId": "crush-tiger-mango-42",
+  "roomId": "482913",
+  "senderPeerId": "crush-482913",
   "timestamp": 1758000000120,
   "type": "joinAccepted",
   "payload": {
@@ -191,8 +191,8 @@ Join accepted (host → client):
     "resumeToken": "b3d1f0a29c7e45118ab6d2c4e9f01d7a",
     "displayName": "Dana",
     "lobby": {
-      "roomCode": "TIGER-MANGO-42",
-      "hostPeerId": "crush-tiger-mango-42",
+      "roomCode": "482913",
+      "hostPeerId": "crush-482913",
       "hostPlayerId": "pl_7c1e33a90b2d4f68",
       "maxPlayers": 4,
       "phase": "lobby",
@@ -212,7 +212,7 @@ An action (client → host) — note there is no player id anywhere:
 {
   "protocolVersion": 1,
   "id": "5c8a2e1d7b3f9046",
-  "roomId": "TIGER-MANGO-42",
+  "roomId": "482913",
   "senderPeerId": "abc123def456",
   "timestamp": 1758000042000,
   "type": "action",
@@ -226,8 +226,8 @@ Public state (host → all) — card counts only:
 {
   "protocolVersion": 1,
   "id": "aa10bb20cc30dd40",
-  "roomId": "TIGER-MANGO-42",
-  "senderPeerId": "crush-tiger-mango-42",
+  "roomId": "482913",
+  "senderPeerId": "crush-482913",
   "timestamp": 1758000042100,
   "type": "publicState",
   "payload": {
@@ -267,8 +267,8 @@ Private hand (host → one client only):
 {
   "protocolVersion": 1,
   "id": "bb11cc22dd33ee44",
-  "roomId": "TIGER-MANGO-42",
-  "senderPeerId": "crush-tiger-mango-42",
+  "roomId": "482913",
+  "senderPeerId": "crush-482913",
   "timestamp": 1758000042110,
   "type": "privateHand",
   "payload": {
@@ -290,8 +290,8 @@ Events (host → all):
 {
   "protocolVersion": 1,
   "id": "cc12dd34ee56ff78",
-  "roomId": "TIGER-MANGO-42",
-  "senderPeerId": "crush-tiger-mango-42",
+  "roomId": "482913",
+  "senderPeerId": "crush-482913",
   "timestamp": 1758000042120,
   "type": "gameEvents",
   "payload": {
@@ -315,8 +315,8 @@ A rejection (host → one client):
 {
   "protocolVersion": 1,
   "id": "dd13ee24ff35aa46",
-  "roomId": "TIGER-MANGO-42",
-  "senderPeerId": "crush-tiger-mango-42",
+  "roomId": "482913",
+  "senderPeerId": "crush-482913",
   "timestamp": 1758000042130,
   "type": "actionRejected",
   "payload": { "code": "wrongTakiColor" }

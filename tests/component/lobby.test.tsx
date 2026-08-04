@@ -9,6 +9,7 @@ import {
   setState,
   statusRegions,
 } from './helpers.tsx';
+import { scanSvg } from '../helpers/qrScan.ts';
 
 beforeEach(resetStore);
 
@@ -18,9 +19,9 @@ function enterLobby(patch: Parameters<typeof setState>[0] = {}): void {
     role: 'host',
     phase: 'connected',
     localPlayerId: HOST_ID,
-    roomCode: 'TIGER-MANGO-42',
-    hostPeerId: 'crush-tiger-mango-42',
-    inviteUrl: 'https://example.github.io/color-rush/#/join?room=TIGER-MANGO-42',
+    roomCode: '482913',
+    hostPeerId: 'crush-482913',
+    inviteUrl: 'https://example.github.io/color-rush/#/join?room=482913',
     lobby: lobbyFixture(),
     ...patch,
   });
@@ -30,15 +31,41 @@ describe('lobby', () => {
   it('leads with the room code, and keeps the link behind a disclosure', async () => {
     enterLobby();
     const { user } = renderApp();
-    expect(screen.getByText('TIGER-MANGO-42')).toBeInTheDocument();
+    expect(screen.getByText('482913')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'העתקת הקוד' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'העתקת קישור' })).toBeInTheDocument();
 
     // The raw URL is three wrapped lines nobody types by hand: available, not loud.
     await user.click(screen.getByText('קישור הזמנה'));
-    expect(
-      screen.getByText('https://example.github.io/color-rush/#/join?room=TIGER-MANGO-42'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('https://example.github.io/color-rush/#/join?room=482913')).toBeInTheDocument();
+  });
+
+  it('offers the invite link as a QR code that actually scans to it', () => {
+    enterLobby();
+    renderApp();
+
+    const qr = screen.getByRole('img', { name: 'קוד QR עם קישור ההזמנה לחדר 482913' });
+    // Read back what the browser would show, with a decoder that is not ours.
+    expect(scanSvg(qr as unknown as SVGSVGElement)).toBe(
+      'https://example.github.io/color-rush/#/join?room=482913',
+    );
+    expect(screen.getByText('או סריקה מהטלפון')).toBeInTheDocument();
+  });
+
+  it('shows no QR code before there is a link to put in one', () => {
+    enterLobby({ inviteUrl: null });
+    renderApp();
+    expect(screen.queryByRole('img', { name: /QR/ })).not.toBeInTheDocument();
+    // The code is still there: a room is joinable by it whatever the link is doing.
+    expect(screen.getByText('482913')).toBeInTheDocument();
+  });
+
+  it('drops the caption too when a link is too long to encode', () => {
+    // A deployment path long enough to exceed the encoder's largest symbol.
+    enterLobby({ inviteUrl: `https://example.com/${'p'.repeat(220)}/#/join?room=482913` });
+    renderApp();
+    expect(screen.queryByRole('img', { name: /QR/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('או סריקה מהטלפון')).not.toBeInTheDocument();
   });
 
   it('lists players in seat order with host and self markers', () => {
@@ -214,7 +241,7 @@ describe('sharing the invite', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText }, share: undefined });
 
     await user.click(screen.getByRole('button', { name: 'העתקת קישור' }));
-    expect(writeText).toHaveBeenCalledWith('https://example.github.io/color-rush/#/join?room=TIGER-MANGO-42');
+    expect(writeText).toHaveBeenCalledWith('https://example.github.io/color-rush/#/join?room=482913');
     expect(await screen.findByRole('button', { name: 'הועתק' })).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
@@ -242,7 +269,7 @@ describe('sharing the invite', () => {
     await user.click(screen.getByRole('button', { name: 'שיתוף' }));
     expect(share).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: 'https://example.github.io/color-rush/#/join?room=TIGER-MANGO-42',
+        url: 'https://example.github.io/color-rush/#/join?room=482913',
       }),
     );
     vi.unstubAllGlobals();

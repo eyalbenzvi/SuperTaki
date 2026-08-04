@@ -88,8 +88,8 @@ describe('landing screen', () => {
   it('offers to rejoin a stored room', async () => {
     setState({
       resumable: {
-        roomCode: 'TIGER-MANGO-42',
-        hostPeerId: 'crush-tiger-mango-42',
+        roomCode: '482913',
+        hostPeerId: 'crush-482913',
         playerId: 'pl_abc',
         resumeToken: 'a'.repeat(32),
         displayName: 'דנה',

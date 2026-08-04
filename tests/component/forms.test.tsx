@@ -123,10 +123,10 @@ describe('join room form', () => {
     setState({ screen: 'join', joinRoom, displayName: 'דנה' });
     const { user } = renderApp();
 
-    await user.type(screen.getByLabelText('קישור הזמנה או קוד חדר'), 'tiger mango 42');
+    await user.type(screen.getByLabelText('קישור הזמנה או קוד חדר'), '482 913');
     await user.click(screen.getByRole('button', { name: 'הצטרפות לחדר' }));
 
-    expect(joinRoom).toHaveBeenCalledWith({ name: 'דנה', roomCode: 'TIGER-MANGO-42' });
+    expect(joinRoom).toHaveBeenCalledWith({ name: 'דנה', roomCode: '482913' });
   });
 
   it('accepts a full invite link, including a custom host id', async () => {
@@ -136,13 +136,13 @@ describe('join room form', () => {
 
     await user.type(
       screen.getByLabelText('קישור הזמנה או קוד חדר'),
-      'https://example.github.io/color-rush/#/join?room=TIGER-MANGO-42&host=custom-host-1',
+      'https://example.github.io/color-rush/#/join?room=482913&host=custom-host-1',
     );
     await user.click(screen.getByRole('button', { name: 'הצטרפות לחדר' }));
 
     expect(joinRoom).toHaveBeenCalledWith({
       name: 'דנה',
-      roomCode: 'TIGER-MANGO-42',
+      roomCode: '482913',
       hostPeerId: 'custom-host-1',
     });
   });
@@ -158,20 +158,22 @@ describe('join room form', () => {
   });
 
   it('prefills and announces a room from an invite link', () => {
-    window.location.hash = '#/join?room=TIGER-MANGO-42';
+    window.location.hash = '#/join?room=482913';
     setState({ screen: 'join', displayName: 'דנה' });
     renderApp();
 
-    expect(screen.getByLabelText('קישור הזמנה או קוד חדר')).toHaveValue('TIGER-MANGO-42');
-    expect(statusRegions()[0]).toHaveTextContent('TIGER-MANGO-42');
+    expect(screen.getByLabelText('קישור הזמנה או קוד חדר')).toHaveValue('482913');
+    expect(statusRegions()[0]).toHaveTextContent('482913');
   });
 
   it('sets the room-code field up for a phone keyboard', () => {
     setState({ screen: 'join' });
     renderApp();
     const field = screen.getByLabelText('קישור הזמנה או קוד חדר');
-    expect(field).toHaveAttribute('autocapitalize', 'characters');
+    // Six digits, so a number pad — and none of the correcting a keyboard does.
+    expect(field).toHaveAttribute('inputmode', 'numeric');
     expect(field).toHaveAttribute('spellcheck', 'false');
+    expect(field).toHaveAttribute('autocorrect', 'off');
   });
 
   it('rejoins with the stored resume credentials', async () => {
@@ -180,8 +182,8 @@ describe('join room form', () => {
       screen: 'join',
       joinRoom,
       resumable: {
-        roomCode: 'TIGER-MANGO-42',
-        hostPeerId: 'crush-tiger-mango-42',
+        roomCode: '482913',
+        hostPeerId: 'crush-482913',
         playerId: 'pl_abc',
         resumeToken: 'a'.repeat(32),
         displayName: 'דנה',
@@ -193,8 +195,8 @@ describe('join room form', () => {
     await user.click(screen.getByRole('button', { name: 'חזרה לחדר' }));
     expect(joinRoom).toHaveBeenCalledWith({
       name: 'דנה',
-      roomCode: 'TIGER-MANGO-42',
-      hostPeerId: 'crush-tiger-mango-42',
+      roomCode: '482913',
+      hostPeerId: 'crush-482913',
       resume: { playerId: 'pl_abc', resumeToken: 'a'.repeat(32) },
     });
   });

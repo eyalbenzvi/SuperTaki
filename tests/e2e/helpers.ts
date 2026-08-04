@@ -38,7 +38,7 @@ export async function createRoom(page: Page, name: string, maxPlayers = 4): Prom
   const code = page.locator('.code-value').first();
   await expect(code).toBeVisible();
   const roomCode = (await code.textContent())?.trim() ?? '';
-  expect(roomCode).toMatch(/^[A-Z]+-[A-Z]+-\d{2}$/);
+  expect(roomCode).toMatch(/^\d{6}$/);
   return roomCode;
 }
 

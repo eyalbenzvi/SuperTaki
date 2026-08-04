@@ -136,19 +136,19 @@ function latestPeer(): FakePeer {
 
 describe('peer initialisation', () => {
   it('resolves with the assigned id when signalling opens', async () => {
-    const transport = createPeerTransport({ id: 'crush-tiger-mango-42' });
-    expect(latestPeer().requestedId).toBe('crush-tiger-mango-42');
+    const transport = createPeerTransport({ id: 'crush-482913' });
+    expect(latestPeer().requestedId).toBe('crush-482913');
 
-    latestPeer().emit('open', 'crush-tiger-mango-42');
-    await expect(transport.ready()).resolves.toBe('crush-tiger-mango-42');
-    expect(transport.localId).toBe('crush-tiger-mango-42');
+    latestPeer().emit('open', 'crush-482913');
+    await expect(transport.ready()).resolves.toBe('crush-482913');
+    expect(transport.localId).toBe('crush-482913');
   });
 
   it('gives up when signalling accepts the socket but never opens', async () => {
     // The free public broker does this: no `open`, no `error`, just silence.
     // Without a deadline the caller waits for ever and "Create room" spins with
     // no room code and no explanation.
-    const transport = createPeerTransport({ id: 'crush-tiger-mango-42', readyTimeoutMs: 20 });
+    const transport = createPeerTransport({ id: 'crush-482913', readyTimeoutMs: 20 });
 
     await expect(transport.ready()).rejects.toMatchObject({
       name: 'TransportError',
@@ -158,13 +158,13 @@ describe('peer initialisation', () => {
   });
 
   it('does not time out after a successful open', async () => {
-    const transport = createPeerTransport({ id: 'crush-tiger-mango-42', readyTimeoutMs: 20 });
-    latestPeer().emit('open', 'crush-tiger-mango-42');
-    await expect(transport.ready()).resolves.toBe('crush-tiger-mango-42');
+    const transport = createPeerTransport({ id: 'crush-482913', readyTimeoutMs: 20 });
+    latestPeer().emit('open', 'crush-482913');
+    await expect(transport.ready()).resolves.toBe('crush-482913');
 
     await new Promise((resolve) => setTimeout(resolve, 40));
     // Still resolved, not rejected, well past the deadline.
-    await expect(transport.ready()).resolves.toBe('crush-tiger-mango-42');
+    await expect(transport.ready()).resolves.toBe('crush-482913');
   });
 
   it.each([

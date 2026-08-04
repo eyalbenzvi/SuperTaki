@@ -3,7 +3,7 @@ import { PROTOCOL_VERSION } from '../../../src/features/game/network/protocol.ts
 import type { SessionUpdate } from '../../../src/features/game/network/session.ts';
 import type { Transport, TransportConnection } from '../../../src/features/game/network/transport.ts';
 
-export const TEST_ROOM = 'TIGER-MANGO-42';
+export const TEST_ROOM = '482913';
 
 /** Lets queued microtasks and timer callbacks drain. */
 export async function flush(rounds = 4): Promise<void> {

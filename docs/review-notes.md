@@ -177,8 +177,9 @@ invite-link exposure, CSP, and whether the threat documentation is honest.
   tested. A test asserts the exact stored key set, so an extra field cannot creep in unnoticed.
 - **verified — Invite hygiene.** No secrets in the URL, and the invite parameters are stripped from
   the address bar after being read so a room code is not left in a shared device's history.
-- **accepted — 409,600 room codes** is not cryptographic. Mitigated by short room lifetimes, six
-  seats, and closing to new players at game start. Stated plainly in the threat model.
+- **accepted — A million room codes** (six digits) is not cryptographic. Mitigated by short room
+  lifetimes, six seats, and closing to new players at game start. Stated plainly in the threat
+  model, along with why the code is not shorter.
 - **accepted — No rate limiting** against a joined peer flooding valid messages. Bounded message
   size and schema limits prevent memory abuse; removing the player or closing the room is the
   proportionate response for a six-person private game.
@@ -317,9 +318,11 @@ requirements, and repository readiness.
 - **accepted — A 457 kB JS bundle (132 kB gzipped)**, dominated by PeerJS. Code-splitting it behind
   the create/join flows would shave the landing page, but every player reaches a room within seconds
   and a second network round trip at that moment is worse than one slightly larger initial download.
-- **accepted — No QR code.** The specification allowed omitting it rather than adding a dependency.
-  The invite link plus the native share sheet covers the same need, and the README says so instead of
-  implying a QR code exists.
+- **resolved — The lobby now shows a QR code**, and it still adds no runtime dependency: the encoder
+  is 400 lines in `src/lib/qr.ts` (byte mode, level M, versions 1–10), which is what a URL needs and
+  no more. Its tests decode the drawn symbol with jsQR, a dev dependency — the encoder is ours, so the
+  reader must not be, or a misreading of the specification would satisfy every assertion we wrote
+  about our own output.
 
 ---
 
