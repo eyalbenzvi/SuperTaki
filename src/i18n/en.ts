@@ -235,7 +235,7 @@ export const en = {
   'error.peerUnavailable':
     'The host could not be reached. Check the room code, and that the host still has the page open.',
   'error.signalingUnavailable':
-    'The free connection service could not be reached. Check your internet connection and try again.',
+    'The game relay could not be reached. Check your internet connection and try again.',
   'error.browserUnsupported': 'This browser does not support the direct connections this game needs.',
   'error.network': 'The direct connection between the players failed.',
   'error.timeout': 'The connection attempt timed out.',
@@ -352,7 +352,7 @@ export const en = {
   'host.reclaiming': 'Reclaiming the room code…',
   'host.restarting': 'The host is reloading. Your seat is being held.',
   'host.selfDemoted':
-    'This device cannot reach the connection service, so nobody new can join. Players already here are unaffected.',
+    'This device cannot reach the game relay right now, so nothing is getting through. It keeps retrying on its own.',
   'host.handoffTitle': 'Hand the room over?',
   'host.handoffBody':
     '{name} takes over as host and the round carries on. You leave as an ordinary player. Closing the room instead ends the game for everyone.',
@@ -362,15 +362,6 @@ export const en = {
   'closed.restarting': 'The host is coming back. Your seat is being held.',
   'closed.handoff': 'Another player has taken over as host.',
   'closed.abandoned': 'The round ended because too few players were left.',
-
-  'probe.title': 'Checking this network',
-  'probe.direct': 'This network looks fine for playing together.',
-  'probe.relayNeeded': 'This network needs a relay. It should still work, but it may be slower.',
-  'probe.blocked':
-    'This network blocks the direct connections the game needs. Playing on one device will work.',
-  'probe.unknown': 'This browser could not be checked.',
-  'probe.oneDevice': 'Play on one device instead',
-  'probe.tryAnyway': 'Try anyway',
 
   'local.title': 'One device',
   'local.subtitle': 'Everyone plays on this device, passing it around. Nothing can disconnect.',

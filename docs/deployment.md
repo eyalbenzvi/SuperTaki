@@ -133,33 +133,38 @@ which would otherwise ignore files and folders beginning with an underscore.
 4. No build change is needed: `configure-pages` reports `/` as the base path for a custom
    domain, and the workflow follows.
 
-HTTPS matters beyond good practice: `getRandomValues`, the Clipboard API and WebRTC all require
-a secure context. `github.io` and a custom domain with HTTPS enforced both qualify.
+HTTPS matters beyond good practice: `getRandomValues`, the Clipboard API and secure
+WebSockets all require or expect a secure context. `github.io` and a custom domain with
+HTTPS enforced both qualify.
 
-## Optional: your own PeerServer or TURN server
+## The relay: one-time Cloudflare setup
 
-Not needed, and not free if you self-host — but supported. Add these as repository
-**Variables** (Settings → Secrets and variables → Actions → **Variables**, not Secrets — they
-are baked into a public bundle and are not secret):
+The game's multiplayer runs through the relay in `worker/` — a Cloudflare Worker with one
+Durable Object per room, on the free plan (no credit card). Deploying it once:
 
-| Variable           | Effect                                                                                                               |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `VITE_PEER_HOST`   | Your PeerServer hostname. Setting this switches signalling away from the public broker.                              |
-| `VITE_PEER_PORT`   | Port; defaults to 443 when secure, 9000 otherwise.                                                                   |
-| `VITE_PEER_PATH`   | Path; defaults to `/`.                                                                                               |
-| `VITE_PEER_SECURE` | `false` for plain HTTP/WS.                                                                                           |
-| `VITE_PEER_KEY`    | PeerServer key, if you configured one.                                                                               |
-| `VITE_ICE_SERVERS` | JSON array of `RTCIceServer` objects, e.g. `[{"urls":"turn:turn.example.org:3478","username":"u","credential":"c"}]` |
+1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com).
+2. Copy the **Account ID** from the dashboard's overview page.
+3. Create an API token: My Profile → API Tokens → Create Token → the **Edit Cloudflare
+   Workers** template.
+4. Add repository **Secrets** (Settings → Secrets and variables → Actions → Secrets):
+   - `CLOUDFLARE_API_TOKEN`
+   - `CLOUDFLARE_ACCOUNT_ID`
+5. Push to the default branch, or run the **Deploy relay worker** workflow manually. It
+   typechecks, tests, deploys, and prints the worker URL in the run summary.
+6. Add a repository **Variable** (Variables, not Secrets — it is baked into a public
+   bundle): `RELAY_URL`, set to the worker URL with a `wss://` scheme, e.g.
+   `wss://supertaki-relay.<your-subdomain>.workers.dev`.
+7. Re-run the Pages deploy (push anything, or dispatch it manually). The build injects the
+   URL into the app and into the Content Security Policy — no manual CSP edit is needed.
 
-Then **update the Content Security Policy** in `index.html` so `connect-src` includes your host
-— otherwise the browser will block the connection:
+Without `RELAY_URL`, a production build only knows how to reach a local `wrangler dev` on
+`127.0.0.1:8787`, which is the right default for development and the wrong one for a
+deployed site.
 
-```
-connect-src 'self' https://peer.example.org wss://peer.example.org stun: turn: turns:;
-```
-
-A TURN server is the one thing that would make connections work on restrictive networks. It
-costs money to run, which is why the default configuration does not include one.
+The relay redeploys automatically whenever `worker/**` changes on the default branch. To
+restrict which sites may use your relay, set an `ALLOWED_ORIGINS` variable on the worker in
+the Cloudflare dashboard (comma-separated origins); unset, any origin may connect, which is
+acceptable for a relay that carries no secrets and stores no game state.
 
 ## Verifying a deployment
 
@@ -169,8 +174,8 @@ costs money to run, which is why the default configuration does not include one.
 4. Open the invite link on a second device and join. Both should show "2 of N players".
 5. Start the game. Each player sees eight cards, and only their own.
 
-For a quick single-device check without WebRTC, append `?transport=broadcast` to the URL in two
-tabs.
+For a quick single-device check that skips the relay, append `?transport=broadcast` to the URL
+in two tabs.
 
 ## Troubleshooting
 
@@ -184,7 +189,7 @@ tabs.
 | Workflow ran but both jobs were skipped             | Same cause: the push was not to the default branch. The skip is intentional.                                                        |
 | Site works, rooms never connect                     | Signalling or NAT, not deployment. Try `?debug=1` and read the console; see the README's limitations section.                       |
 | Invite links 404                                    | Only happens if routing was changed away from hash-based. Keep the `#/join?...` form.                                               |
-| Assets load over HTTP and features fail             | Enable **Enforce HTTPS**. WebRTC and the Clipboard API need a secure context.                                                       |
+| Assets load over HTTP and features fail             | Enable **Enforce HTTPS**. Secure WebSockets and the Clipboard API need a secure context.                                                       |
 
 ## Deploying somewhere else
 

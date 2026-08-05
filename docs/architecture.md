@@ -2,49 +2,48 @@
 
 ## The constraint that shapes everything
 
-The application must be a static site on GitHub Pages and must cost exactly nothing. That
-rules out, in order:
+The application must cost exactly nothing and require no account from any player. The site
+is static files on GitHub Pages; the network is one small WebSocket relay — a Cloudflare
+Worker with one Durable Object per room — deployed from this repository to a free
+Cloudflare account. The free plan needs no credit card, and a full game evening uses well
+under one percent of its daily allowance.
 
-- a game server (nothing to run it on),
-- a database (nothing to host it),
-- serverless functions (a paid or billing-gated product everywhere),
-- a signalling server of our own (needs a long-lived WebSocket process),
-- a TURN relay (bandwidth costs money).
+This is the project's second network architecture. The first was WebRTC peer-to-peer with
+the free public PeerJS broker for signalling, chosen to avoid running any server at all. It
+failed in practice exactly where people play: networks whose NAT no amount of STUN can
+traverse, iOS tearing the RTCPeerConnection down on every screen lock, a public broker that
+held a dead peer id for a minute and blocked the host from reclaiming its own room. All of
+it — STUN, TURN, ICE, the broker — is gone. A `wss://` connection on port 443 works
+everywhere the web works, and reconnecting is reopening a socket.
 
-What remains is: **static files, plus whatever the browsers can do between themselves.**
-Browsers can open direct encrypted data channels to each other (WebRTC), provided a third
-party helps them exchange connection descriptions once (signalling). PeerJS provides a free
-public broker for exactly that step, and public STUN servers help each browser discover its
-own address. Both are free and require no account.
-
-So the architecture is: _static client + peer-to-peer mesh, with one peer elected as the
+So the architecture is: _static client + a dumb relay, with one player's browser as the
 authority._
 
-## Host-authoritative peer-to-peer
+## Host-authoritative, relay-routed
 
 ```
-                      ┌──────────────────────────┐
-                      │  Public PeerJS broker    │   used once per connection,
-                      │  (free signalling)       │   for the handshake only
-                      └────────────┬─────────────┘
-                                   │ (SDP/ICE exchange)
-        ┌──────────────────────────┼──────────────────────────┐
-        │                          │                          │
-┌───────▼────────┐        ┌────────▼───────┐         ┌────────▼───────┐
-│  HOST browser  │◄──────►│ Client browser │         │ Client browser │
-│                │  data  │                │         │                │
-│ • full state   │ channel│ • public state │         │ • public state │
-│ • all hands    │◄───────┼─ own hand only │         │ • own hand only│
-│ • game engine  │  (star)│ • same engine  │         │ • same engine  │
-└────────────────┘        └────────────────┘         └────────────────┘
-        ▲                                                     │
-        └─────────────────── data channel ────────────────────┘
+                      ┌───────────────────────────────┐
+                      │  Room relay (worker/)         │   one Durable Object
+                      │  routes frames by peer id,    │   per room code,
+                      │  reads none of them           │   hibernates when idle
+                      └───────┬──────────┬────────────┘
+                       wss:// │          │ wss://
+        ┌─────────────────────┘          └─────────────┐
+        │                          │                   │
+┌───────▼────────┐        ┌────────▼───────┐  ┌────────▼───────┐
+│  HOST browser  │        │ Client browser │  │ Client browser │
+│                │        │                │  │                │
+│ • full state   │        │ • public state │  │ • public state │
+│ • all hands    │        │ • own hand only│  │ • own hand only│
+│ • game engine  │        │ • same engine  │  │ • same engine  │
+└────────────────┘        └────────────────┘  └────────────────┘
 ```
 
-The topology is a **star**, not a mesh: every client holds exactly one data connection, to
-the host. Clients never talk to each other. With at most six players that means at most
-five connections for the host — comfortable — and it removes any question of two peers
-disagreeing about state.
+The topology is a **star**: every client holds exactly one logical connection, to the host,
+multiplexed with everybody else's over the room's relay socket. Clients never talk to each
+other, which removes any question of two peers disagreeing about state. The relay stamps
+the sender's identity on every frame it routes, so no client can speak in another's name;
+everything else about the game is opaque to it.
 
 ### Why the host, and what that means
 
@@ -112,7 +111,7 @@ Application state (Zustand)    src/features/game/state
 Session layer                  src/features/game/network/{host,client}Session.ts
    │ speaks the protocol, owns heartbeats, reconnection, seats
 Transport abstraction          src/features/game/network/transport.ts
-   │ peerjs | broadcast | memory
+   │ relay | broadcast | memory
 Pure game engine               src/features/game/engine
 ```
 
@@ -132,15 +131,16 @@ connection object (`send`, `onData`, `onClose`, `onError`, `close`). Three imple
 
 | Kind        | Used for                           | Notes                                                                                |
 | ----------- | ---------------------------------- | ------------------------------------------------------------------------------------ |
-| `peerjs`    | production                         | Real WebRTC data channels, JSON serialisation, public broker                         |
+| `relay`     | production                         | Virtual channels multiplexed over one WebSocket to the room's Durable Object         |
 | `broadcast` | end-to-end tests, same-device play | `BroadcastChannel` between tabs of one browser; selected with `?transport=broadcast` |
 | `memory`    | unit tests                         | In-process, microtask delivery, no timers                                            |
 
 This seam is what makes the multiplayer logic testable at all. The Playwright suite plays a
 complete round through two real pages, the real protocol, the real host authority and the
-real engine — only the bytes travel over `BroadcastChannel` instead of ICE. Public
-signalling and NAT traversal cannot be made deterministic in CI, and pretending otherwise
-would produce a flaky suite that hides real regressions.
+real engine — only the bytes travel over `BroadcastChannel` instead of the relay. The relay
+itself is covered from the other side: `worker/` has protocol unit tests, and its smoke
+test (`npm run smoke`) drives real WebSocket clients through the live server under
+`wrangler dev`, including claim arbitration and host reclaim.
 
 ## Data flow of one move
 
@@ -220,48 +220,35 @@ checking it is the host's own tab.
 
 ## Known limitations
 
-1. **Relay is best-effort, not guaranteed.** PeerJS ships two community TURN relays in its
-   default configuration, and `peerTransport.ts` now _merges_ that default rather than
-   replacing it — which it used to, silently discarding the only relay candidates the project
-   has. With them, symmetric NAT, carrier NAT and IPv6-only mobile networks generally work.
-   What is still not covered: the relays are UDP/3478 only, with no `turns:`/443 entry, so a
-   network that blocks outbound UDP entirely cannot connect at all; and they are donated,
-   best-effort, and could go away. `probeConnectivity()` diagnoses which case a player is in
-   _before_ they send invites, rather than leaving them with a spinner.
-2. **Signalling depends on a free public service.** The PeerJS broker is best-effort. If it
-   is down, new rooms cannot be created; existing data channels keep working, because
-   signalling is only needed for the handshake. A host that cannot re-register says so, and
-   the reconnection loop is capped and jittered so a room full of clients stays a good
-   citizen of a shared service.
+1. **The relay is a single point of failure.** If Cloudflare's edge (or the worker's free
+   plan) has a bad day, no game traffic flows. The app reports the outage honestly and
+   retries with jittered, capped backoff. This trade was made knowingly: the peer-to-peer
+   design it replaced had a single point of failure too (the public signalling broker), plus
+   an entire family of NAT and mobile-lifecycle failures of its own on top.
+2. **Latency is two hops.** A move travels player → relay → host → relay → players, rather
+   than directly between browsers. For a turn-based card game measured in human seconds,
+   tens of milliseconds of relay hop are unnoticeable.
 3. **No _automatic_ host migration.** A host can hand the room over explicitly, and a host
-   that reloads or crashes can take it back on the same room code (see "Surviving a
-   disconnect"). What is deliberately absent is a silent host being replaced without its
-   consent. It cannot be made safe here: PeerJS's signalling socket and its data channels
-   have independent lifetimes, so a host that has only lost the broker keeps serving everyone
-   already connected while being unable to accept anybody new — and a client that cannot
-   reach it has no way to tell that from death, because clients have no mesh between them and
-   "the host is gone" is a single unverifiable observation. Two live hosts serving divergent
-   games is reachable, and a digest of the state proves authenticity rather than recency, so
-   a successor could take over several moves in the past and be believed. A table that needs
-   to stop can agree to stop instead.
+   that reloads, crashes or loses its device can take the room back on the same code (see
+   "Surviving a disconnect"). What is deliberately absent is a silent host being replaced
+   without its consent: "the host is gone" is still a single unverifiable observation from
+   any one client's seat, and two live hosts serving divergent games is a worse failure than
+   a table agreeing to stop.
 4. **No spectators.** New players cannot join after the game starts. The protocol has a
    `wantsSpectator` flag reserved, but the behaviour is not implemented and the host rejects
    late joins with `gameInProgress`.
 5. **The host has more power than a server would.** A modified host client could deal itself
    a good hand. This is a private game among people who know each other; see
    [threat-model.md](threat-model.md).
-6. **Nothing is persisted beyond the tab.** There is no history, no ranking and no stored
-   replay. The host's room _is_ written down, but to `sessionStorage`: it survives a reload
-   and dies with the tab, because it contains every hand and the deck order.
-7. **A hard-killed host tab cannot be recovered.** A reload is; an operating system closing
-   the tab is not, because that clears `sessionStorage`. Writing everybody's cards to
-   persistent storage on a possibly-shared device is the price of covering it, and it is not
-   worth paying.
-8. **Mobile background tabs still drop connections.** Nothing in a web page can prevent it.
-   What has changed is the response: the page notices it woke, probes at once instead of
-   waiting for a throttled timer, and never mistakes its own sleep for the other side
-   leaving. A screen wake lock keeps the game from sleeping while it is in front of the
-   player.
+6. **Nothing is persisted beyond the players' own devices.** There is no history, no ranking
+   and no stored replay. The host's room _is_ written down — to `localStorage`, with a
+   six-hour TTL, because the game surviving a host crash is a requirement; the entry
+   contains every hand, so it is validated on read, expired aggressively and erased on an
+   intentional leave. See [threat-model.md](threat-model.md).
+7. **Mobile background tabs still drop connections.** Nothing in a web page can prevent it.
+   What has changed is the response: the page notices it woke, probes the socket at once,
+   and reopening a WebSocket is cheap and reliable in a way ICE restarts never were. A
+   screen wake lock keeps the game from sleeping while it is in front of the player.
 
 ## Surviving a disconnect
 
@@ -280,12 +267,14 @@ it; the client derives its own give-up deadline by subtraction. Two independent 
 would eventually disagree, and the countdown a player is shown would be contradicted by the
 timer running underneath it.
 
-**The host can come back.** Its room is written to `sessionStorage` after every change — the
-structural fields at once, the deck throttled, everything flushed on `pagehide`, which also
-sends a `restarting` notice so the silence is never ambiguous. On return it reclaims the _same_
-room code for seventy-five seconds (the broker holds a dropped id for up to a minute, so the
-id being refused is usually its own ghost), and restores its own player id and the version
-floor along with the game. Every guest's credential still fits, so they reconnect unprompted.
+**The host can always come back.** Its room is written to `localStorage` after every change —
+the structural fields at once, the deck throttled, everything flushed on `pagehide`, which
+also sends a `restarting` notice so the silence is never ambiguous. The room's relay claim is
+written with it. On return — after a reload, a closed tab, or a crashed browser — the relay
+recognises the claim and hands back the _same_ room code immediately; the snapshot restores
+the host's player id, the version floor and the game. Every guest's credential still fits, and
+the guests never lost their relay connection at all: they were sitting in the room watching
+for the host's `peerUp`, so they reconnect unprompted the moment it appears.
 
 **The table keeps moving.** An absent player's turn is passed after a short grace — free,
 except that an outstanding +2 run is still paid, since that is an obligation somebody else
@@ -295,14 +284,16 @@ is _marked_, never deleted. Any player can pause the table, and the table can ag
 round with no winner.
 
 Rejected, for the record: a heartbeat inside a Web Worker (Chrome freezes a page's workers
-along with the page, and iOS suspends both), and a `localStorage` mirror of the host snapshot
-(it would put every hand on disk to cover the rare crash-with-tab-close).
+along with the page, and iOS suspends both), and server-side game state (the relay stores
+nothing but peer-id claims — keeping the host authoritative keeps hands off any server).
 
-## Why no backend
+## Why this much backend and no more
 
-Any backend — a small VPS, a managed database, a single serverless function — would make
-several of the limitations above disappear. Every one of those options either costs money,
-requires billing details on file, or depends on a free tier that can be withdrawn. The
-project's requirement is _exactly zero_ third-party cost with no billing relationship
-anywhere, and this architecture is what that requirement permits. The trade-offs are real,
-so they are documented rather than hidden.
+The relay is the smallest backend that removes the failures that actually ended games:
+about two hundred lines that route frames and remember which claim owns which peer id. It
+holds no game state, so a relay compromise or outage can corrupt nothing — the host's
+browser remains the only authority. Anything bigger — accounts, a database, server-side
+rules — would add operational surface and a billing relationship without fixing a failure
+this game actually has. The free plan requires no payment details; if its terms ever
+change, the worker is ordinary TypeScript behind a four-frame protocol and can move
+anywhere that runs WebSockets.

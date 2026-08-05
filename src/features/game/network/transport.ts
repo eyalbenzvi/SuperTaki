@@ -1,15 +1,15 @@
 /**
  * Transport abstraction.
  *
- * The lobby/game sessions only ever talk to this interface, which keeps PeerJS
- * out of the game logic and makes deterministic testing possible:
- * - `peerjs`    — real WebRTC data channels (production)
+ * The lobby/game sessions only ever talk to this interface, which keeps the
+ * network out of the game logic and makes deterministic testing possible:
+ * - `relay`     — WebSocket frames routed through the room's relay (production)
  * - `broadcast` — BroadcastChannel between tabs of the same browser
  *                 (end-to-end tests, and same-device play)
  * - `memory`    — in-process, used by unit tests
  */
 
-export type TransportKind = 'peerjs' | 'broadcast' | 'memory';
+export type TransportKind = 'relay' | 'broadcast' | 'memory';
 
 export type TransportErrorCode =
   | 'idUnavailable'

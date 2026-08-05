@@ -38,7 +38,6 @@ export type DiagnosticKind =
   | 'sleep'
   | 'suspicion'
   | 'reachability'
-  | 'connectivityProbe'
   | 'hostSnapshot'
   | 'hostRestart'
   | 'handover'
@@ -51,7 +50,6 @@ export type DiagnosticKind =
 const NEVER_EVICT: ReadonlySet<DiagnosticKind> = new Set<DiagnosticKind>([
   'transportError',
   'connectFailed',
-  'connectivityProbe',
   'path',
   'hostRestart',
   'handover',

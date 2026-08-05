@@ -11,9 +11,10 @@
     <!--
       Content Security Policy.
 
-      - `connect-src` allows the free public PeerJS signalling service, WebSocket
-        signalling and STUN/TURN candidates. Add your own PeerServer or TURN host
-        here if you configure one.
+      - `connect-src` allows exactly two destinations: this origin, and the
+        game's relay. `%RELAY_CSP%` is filled in at build time from
+        `VITE_RELAY_URL` (see vite.config.ts), so the deployed page can only
+        talk to the relay it was built for.
       - No `unsafe-inline` for scripts; Vite emits external modules only.
       - Styles need `unsafe-inline` because the app sets `color-scheme` on the
         root element at runtime and Vite injects a style tag in dev.
@@ -31,7 +32,7 @@
                style-src 'self' 'unsafe-inline';
                font-src 'self';
                script-src 'self';
-               connect-src 'self' https://0.peerjs.com wss://0.peerjs.com https://*.peerjs.com wss://*.peerjs.com stun: turn: turns:;
+               connect-src 'self' %RELAY_CSP%;
                manifest-src 'self'"
     />
     <!-- The wordmark's four suit colours, inline so the icon costs no request. -->

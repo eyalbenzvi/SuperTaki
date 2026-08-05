@@ -63,6 +63,18 @@ export function hostPeerIdForRoom(roomCode: string, generation = 0): string {
   return generation > 0 ? `${base}-h${String(generation)}` : base;
 }
 
+/**
+ * The inverse of `hostPeerIdForRoom`: which room a host peer id lives in.
+ *
+ * The relay names its rooms by room code, so a guest transport that only knows
+ * the host's peer id derives the room to dial from the id itself — any
+ * generation suffix included.
+ */
+export function roomCodeFromHostPeerId(peerId: string): string | null {
+  const match = new RegExp(`^${PEER_ID_PREFIX}-(\\d{${String(ROOM_CODE_LENGTH)}})(?:-h\\d+)?$`).exec(peerId);
+  return match ? (match[1] as string) : null;
+}
+
 const PEER_ID_PATTERN = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
 
 export function isValidPeerId(input: string): boolean {

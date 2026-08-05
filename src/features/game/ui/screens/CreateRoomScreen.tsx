@@ -8,7 +8,6 @@ import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../../../../lib/sa
 import { MAX_PLAYERS, MIN_PLAYERS } from '../../engine/state.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
-import { ConnectivityNotice } from '../components/ConnectivityNotice.tsx';
 
 const PLAYER_COUNTS = Array.from(
   { length: MAX_PLAYERS - MIN_PLAYERS + 1 },
@@ -45,7 +44,6 @@ export function CreateRoomScreen(): ReactNode {
       {/* A room that fails to open must say so here; the player never reaches
           the lobby, so the lobby's notice would never be shown. */}
       <ConnectionPhaseNotice />
-      <ConnectivityNotice />
 
       <form
         className="panel stack"

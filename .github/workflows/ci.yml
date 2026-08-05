@@ -52,6 +52,32 @@ jobs:
           path: coverage
           retention-days: 7
 
+  relay:
+    name: Relay worker - typecheck, tests, smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and unit tests
+        run: npm run verify
+
+      # Real WebSocket clients against the real worker under `wrangler dev`:
+      # registration, claim arbitration, routing, presence, host reclaim.
+      - name: Smoke test against workerd
+        run: npm run smoke
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest

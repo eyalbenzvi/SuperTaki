@@ -1,0 +1,62 @@
+name: Deploy relay worker
+
+# The relay deploys from the default branch, like Pages, and only when the
+# worker itself changed. `workflow_dispatch` covers the first deploy and
+# redeploys after a Cloudflare-side change.
+on:
+  push:
+    branches: ['**']
+    paths: ['worker/**', '.github/workflows/deploy-worker.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test and deploy
+    runs-on: ubuntu-latest
+    if: github.ref_name == github.event.repository.default_branch
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and test
+        run: npm run verify
+
+      - name: Deploy to Cloudflare
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+
+      - name: Report the relay URL
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          {
+            echo "## Relay deployed"
+            echo ""
+            echo "Worker URL: ${DEPLOYMENT_URL:-see the wrangler output above}"
+            echo ""
+            echo 'Set the repository variable `RELAY_URL` to this URL with the'
+            echo '`wss://` scheme (for example `wss://supertaki-relay.example.workers.dev`)'
+            echo 'so the Pages build points the game at it.'
+          } >> "$GITHUB_STEP_SUMMARY"

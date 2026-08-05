@@ -3,7 +3,7 @@ import { randomHex } from '../../../lib/id.ts';
 import { onSleep, onWake } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
-import { probeReachability } from './connectivityProbe.ts';
+import { probeReachability } from './reachability.ts';
 import { hostPeerIdForRoom } from './roomCode.ts';
 import { MessageDeduplicator, clientMessage, type MessageContext } from './envelope.ts';
 import {

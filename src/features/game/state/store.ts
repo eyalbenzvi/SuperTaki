@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_LANGUAGE, directionFor, type Language } from '../../../i18n/index.ts';
 import { record } from '../../../lib/diagnostics.ts';
 import { onSleep } from '../../../lib/lifecycle.ts';
+import { createRoomClaim } from '../../../lib/id.ts';
 import { releaseSound, setSoundEnabled, unlockSound } from '../../../lib/audio.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
@@ -77,10 +78,9 @@ const ROOM_CODE_ATTEMPTS = 4;
 /**
  * How many times a returning host tries to reclaim its own room code.
  *
- * The schedule spans seventy-five seconds because the broker holds a dropped peer
- * id for up to a minute: the id being refused is usually our own ghost, so giving
- * up early means conceding the room code — and invalidating every invite already
- * sent — at the moment it was still recoverable.
+ * The relay recognises the stored claim, so the first attempt normally wins; the
+ * rest of the schedule is patience with the *network*, because giving up means
+ * conceding the room code and invalidating every invite already sent.
  */
 const HOST_ID_ATTEMPTS = HOST_ID_RETRY_SCHEDULE_MS.length;
 
@@ -216,6 +216,12 @@ export type AppStore = AppState & AppActions;
  * handles that must never be treated as renderable state.
  */
 let session: HostSession | ClientSession | null = null;
+/**
+ * Relay claim for the room this device is hosting. Minted when the room is
+ * created, persisted in the host snapshot, and presented again on reclaim — it
+ * is what proves to the relay that this device owns the room code.
+ */
+let activeRoomClaim: string | null = null;
 /**
  * Which session the store is currently listening to.
  *
@@ -403,7 +409,10 @@ export const useAppStore = create<AppStore>((set, get) => {
     const peerId = hostPeerIdForRoom(roomCode, generation);
     let transport: Transport | null = null;
     try {
-      transport = createTransport({ id: peerId });
+      // A fresh claim: the successor owns a new generation id, not the old one.
+      const claim = createRoomClaim();
+      transport = createTransport({ id: peerId, claim });
+      activeRoomClaim = claim;
       const previous = session;
       sessionEpoch += 1;
       const hostSession = await createHostSession({
@@ -450,6 +459,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     saveHostedRoom({
       roomCode: active.roomCode,
       hostPeerId: active.hostPeerId,
+      claim: activeRoomClaim,
       generation: active.generation,
       restore,
     });
@@ -484,6 +494,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       flushHostedRoom({
         roomCode: active.roomCode,
         hostPeerId: active.hostPeerId,
+        claim: activeRoomClaim,
         generation: active.generation,
         restore: active.snapshot(),
       });
@@ -673,6 +684,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         }
         if (get().role === 'host') {
           clearHostedRoom();
+          activeRoomClaim = null;
         }
         set({
           ...CLEARED_SESSION,
@@ -776,6 +788,7 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     forgetHostable: () => {
       clearHostedRoom();
+      activeRoomClaim = null;
       set({ hostable: null });
     },
 
@@ -805,11 +818,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       for (let attempt = 0; attempt < ROOM_CODE_ATTEMPTS; attempt += 1) {
         const roomCode = generateRoomCode();
         const peerId = hostPeerIdForRoom(roomCode);
+        const claim = createRoomClaim();
         // Held outside the try so a failed attempt can tear its transport down
         // instead of leaving an orphaned socket that may still fire `open`.
         let transport: Transport | null = null;
         try {
-          transport = createTransport({ id: peerId });
+          transport = createTransport({ id: peerId, claim });
+          activeRoomClaim = claim;
           set({ role: 'host', roomCode, hostPeerId: peerId, phase: 'initializing' });
           sessionEpoch += 1;
           const hostSession = await createHostSession({
@@ -853,11 +868,10 @@ export const useAppStore = create<AppStore>((set, get) => {
      *
      * Keeping the code is the whole point: every invite already sent stays valid,
      * and every client's stored credential still fits, so the players reconnect on
-     * their own without being told anything. It has to be patient, though — the
-     * broker holds a dropped peer id for up to a minute, so the id we are trying to
-     * reclaim is very often our own ghost. Giving up early would concede the code
-     * and silently invalidate all those invites at the exact moment they were
-     * recoverable.
+     * their own without being told anything. The stored claim makes the relay hand
+     * the id straight back — even if the room still shows our old socket as
+     * present, the claim supersedes it — so failures here are network failures,
+     * and network failures deserve patience rather than conceding the code.
      */
     resumeHosting: async () => {
       const hostable = get().hostable;
@@ -900,7 +914,15 @@ export const useAppStore = create<AppStore>((set, get) => {
         }
         let transport: Transport | null = null;
         try {
-          transport = createTransport({ id: hostable.hostPeerId });
+          /*
+           * The stored claim is the room key: presenting it makes the relay hand
+           * the id straight back, however long this device was gone. A snapshot
+           * from before claims existed falls back to a fresh one, which succeeds
+           * once the relay's hold on the old id expires.
+           */
+          const claim = hostable.claim ?? createRoomClaim();
+          transport = createTransport({ id: hostable.hostPeerId, claim });
+          activeRoomClaim = claim;
           const hostSession = await createHostSession({
             transport,
             roomCode: hostable.roomCode,
@@ -1146,6 +1168,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       detachSleepHook = null;
       clearResumableRoom();
       clearHostedRoom();
+      activeRoomClaim = null;
       clearActionLock();
       set({
         ...CLEARED_SESSION,

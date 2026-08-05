@@ -6,7 +6,8 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', 'playwright-report/**', 'test-results/**', '.qa/**'],
+    // `worker/` is its own package with its own toolchain and typecheck.
+    ignores: ['dist/**', 'coverage/**', 'playwright-report/**', 'test-results/**', '.qa/**', 'worker/**'],
   },
   js.configs.recommended,
   {
