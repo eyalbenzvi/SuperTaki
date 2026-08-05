@@ -8,7 +8,6 @@ import {
   DRAW_STAGGER_MS,
   PLAY_LOCAL_MS,
   PLAY_REMOTE_MS,
-  PLAY_REVEAL_MS,
   REDUCED_MS,
   choreograph,
   cueFor,
@@ -151,26 +150,25 @@ describe('what each event is worth', () => {
 });
 
 describe('a card being played', () => {
-  it('travels from the player who played it and turns over on the way', () => {
+  it("flies the card's own face from the seat that played it", () => {
+    // The face, not a back: the discard has already committed the play, so a copy
+    // of that card travelling onto the pile matches what is already there.
     const [motion] = plan([{ type: 'cardPlayed', playerId: THEM, card: CARD, resultingColor: 'red' }]);
     expect(motion).toMatchObject({
       kind: 'flight',
       from: `seat:${THEM}`,
       to: 'pile:discard',
-      faceDown: true,
-      revealAfterMs: PLAY_REVEAL_MS,
+      card: CARD,
       durationMs: PLAY_REMOTE_MS,
     });
   });
 
-  it('leaves my own hand already face up, and quicker', () => {
+  it('leaves my own hand from the slot it sat in, and quicker', () => {
     const [motion] = plan([{ type: 'cardPlayed', playerId: ME, card: CARD, resultingColor: 'red' }]);
     // Shorter because I already know what I did; the length would just be latency.
     expect(motion).toMatchObject({
       kind: 'flight',
       from: `slot:${CARD.id}`,
-      faceDown: false,
-      revealAfterMs: null,
       durationMs: PLAY_LOCAL_MS,
     });
   });
@@ -203,7 +201,7 @@ describe('cards being drawn', () => {
   it('never reveals a drawn card, not even to its owner', () => {
     const motions = plan([{ type: 'cardDrawn', playerId: ME, count: 2 }]);
     for (const motion of motions) {
-      expect(motion).toMatchObject({ card: null, faceDown: true, revealAfterMs: null });
+      expect(motion).toMatchObject({ card: null });
     }
   });
 });

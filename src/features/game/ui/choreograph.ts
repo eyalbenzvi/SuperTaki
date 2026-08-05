@@ -20,9 +20,6 @@ export interface Flight {
   readonly to: AnchorId;
   /** The face to show, or `null` for a card whose identity is not ours to know. */
   readonly card: Card | null;
-  readonly faceDown: boolean;
-  /** When to turn a face-down card over, or `null` to leave it down. */
-  readonly revealAfterMs: number | null;
   readonly delayMs: number;
   readonly durationMs: number;
 }
@@ -73,7 +70,6 @@ export interface ChoreographOptions {
 /* Timings. Named because the tests assert them and the view obeys them. */
 export const PLAY_REMOTE_MS = 240;
 export const PLAY_LOCAL_MS = 170;
-export const PLAY_REVEAL_MS = 90;
 export const DRAW_MS = 200;
 export const DRAW_STAGGER_MS = 45;
 /** A ten-card penalty flies four cards, not ten. */
@@ -196,11 +192,13 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
           from: mine ? `slot:${event.card.id}` : seatAnchor(event.playerId, me),
           to: 'pile:discard',
           card: event.card,
-          // Somebody else's card turns over on the way, and that reveal is what
-          // makes it read as a move played *at* you. My own card is already
-          // known to me, so hiding it would be theatre.
-          faceDown: !mine,
-          revealAfterMs: mine ? null : PLAY_REVEAL_MS,
+          // The card's own face flies, from my hand or from the seat that played
+          // it. It matches what the discard already shows — the authoritative DOM
+          // has committed the play before the flight starts — so a copy of that
+          // card travelling onto the pile reads cleanly as "they played this". An
+          // earlier design flew a face-down back and flipped it mid-air; that only
+          // made sense against a pile that had *not* yet updated, which this
+          // architecture never leaves it, so the flip was cut with these lines.
           delayMs: 0,
           durationMs: mine ? PLAY_LOCAL_MS : PLAY_REMOTE_MS,
         },
@@ -219,8 +217,6 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
           // A drawn card is face down to everyone, including its owner: they
           // learn it from their hand, not from watching it travel.
           card: null,
-          faceDown: true,
-          revealAfterMs: null,
           delayMs: index * DRAW_STAGGER_MS,
           durationMs: DRAW_MS,
         });
@@ -254,8 +250,6 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
           from: 'pile:discard',
           to: seatAnchor(event.playerId, me),
           card: null,
-          faceDown: true,
-          revealAfterMs: null,
           delayMs: 0,
           durationMs: PULSE_MS,
         },
@@ -265,8 +259,6 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
           from: seatAnchor(event.playerId, me),
           to: seatAnchor(event.targetId, me),
           card: null,
-          faceDown: true,
-          revealAfterMs: null,
           delayMs: PULSE_MS,
           durationMs: PULSE_MS,
         },
@@ -292,8 +284,6 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
           from: seatAnchor(event.caughtById, me),
           to: seatAnchor(event.playerId, me),
           card: null,
-          faceDown: true,
-          revealAfterMs: null,
           delayMs: 0,
           durationMs: PLAY_REMOTE_MS,
         },
@@ -320,8 +310,6 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
           from: 'pile:discard',
           to: 'pile:draw',
           card: null,
-          faceDown: true,
-          revealAfterMs: null,
           delayMs: 0,
           durationMs: RECYCLE_MS,
         },
