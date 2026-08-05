@@ -276,6 +276,35 @@ test.describe('reduced motion, in the overlay too', () => {
   });
 });
 
+test.describe('a tab nobody is looking at', () => {
+  test('accumulates nothing while hidden', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+    await seatAndDeal(host, guest);
+
+    /*
+     * A hidden tab freezes its animations, so a clone created while hidden never
+     * finishes and never cleans itself up. Without dropping those beats, a few
+     * minutes in the background would accumulate hundreds of clones and play all of
+     * them at once on return.
+     */
+    await guest.bringToFront();
+    await host.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    for (let move = 0; move < 6; move += 1) {
+      if (!(await playOrDrawOnce(guest)) && !(await playOrDrawOnce(host))) {
+        break;
+      }
+    }
+
+    const hidden = await host.evaluate(() => document.querySelectorAll('.flight-layer > *').length);
+    expect(hidden, 'nothing queues up behind a hidden tab').toBe(0);
+  });
+});
+
 test.describe('residue', () => {
   test('leaves nothing behind after a long round', async ({ context }) => {
     const host = await context.newPage();

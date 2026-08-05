@@ -78,6 +78,20 @@ export function FlightLayer({ beat, localPlayerId, registry }: FlightLayerProps)
       return;
     }
 
+    /*
+     * A beat that arrived while nobody was looking has nothing to narrate.
+     *
+     * This is not only tidiness. A hidden tab freezes its animations, so nothing
+     * would finish and nothing would clean itself up — five minutes in the
+     * background would accumulate a few hundred clones and then play all of them at
+     * once on return. The audio path drops hidden cues for the same reason, and the
+     * table underneath is already showing the finished state either way.
+     */
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      lastPlayed.current = beat.seq;
+      return;
+    }
+
     const reduced = prefersReducedMotion();
     const plan = choreograph(beat, {
       localPlayerId,
