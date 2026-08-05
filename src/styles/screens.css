@@ -590,6 +590,16 @@
 
 /* Turn banner ------------------------------------------------------------- */
 
+/*
+ * Whose turn it is, which changes several times a minute.
+ *
+ * One font size for both states, on purpose. The emphasised state used to step
+ * from `--text-md` to `--text-lg`, and font size is a layout property: becoming
+ * the current player reflowed the banner and the row around it, with nothing
+ * transitioned, on the most frequent state change in the game. The emphasis is
+ * carried by a scale and the colour instead, both of which the compositor can
+ * animate without touching layout.
+ */
 .turn-banner {
   margin: 0;
   padding: var(--space-1) var(--space-4);
@@ -600,13 +610,19 @@
   border: 1px solid var(--border);
   background: var(--surface-sunken);
   color: var(--text-muted);
+  transform: scale(1);
+  transition:
+    transform var(--transition-medium),
+    background-color var(--transition-medium),
+    border-color var(--transition-medium),
+    color var(--transition-medium);
 }
 
 .turn-banner--mine {
   background: var(--success-soft);
   border-color: var(--success);
   color: var(--text);
-  font-size: var(--text-lg);
+  transform: scale(1.04);
 }
 
 /* Log --------------------------------------------------------------------- */
@@ -688,8 +704,13 @@
     --pile-max: 6.25rem;
   }
 
+  /*
+   * A little more emphasis where there is room for it — expressed as a scale for
+   * the same reason as the base rule: font size is a layout property, and the
+   * turn changes several times a minute.
+   */
   .turn-banner--mine {
-    font-size: var(--text-xl);
+    transform: scale(1.07);
   }
 }
 
@@ -742,6 +763,8 @@
 
   .hand {
     padding-block: 12px var(--space-1);
+    --hand-lift: -8px;
+    --hand-lift-deep: -13px;
   }
 
   /* The reason fits on the button only where there is height for two lines. */
@@ -841,6 +864,9 @@
   .hand {
     padding-block: 8px 2px;
     min-height: 0;
+    /* Landscape has eight pixels of room, so the wave is proportionate to it. */
+    --hand-lift: -5px;
+    --hand-lift-deep: -8px;
   }
 
   .turn-banner {

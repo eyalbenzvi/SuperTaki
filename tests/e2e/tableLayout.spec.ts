@@ -41,6 +41,23 @@ async function measure(page: Page): Promise<Report> {
     const rect = (selector: string): DOMRect | null =>
       document.querySelector(selector)?.getBoundingClientRect() ?? null;
     const cards = [...document.querySelectorAll('.hand .card')].map((card) => card.getBoundingClientRect());
+    /*
+     * Rows are counted from the *slots*, not the cards.
+     *
+     * A slot is the grid track and is never transformed; a card is lifted when it
+     * is playable, and `getBoundingClientRect()` includes that transform. Counting
+     * card tops conflated "raised" with "wrapped" — and did so intermittently,
+     * because the lift arrives as a staggered wave, so the answer depended on how
+     * far through it the measurement landed. The question this asks is about
+     * layout, so it is asked of the thing that owns the layout.
+     *
+     * Cards are still what the viewport check below measures: a lifted card
+     * clipping off the top of a short screen is a real risk, and it is the card
+     * that would clip.
+     */
+    const slots = [...document.querySelectorAll('.hand .hand__slot')].map((slot) =>
+      slot.getBoundingClientRect(),
+    );
     const region = rect('.game__table');
     const panel = rect('.piles');
     return {
@@ -54,7 +71,7 @@ async function measure(page: Page): Promise<Report> {
       panelOverflow: region && panel ? Math.round(panel.height - region.height) : 0,
       handCards: cards.length,
       // Rounded into 6 px buckets: a fanned row is not pixel-aligned.
-      handRows: new Set(cards.map((card) => Math.round(card.top / 6))).size,
+      handRows: new Set(slots.map((slot) => Math.round(slot.top / 6))).size,
     };
   });
 }

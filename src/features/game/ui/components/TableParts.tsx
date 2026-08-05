@@ -23,6 +23,27 @@ import {
 } from '../handLayout.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
 
+/** Per-card delay in the arming wave. Twenty-five milliseconds reads as one gesture. */
+const ARM_STAGGER_MS = 25;
+
+/**
+ * How thick the draw pile looks, in four steps.
+ *
+ * Bucketed rather than continuous: a stack that thins by a fraction of a pixel per
+ * card is a stack nobody can see thinning, and four steps is enough to read
+ * "plenty / half / getting low / nearly out" without anybody parsing the count
+ * printed underneath.
+ */
+export function depthBucket(count: number): 0 | 1 | 2 | 3 {
+  if (count > 30) {
+    return 3;
+  }
+  if (count > 15) {
+    return 2;
+  }
+  return count > 5 ? 1 : 0;
+}
+
 /**
  * The colour that must currently be matched.
  *
@@ -203,14 +224,20 @@ export function Piles({
   return (
     <div className="piles">
       <div className="pile">
-        <button
-          type="button"
-          className={`card card--back card--lg ${canDraw ? 'card--playable' : 'card--dimmed'}`}
-          onClick={onDraw}
-          disabled={!canDraw}
-          aria-label={countLabel(t, 'game.drawPileAria', drawPileCount)}
-          title={canDraw ? t('game.drawPile') : drawBlockedReason}
-        />
+        {/* The wrapper replaces the button as a child of `.pile` rather than
+            sitting beside it: a fourth child would add a flex gap, and the pile
+            card's size is solved from the height left over after a hand-measured
+            chrome constant. */}
+        <div className="pile__deck" data-depth={depthBucket(drawPileCount)}>
+          <button
+            type="button"
+            className={`card card--back card--lg ${canDraw ? 'card--playable' : 'card--dimmed'}`}
+            onClick={onDraw}
+            disabled={!canDraw}
+            aria-label={countLabel(t, 'game.drawPileAria', drawPileCount)}
+            title={canDraw ? t('game.drawPile') : drawBlockedReason}
+          />
+        </div>
         <span className="pile__label">{t('game.drawPile')}</span>
         <span className="pile__count">{countLabel(t, 'game.cardsLeft', drawPileCount)}</span>
       </div>
@@ -381,15 +408,36 @@ export function Hand({
       : {}),
   } as CSSProperties;
 
+  /*
+   * "I have something I can play." Not "it is my turn": an open +3 makes a
+   * breaker legal from any seat, out of turn, and that is the most time-critical
+   * decision in the game — precisely the moment the cue is worth most.
+   */
+  const armed = playable.size > 0;
+
   return (
     <section className="hand-area" aria-label={t('game.yourHand')} ref={areaRef}>
       <div className="hand-area__head">
         <h2 className="hand-area__title">{t('game.yourHand')}</h2>
         <span className="hand-area__count">{countLabel(t, 'game.handCount', cards.length)}</span>
       </div>
-      <ul className="hand" style={style} ref={listRef} onKeyDown={onKeyDown}>
+      <ul
+        className={`hand ${armed ? 'hand--armed' : ''}`.trim()}
+        style={style}
+        ref={listRef}
+        onKeyDown={onKeyDown}
+      >
         {cards.map((card, index) => (
-          <li key={card.id} className="hand__slot">
+          <li
+            key={card.id}
+            className="hand__slot"
+            /*
+             * The wave runs across the hand rather than arriving all at once.
+             * Ordered by position, not by which cards happen to be playable, so
+             * the sweep reads as one gesture over the hand.
+             */
+            style={{ '--lift-delay': `${index * ARM_STAGGER_MS}ms` } as CSSProperties}
+          >
             <PlayableCard
               card={card}
               t={t}

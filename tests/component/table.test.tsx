@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { GUEST_ID, HOST_ID, enterGame, lobbyFixture, renderApp, resetStore, setState } from './helpers.tsx';
 import type { Card } from '../../src/features/game/engine/cards.ts';
+import { depthBucket } from '../../src/features/game/ui/components/TableParts.tsx';
 import { useAppStore } from '../../src/features/game/state/store.ts';
 
 beforeEach(resetStore);
@@ -286,5 +287,79 @@ describe('leaving', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
     expect(leaveRoom).toHaveBeenCalled();
+  });
+});
+
+describe('the arming wave', () => {
+  it('arms the hand when a playable card is held', () => {
+    enterGame({ myTurn: true });
+    renderApp();
+    expect(document.querySelector('.hand')).toHaveClass('hand--armed');
+  });
+
+  it('stays down when nothing can be played', () => {
+    enterGame({ myTurn: false });
+    renderApp();
+    expect(document.querySelector('.hand')).not.toHaveClass('hand--armed');
+  });
+
+  it('arms out of turn when an open +3 makes a breaker legal', () => {
+    /*
+     * The case the cue exists for, and the reason it is not gated on whose turn
+     * it is: a +3 suspends the turn order, any holder of a breaker may answer,
+     * and the window closes on the first answer. Gating on `isMyTurn` would have
+     * left the hand dark at the one moment a player has to decide fastest.
+     */
+    const fixture = enterGame({ myTurn: false });
+    const breaker = { id: 'brk-0', kind: 'breakPlusThree' as const };
+    setState({
+      hand: [breaker],
+      publicState: {
+        ...fixture.publicState,
+        currentPlayerId: GUEST_ID,
+        plusThree: { playerId: GUEST_ID },
+      },
+    });
+    renderApp();
+
+    expect(document.querySelector('.hand')).toHaveClass('hand--armed');
+  });
+
+  it('staggers the wave across the hand by position', () => {
+    enterGame({ myTurn: true });
+    renderApp();
+    const slots = [...document.querySelectorAll('.hand__slot')];
+    expect(slots.length).toBeGreaterThan(2);
+    expect(slots[0]?.getAttribute('style')).toContain('0ms');
+    expect(slots[1]?.getAttribute('style')).toContain('25ms');
+    expect(slots[2]?.getAttribute('style')).toContain('50ms');
+  });
+});
+
+describe('the draw pile', () => {
+  it('reads as thinning, in four steps', () => {
+    expect(depthBucket(45)).toBe(3);
+    expect(depthBucket(31)).toBe(3);
+    expect(depthBucket(30)).toBe(2);
+    expect(depthBucket(16)).toBe(2);
+    expect(depthBucket(15)).toBe(1);
+    expect(depthBucket(6)).toBe(1);
+    expect(depthBucket(5)).toBe(0);
+    expect(depthBucket(0)).toBe(0);
+  });
+
+  it('wraps the pile without adding a child to the column', () => {
+    /*
+     * The pile card's size is solved from the height left after `--pile-chrome`,
+     * a hand-measured constant declared four times. A fourth child of `.pile`
+     * would add a flex gap and make all four wrong at once, so the wrapper has
+     * to replace the button rather than sit beside it.
+     */
+    enterGame({ myTurn: true });
+    renderApp();
+    const pile = document.querySelector('.pile');
+    expect(pile?.children).toHaveLength(3);
+    expect(pile?.firstElementChild).toHaveClass('pile__deck');
+    expect(pile?.querySelector('.pile__deck > button.card--back')).not.toBeNull();
   });
 });
