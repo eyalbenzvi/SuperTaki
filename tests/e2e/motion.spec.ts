@@ -25,7 +25,7 @@ function seconds(value: string): number {
 /** Restored cues run for a perceptible time; stopped ones are effectively zero. */
 const RESTORED_S = 0.05;
 
-async function seatAndDeal(host: Page, guest: Page): Promise<void> {
+async function dealOnce(host: Page, guest: Page): Promise<void> {
   await openApp(host, `/${BROADCAST}`);
   const roomCode = await createRoom(host, 'Dana', 2);
   await openApp(guest, `/${BROADCAST}`);
@@ -45,22 +45,18 @@ async function seatAndDeal(host: Page, guest: Page): Promise<void> {
 }
 
 /**
- * Plays one card, so that a beat containing `cardPlayed` exists.
+ * Seats a two-player game with the host holding a legal opening move.
  *
- * Needed because the landing cue is no longer applied on mount: it used to ride
- * on a `key`, which replayed it on any remount, so a reconnecting client watched
- * a card land that nobody had played. Asserting it now means causing it.
+ * The e2e deal is not seeded, and a rare opening hand has no playable card — so
+ * the armed lift and the landing cue never appear, and any test that reads or acts
+ * on a playable card flakes on the deal instead of failing on a defect. Re-dealing
+ * a handful of times makes that vanishingly unlikely; the guarantee lives here so
+ * every test gets it. Best-effort: a test that genuinely needs no playable card is
+ * unaffected either way.
  */
-/**
- * Seats a game and guarantees the host is holding a playable card.
- *
- * The e2e deal is not seeded, and a rare opening hand has no legal move — so the
- * armed lift never appears and a test that needs it flakes on the deal rather than
- * failing on a defect. Re-dealing keeps the test about the lift.
- */
-async function seatWithPlayable(host: Page, guest: Page): Promise<void> {
+async function seatAndDeal(host: Page, guest: Page): Promise<void> {
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    await seatAndDeal(host, guest);
+    await dealOnce(host, guest);
     const armed = await host
       .locator('.hand .card--playable')
       .first()
@@ -70,9 +66,15 @@ async function seatWithPlayable(host: Page, guest: Page): Promise<void> {
       return;
     }
   }
-  throw new Error('no playable opening hand after six deals');
 }
 
+/**
+ * Plays one card, so that a beat containing `cardPlayed` exists.
+ *
+ * Needed because the landing cue is no longer applied on mount: it used to ride
+ * on a `key`, which replayed it on any remount, so a reconnecting client watched
+ * a card land that nobody had played. Asserting it now means causing it.
+ */
 async function playOneCard(host: Page): Promise<void> {
   const playable = host.locator('.hand .card--playable').first();
   await expect(playable).toBeVisible();
@@ -386,10 +388,7 @@ test.describe('lift and press', () => {
   test('compose instead of overriding each other', async ({ context }) => {
     const host = await context.newPage();
     const guest = await context.newPage();
-    // Re-deal until the host holds a legal move. The e2e deal is not seeded, so a
-    // rare opening hand has none, the armed lift never appears, and a test about
-    // the lift would flake on luck instead of failing on a defect.
-    await seatWithPlayable(host, guest);
+    await seatAndDeal(host, guest);
 
     /*
      * The trap this design exists to avoid. Lift and press both want `transform`,
