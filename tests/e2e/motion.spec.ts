@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BROADCAST, createRoom, joinRoom, openApp } from './helpers.ts';
+import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 /**
  * What only a browser can answer about motion.
@@ -232,3 +232,80 @@ test.describe('the table at 320px', () => {
     expect(report.scrolls, 'the table never scrolls').toBeLessThanOrEqual(1);
   });
 });
+
+test.describe('residue', () => {
+  test('leaves nothing behind after a long round', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+    await seatAndDeal(host, guest);
+
+    /*
+     * The failure mode an imperative overlay invites: clones appended and never
+     * removed, or a promoted layer never released, both of which accumulate
+     * silently and only show up as a phone getting warm.
+     */
+    const residue = async (page: Page): Promise<Record<string, number>> =>
+      page.evaluate(() => ({
+        cards: document.querySelectorAll('.flight-layer__card').length,
+        pulses: document.querySelectorAll('.flight-layer__pulse').length,
+        promoted: [...document.querySelectorAll<HTMLElement>('.hand__slot')].filter(
+          (slot) => slot.style.willChange !== '',
+        ).length,
+        focusableClones: [...document.querySelectorAll('.flight-layer button, .flight-layer [tabindex]')]
+          .length,
+      }));
+
+    for (let move = 0; move < 12; move += 1) {
+      if (!(await playOrDrawOnce(host)) && !(await playOrDrawOnce(guest))) {
+        break;
+      }
+      if ((await host.getByRole('heading', { name: 'Round finished' }).count()) > 0) {
+        break;
+      }
+    }
+
+    // Long enough for every flight and pulse in flight to have finished.
+    await host.waitForTimeout(1500);
+
+    const left = await residue(host);
+    expect(left.cards, 'clones left on the layer').toBe(0);
+    expect(left.pulses, 'pulses left on the layer').toBe(0);
+    expect(left.promoted, 'slots still asking for a composited layer').toBe(0);
+    // A focusable clone inside an aria-hidden layer is a tab stop that announces
+    // nothing — worse than either hiding it or leaving it alone.
+    expect(left.focusableClones, 'focusable clones').toBe(0);
+  });
+});
+
+/** One move by whichever page can make one. */
+async function playOrDrawOnce(page: Page): Promise<boolean> {
+  await page.bringToFront();
+  await awaitSettled(page);
+  for (const name of [/Last card!/, 'Let it through', 'Close Taki', /^Take \d+ cards?$/]) {
+    const button = page.getByRole('button', { name });
+    if (await button.isVisible().catch(() => false)) {
+      await button.click().catch(() => undefined);
+      return true;
+    }
+  }
+  if (!(await onTurn(page))) {
+    return false;
+  }
+  const playable = page.locator('.hand .card--playable').first();
+  if (await playable.count()) {
+    await playable.click().catch(() => undefined);
+    const picker = page.getByRole('dialog');
+    if (await picker.isVisible().catch(() => false)) {
+      await picker.getByRole('button', { name: 'Green', exact: true }).click();
+    }
+    return true;
+  }
+  if (await canDrawFrom(page)) {
+    await page
+      .locator('.pile button.card--back')
+      .click()
+      .catch(() => undefined);
+    return true;
+  }
+  return false;
+}
