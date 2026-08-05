@@ -78,9 +78,10 @@ export function FlightLayer({ beat, localPlayerId, registry }: FlightLayerProps)
       return;
     }
 
+    const reduced = prefersReducedMotion();
     const plan = choreograph(beat, {
       localPlayerId,
-      reducedMotion: prefersReducedMotion(),
+      reducedMotion: reduced,
       inFlight: [...inFlight.current],
       lastPlayedSeq: lastPlayed.current,
     });
@@ -123,13 +124,21 @@ export function FlightLayer({ beat, localPlayerId, registry }: FlightLayerProps)
 
         const key = motion.key;
         inFlight.current.add(key);
+        /*
+         * Opacity only when less motion was asked for. `scale` is an independent
+         * transform property, so a pulse that breathed would have been exactly the
+         * movement the preference exists to remove — reaching the player through
+         * the substitute that was supposed to spare them it.
+         */
         const beatAnimation = animate(
           mark,
-          [
-            { opacity: 0, scale: '0.96' },
-            { opacity: 1, offset: 0.35 },
-            { opacity: 0, scale: '1.02' },
-          ],
+          reduced
+            ? [{ opacity: 0 }, { opacity: 1, offset: 0.35 }, { opacity: 0 }]
+            : [
+                { opacity: 0, scale: '0.96' },
+                { opacity: 1, offset: 0.35 },
+                { opacity: 0, scale: '1.02' },
+              ],
           {
             duration: motion.durationMs,
             delay: motion.delayMs,
@@ -139,6 +148,7 @@ export function FlightLayer({ beat, localPlayerId, registry }: FlightLayerProps)
         );
         const finished = (): void => {
           inFlight.current.delete(key);
+          running.current = running.current.filter((candidate) => candidate !== beatAnimation);
           mark.remove();
         };
         if (beatAnimation) {
@@ -204,6 +214,9 @@ export function FlightLayer({ beat, localPlayerId, registry }: FlightLayerProps)
 
       const done = (): void => {
         inFlight.current.delete(key);
+        // Pruned, not just left: a round is a few hundred motions, and holding
+        // every finished Animation for the life of the table is a slow leak.
+        running.current = running.current.filter((candidate) => candidate !== animation);
         clone.remove();
       };
       if (animation) {

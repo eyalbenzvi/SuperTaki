@@ -233,6 +233,49 @@ test.describe('the table at 320px', () => {
   });
 });
 
+test.describe('reduced motion, in the overlay too', () => {
+  test('marks where something happened without moving anything', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+    await host.emulateMedia({ reducedMotion: 'reduce' });
+    await seatAndDeal(host, guest);
+    await playOneCard(host);
+
+    /*
+     * The substitute must not reintroduce the movement it substitutes for. `scale`
+     * is an independent transform property, so a pulse that breathed would have
+     * reached the player through the very thing meant to spare them it.
+     */
+    const transforms = await host.evaluate(async () => {
+      const seen: string[] = [];
+      const started = Date.now();
+      while (Date.now() - started < 400) {
+        for (const node of document.querySelectorAll<HTMLElement>(
+          '.flight-layer__pulse, .flight-layer__card',
+        )) {
+          for (const animation of node.getAnimations()) {
+            const effect = animation.effect;
+            if (effect instanceof KeyframeEffect) {
+              for (const frame of effect.getKeyframes()) {
+                for (const property of Object.keys(frame)) {
+                  if (['transform', 'scale', 'rotate', 'translate'].includes(property)) {
+                    seen.push(property);
+                  }
+                }
+              }
+            }
+          }
+        }
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => resolve(null));
+        });
+      }
+      return seen;
+    });
+    expect(transforms).toEqual([]);
+  });
+});
+
 test.describe('residue', () => {
   test('leaves nothing behind after a long round', async ({ context }) => {
     const host = await context.newPage();
