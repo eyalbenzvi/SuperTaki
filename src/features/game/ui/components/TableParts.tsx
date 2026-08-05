@@ -1,5 +1,6 @@
 import {
   memo,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -21,6 +22,8 @@ import {
   solveHandLayout,
   type HandLayout,
 } from '../handLayout.ts';
+import { animate, cancelAnimations } from '../../../../lib/motion.ts';
+import { handDeltas, isSettled, sameCards, type SlotGeometry, type SlotMap } from '../handFlip.ts';
 import { depthBucket } from '../pileDepth.ts';
 import { sweepStyle } from '../sweepDirection.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
@@ -30,6 +33,9 @@ const DRAW_BLOCKED_ID = 'draw-pile-blocked-reason';
 
 /** Per-card delay in the arming wave. Twenty-five milliseconds reads as one gesture. */
 const ARM_STAGGER_MS = 25;
+
+/** How long a card takes to travel to its new slot when the hand reflows. */
+const HAND_FLIP_MS = 220;
 
 /**
  * The colour that must currently be matched.
@@ -308,6 +314,99 @@ export interface HandProps {
 }
 
 /**
+ * Animates the hand from where it was to where it now is.
+ *
+ * Not driven by the beat, and that is the whole design. On a client the hand
+ * changes when the private hand arrives and the beat is published one write later,
+ * with the events — so rects captured "when the beat lands" have already moved and
+ * every delta would be zero. Instead the last known geometry is remembered and
+ * compared against the current geometry whenever the set of cards changes.
+ *
+ * The slots are animated, never the cards. A slot is a bare list item; a card
+ * carries a layered shadow and five extruded symbol groups, and transforming one
+ * promotes all of that to its own composited layer. `will-change` is dropped when
+ * the animation ends for the same reason — fourteen permanently promoted layers is
+ * how a phone loses its frame budget.
+ */
+function useHandFlip(listRef: RefObject<HTMLUListElement | null>, cards: readonly Card[]): void {
+  const previous = useRef<SlotMap>(new Map());
+  const running = useRef<Animation[]>([]);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+
+    const slots = new Map<string, SlotGeometry>();
+    for (const slot of list.querySelectorAll<HTMLElement>('.hand__slot')) {
+      const cardId = slot.dataset['cardId'];
+      if (cardId === undefined) {
+        continue;
+      }
+      const rect = slot.getBoundingClientRect();
+      const card = slot.querySelector('.card')?.getBoundingClientRect();
+      slots.set(cardId, { left: rect.left, top: rect.top, cardWidth: card?.width ?? 0 });
+    }
+
+    /*
+     * An unsettled measurement is not recorded either, so the next settled one is
+     * still compared against the last position the player actually saw.
+     */
+    if (!isSettled(slots)) {
+      return;
+    }
+
+    const before = previous.current;
+    previous.current = slots;
+    // Nothing arrived or left: this is the solver's second commit, not a move.
+    if (before.size === 0 || sameCards(before, slots)) {
+      return;
+    }
+
+    cancelAnimations(running.current);
+    running.current = [];
+
+    for (const delta of handDeltas(before, slots)) {
+      const slot = list.querySelector<HTMLElement>(`[data-card-id="${delta.cardId}"]`);
+      if (!slot) {
+        continue;
+      }
+      slot.style.willChange = 'transform';
+      const animation = animate(
+        slot,
+        [
+          {
+            transform: `translate(${String(delta.dx)}px, ${String(delta.dy)}px) scale(${String(delta.scale)})`,
+          },
+          { transform: 'none' },
+        ],
+        { duration: HAND_FLIP_MS, easing: 'cubic-bezier(0.2, 0.8, 0.3, 1)' },
+      );
+      const release = (): void => {
+        slot.style.willChange = '';
+      };
+      if (animation) {
+        animation.onfinish = release;
+        animation.oncancel = release;
+        running.current.push(animation);
+      } else {
+        // No platform animation: the DOM is already correct, which is the point.
+        release();
+      }
+    }
+    // The card identities are what a move changes; their order is derived from it.
+  }, [listRef, cards]);
+
+  useEffect(
+    () => () => {
+      cancelAnimations(running.current);
+    },
+    [],
+  );
+}
+
+/**
  * Measures the hand and keeps the solved layout in state.
  *
  * The width comes from the area around the row, never from the row itself: the
@@ -454,6 +553,7 @@ export function Hand({
    * decision in the game — precisely the moment the cue is worth most.
    */
   const armed = playable.size > 0;
+  useHandFlip(listRef, cards);
 
   return (
     <section className="hand-area" aria-label={t('game.yourHand')} ref={areaRef}>
@@ -471,6 +571,8 @@ export function Hand({
           <li
             key={card.id}
             className="hand__slot"
+            // The FLIP finds a slot by the card it holds, not by its position.
+            data-card-id={card.id}
             /*
              * The wave runs across the hand rather than arriving all at once.
              * Ordered by position, not by which cards happen to be playable, so
