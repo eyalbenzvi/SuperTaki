@@ -11,12 +11,14 @@ and the test that proves it. Constraints kept: static site on GitHub Pages, zero
 cost, no external asset of any kind, `engine/` stays pure, RTL and LTR identical, both themes,
 `prefers-reduced-motion` honoured, and excellent on a 320 px phone.
 
-> **This is v2.** v1 was reviewed by an external frontend architect who verified every line
-> reference (all correct) and then found that three of the four substrate pieces had design
-> holes that would have surfaced as rework: `origin` could not be derived as described, the
-> planner could not be both pure and do cross-beat compression, and the FLIP measured the wrong
-> frame. Two task premises were factually wrong. What the review changed is recorded in
-> [What the review changed](#what-the-review-changed).
+> **This is v3.** Two review rounds by an external frontend architect. Round one found that three
+> of the four substrate pieces had design holes that would have surfaced as rework: `origin` could
+> not be derived as described, the planner could not be both pure and do cross-beat compression, and
+> the FLIP measured the wrong frame. Two task premises were factually wrong. Round two found three
+> blockers in the fixes themselves: T11 silently breaks four existing assertions and neuters two
+> end-to-end action guards, T7's edit did not satisfy T7's own acceptance, and T17's epoch guard
+> missed the disconnection it was written for. All are addressed here. What the reviews changed is
+> recorded in [What the review changed](#what-the-review-changed).
 
 ---
 
@@ -98,6 +100,21 @@ Six things that changed the shape of this plan, all verified in the source rathe
   fully wired by `.disclosure[open] > summary::after` at `:245` — a working disclosure caret with
   nothing to do with the direction chip. The sweep may still be worth building; it is simply new
   work, not the wiring-up of something half-done.
+
+### Round two: three blockers in the fixes themselves
+
+- **T11 breaks the existing suite, silently in two places.** `jest-dom`'s `toBeDisabled()` reads the
+  `disabled` attribute and never `aria-disabled`, so four assertions on the draw pile change
+  meaning, and two end-to-end helpers that gate an action on `isEnabled()` with no turn guard would
+  start clicking out of turn and reporting success. Recorded in T11, which is now done first in Wave
+  2 and failure-first.
+- **T7's edit did not satisfy T7's acceptance.** Scoping `transition-duration` does nothing for
+  `land`, which is an `animation` — so the allowlist has to cover `animation-duration` too, or T8
+  and T12 get nothing from the dependency they declare on it.
+- **T17's epoch guard missed the case it existed for.** `sessionEpoch` is not incremented by
+  `leaveRoom` or by `closed`, and `closed` keeps the screen for every reason except a voluntary
+  leave — so a disconnection during the hold would still route to standings. Replaced by a dedicated
+  hold token with explicit invalidation.
 
 ### Three substrate pieces were wrong
 
@@ -411,10 +428,15 @@ Nothing visible ships in this wave. It exists so that the twenty-six tasks after
   `!important` for `*`, `*::before` and `*::after`. It cannot be "narrowed to keep killing
   transforms" — it does not know what a transform is. Allowing a short opacity fade means
   replacing the blanket rule with per-property scoping, which touches every transition in the
-  app. So: keep the blanket rule for `animation-*`, and replace the blanket
-  `transition-duration` kill with an allowlist that keeps `opacity` and `background-color`
-  transitions at a short duration. Verified against every existing `transition:` declaration
-  (eight of them) before landing.
+  app. **And the allowlist must cover `animation-duration`, not only `transition-duration`.** v2
+  scoped only transitions, which would have left `land` (`animation: land var(--dur-base)`,
+  `cards.css:445`) dead and so failed T7's own acceptance — and taken T8 and T12 with it, since both
+  are CSS _animations_ replayed by a `key` remount, not transitions. So: replace both blanket kills
+  with an allowlist that keeps short `opacity` and `background-color` transitions **and** a named
+  set of short keyframe animations, and keep zeroing everything else. Verified against all eight
+  existing `transition:` declarations — `base.css:143`, `components.css:27`, `components.css:242`,
+  `cards.css:220`, `cards.css:416`, `cards.css:525`, `screens.css:437`, `screens.css:523` — before
+  landing.
 - **Acceptance:** with reduced motion on, every state change still produces a visible cue —
   currently it produces **none**, because the blanket rule kills both `land` and the discard
   cross-fade and the ticker swaps silently. With reduced motion off, computed styles are
@@ -450,14 +472,23 @@ in the plan and it ships first.
   is (0,3,1) and already _beats_ `:active`, so a hovered playable card has no press feedback at
   all today. Compose both into one declaration driven by custom properties —
   `transform: translateY(var(--lift, 0)) scale(var(--press, 1))` — so lift and press coexist.
-  Focus then needs a _deeper_ lift than the resting one, or `:focus-visible` becomes a no-op.
-- **320 px and landscape.** `.hand` has `padding-block: 14px` (`cards.css:325`), cut to 12 px at
-  `max-height: 40rem` and to **8 px** in landscape (`screens.css:841`), and `.game__hand` is
-  `overflow-y: auto`. A permanent 10 px lift will clip or introduce a scrollbar in landscape.
-  The lift is therefore expressed as a fraction of available padding, and
-  `tableLayout.spec.ts`'s `cardsOutsideViewport` assertion is checked at 780×360.
-  `transition-delay` is reset on the un-lifted state, or the stagger plays in reverse on the way
-  down.
+  **`button.card:active` therefore stops setting `transform` at all and sets `--press: 0.96`
+  instead**; if it keeps its own `transform` the composition is dead on arrival. Focus then needs a
+  _deeper_ lift than the resting one, or `:focus-visible` becomes a no-op.
+- **The stagger must not ride on `transition-delay`.** Once lift and press are the same property
+  they cannot carry different delays, so a 25 ms-per-slot `transition-delay` would leave a card in
+  slot 10 waiting 250 ms before it responds to a tap — an input-feel regression on the primary
+  interaction of the product, caused by the very fix for the specificity war. The arming wave is a
+  one-shot event rather than a state transition, so it is a one-shot `@keyframes` with
+  `animation-delay: var(--lift-delay)`, and `transition: transform` stays delay-free for press and
+  focus.
+- **320 px and landscape.** `.hand` has `padding-block: 14px` (`cards.css:328`), cut to 12 px at
+  `max-height: 40rem` and to **8 px** in landscape (`screens.css:842`), and `.game__hand` is
+  `overflow-y: auto`. A permanent 10 px lift will clip or introduce a scrollbar in landscape, and
+  `tableLayout.spec.ts`'s `cardsOutsideViewport` assertion is checked at 780×360. The lift cannot
+  be "a fraction of the padding" in CSS — `padding-block` is a hard px value in all three places —
+  so a `--hand-lift` is declared beside each. **T2 therefore edits three media-query blocks across
+  two files, not one rule.**
 - **Acceptance:** when I hold a playable card, those cards rise once, in sequence, and stay up;
   unplayable cards do not move; pressing a lifted card still gives press feedback; keyboard focus
   lifts further; nothing is clipped at 320 px or in landscape.
@@ -566,7 +597,33 @@ own if Wave 4 is cut.
 
 ### T11 — a blocked draw pile explains itself
 
-- **Files:** `src/features/game/ui/components/TableParts.tsx`, `src/styles/cards.css`
+- **This is the highest-risk task in the plan and the only one that edits the existing suite's
+  assertions rather than adding to them.** It is done **first** in Wave 2, and failure-first: change
+  the assertions, watch them fail, then change the component.
+- **Files:** `src/features/game/ui/components/TableParts.tsx`, `src/styles/cards.css`,
+  `src/features/game/ui/screens/GameScreen.tsx`, and — not optional —
+  `tests/component/table.test.tsx`, `tests/component/game.test.tsx`,
+  `tests/e2e/multiplayer.spec.ts`, `tests/e2e/tableLayout.spec.ts`, `tests/e2e/gameplay.spec.ts`
+- **What goes red, and why.** `jest-dom`'s `toBeDisabled()` consults the `disabled` **attribute**
+  only and never `aria-disabled`, so removing it turns three passing assertions red —
+  `table.test.tsx:88`, `game.test.tsx:205`, `game.test.tsx:216` — and makes a fourth vacuous,
+  `game.test.tsx:199`'s `toBeEnabled()`. Those four become
+  `toHaveAttribute('aria-disabled', 'true'|'false')`.
+- **What goes quietly wrong, which is worse.** Three e2e helpers gate an action on
+  `isEnabled()` — an actionability check keyed on the `disabled` _property_, which would become
+  always-true. `tableLayout.spec.ts:76` survives because it has an `onTurn(actor)` guard in front of
+  it, but `gameplay.spec.ts:81` and `tableLayout.spec.ts:205` have **no** turn guard and fall
+  through to clicking the pile, then report that they acted. In `gameplay.spec.ts` that means the
+  round driver clicks out of turn, collects a refusal, claims success and stalls until
+  `ROUND_BUDGET_MS` expires — a timeout in the longest test in the suite, presenting as a flake.
+  Both get an explicit turn guard instead of `isEnabled()`.
+- **Unverified, so check it:** Playwright's `toBeDisabled()` is documented to honour
+  `aria-disabled`, which would keep `multiplayer.spec.ts:181` passing. That was not confirmable from
+  the installed package, so it is verified by running it, not assumed.
+- **Note the written record being inverted:** `multiplayer.spec.ts:174` is named _"disables the draw
+  pile and hand when it is not your turn"_ and its comment at `:183` explains that cards stay
+  focusable by reference to `PlayableCard`. That test documents the policy this task extends to the
+  pile, so its name and comment are updated with it.
 - **Change:** replace the real `disabled` attribute at `TableParts.tsx:208` with
   `aria-disabled` plus a click handler that surfaces `drawBlockedReason`, matching the pattern
   cards already use through `onRefuse`. A disabled button gets no `:active`, no press feedback,
@@ -617,8 +674,28 @@ own if Wave 4 is cut.
   And the draw-pile button carries `card--playable`, so those two pseudo-elements are also T14's.
 - **Change:** the depth stack goes on a **new wrapper element** around the draw-pile button inside
   `.pile`, with `--depth` bucketed from `drawPileCount` (>30, >15, >5, ≤5 → 3 px, 2 px, 1 px, 0).
-  A 160 ms lift-and-settle on tap replaces the generic `scale(0.96)` for this one control — via
-  the same `--press` custom property T2 introduces, so the two do not fight.
+  A 160 ms lift-and-settle on tap replaces the generic `scale(0.96)` for this one control, setting
+  the same `--press` custom property T2 introduces so the two do not fight. (The pile is a
+  `button.card` but is not inside `.hand`, so it never receives `--lift` and does not inherit T2's
+  arming rule.)
+- **Two conditions make the wrapper safe, and they are the whole safety argument.** `--card-w-lg`
+  is solved as `clamp(1.5rem, min(calc((100cqh - var(--pile-chrome)) / 1.5), 30cqi), var(--pile-max))`
+  (`screens.css:292`), where `--pile-chrome` is a hand-measured constant for everything in the
+  column that is not the card — declared **four times** with four values (`screens.css:290`, `:307`,
+  `:315`, `:349`). If the wrapper contributes _any_ block size, all four become wrong at once, the
+  card is sized too large for its space, and `.piles` overflows `.game__table` — exactly the sliced
+  pile panel that `tableLayout.spec.ts`'s `panelOverflow` assertion exists to catch, and it bites
+  hardest at 320 px and in landscape where the `clamp` actually binds. Therefore:
+  1. **The wrapper replaces the button as a direct child of `.pile`, never sits beside it.** `.pile`
+     is a flex column with `gap: var(--space-1)` and three children today, so two gaps; wrapping
+     keeps three children, while adding a fourth would add a gap and invalidate all four constants.
+  2. **The depth stack is absolutely positioned pseudo-elements on a `position: relative` wrapper,
+     contributing zero layout**, offset _inward_ (down-and-trailing, inside `.piles`'s padding)
+     rather than outward — which is both how a real deck reads and what keeps it clear of
+     `.game__table`'s `overflow: auto` at `:266`.
+- With those two conditions the `panelOverflow` exposure is nil: `measure()` reads
+  `rect('.piles').height`, and `getBoundingClientRect()` returns the element's own border box
+  without unioning overflowing absolutely positioned descendants.
 - **Acceptance:** the deck visibly thins as the round runs; the stack is visible (i.e. not
   clipped); tapping feels like pulling a card off; the count text and the playable ring are
   unchanged; nothing shifts the `.piles` layout at 320 px.
@@ -817,9 +894,23 @@ feeling wrong. It is last for that reason, and everything before it stands witho
   it is a module-level zustand instance with no unmount, and `screenForLobbyPhase` runs on _every_
   lobby update including lobby→game, so a timer there must distinguish one transition from all
   others with no notion of why.
-- **Corrected: guard the deferred write with the epoch pattern the store already uses.** Capture
-  `sessionEpoch` (`store.ts:214`, the mechanism `observerFor` already relies on) when the timer is
-  set, and drop the write if the epoch has moved or `screen` is no longer `'game'`.
+- **`sessionEpoch` is the wrong signal — reuse the pattern, not the variable.** It is incremented
+  in exactly four places (`store.ts:339`, `:680`, `:749`, `:855` — accept-handoff, create, resume,
+  join) and by neither `leaveRoom()` nor the `closed` case. It tracks _which session owns the
+  store_, not _whether the table is still on screen_. Guarding on it would catch a leave only
+  incidentally, via the `screen !== 'game'` half — and would **miss a disconnection entirely**,
+  because the `closed` case sets `screen: 'home'` only when `reason === 'leftVoluntarily'`
+  (`store.ts:568`) and every other reason deliberately keeps the screen so the explaining dialog can
+  be drawn over it. The hold would then fire 900 ms later and route to standings for a round that
+  was interrupted.
+- **Corrected mechanism:** a dedicated module-level `holdToken` counter, minted when the hold starts
+  and invalidated by a `clearHold()` called from `leaveRoom`, the `closed` case and the `error`
+  case — plus a `clearTimeout` before every re-arm, since a guard alone makes a second write
+  idempotent without enforcing a single timer.
+- **Safe to defer `screen` alone:** nothing under `src/features/game/ui/` or `src/app/` reads
+  `lobby.phase === 'finished'` (grepped), so letting `lobby` through immediately while holding
+  `screen` changes nothing on the table — and it keeps `GameOverScreen`'s data correct the moment it
+  does render.
 - **The failure modes that guard exists for**, none of which v1 had identified:
   - Leave during the hold → `leaveRoom()` sets `screen: 'home'`, then 900 ms later the pending
     write sets `'over'` and strands the player on standings with no session.
@@ -841,6 +932,8 @@ feeling wrong. It is last for that reason, and everything before it stands witho
 - **Files:** `src/features/game/ui/choreograph.ts`, `src/features/game/ui/components/FlightLayer.tsx`
 - **Change:** `drawPileRecycled` carries `count`. 420 ms: the discard clone shrinks and slides
   to the draw pile while the depth stack from T19 re-inflates.
+- **Depends on T19:** the re-inflating depth stack is what the recycle animates into. Without T19
+  there is nothing for it to land on.
 - **Acceptance:** fires once per recycle, never on a normal draw.
 - **Tests:** unit — planner output for `drawPileRecycled`.
 
