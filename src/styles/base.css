@@ -258,6 +258,30 @@ main {
 
 /* Motion ------------------------------------------------------------------ */
 
+/*
+ * Reduced motion, in two halves.
+ *
+ * The blanket rule stays exactly as it was: it is property-blind, which is the
+ * right default — anything it has never heard of is stopped.
+ *
+ * What it got wrong was stopping *everything*, including the only two cues that
+ * answer "something just changed". A player who asks for less motion was left
+ * with a ticker whose text swaps silently, a discard pile whose colour rail
+ * changes between frames, and no indication at all that a card had been played.
+ * Less motion is not no feedback.
+ *
+ * So a small number of cues are restored below, and each one obeys three rules:
+ * opacity or colour only — never a transform, never a movement — short, and never
+ * a loop. Restoring by *name* is deliberate rather than lazy: an allowlist keyed
+ * on a property would let `land` back in, and `land` translates, rotates and
+ * scales as well as fading. It gets an opacity-only understudy instead.
+ *
+ * Two loops are deliberately left stopped even though both would pass an
+ * opacity-only test. The connection-health dot pulses for ever, and a dot that
+ * pulses for ever is exactly what somebody asking for less motion is asking to be
+ * rid of; its meaning is carried in words beside it either way. The spinner is
+ * the same argument.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -266,5 +290,22 @@ main {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* A card still arrives, it just no longer travels to get here. */
+  .card--landing {
+    animation-name: land-reduced !important;
+    animation-duration: var(--dur-fast) !important;
+  }
+
+  /* The colour in force is a fact about the rules, so its change stays legible. */
+  .discard {
+    transition-duration: var(--dur-fast) !important;
+  }
+}
+
+@keyframes land-reduced {
+  from {
+    opacity: 0.35;
   }
 }

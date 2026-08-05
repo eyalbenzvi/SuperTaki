@@ -1059,6 +1059,22 @@ ratchet that fails the build on regression. This plan does not lower it.
 
 ---
 
+## Running the end-to-end suite here
+
+Playwright's pinned revision does not match the browser installed in this
+environment, so the suite needs the executable pointed at explicitly. The config
+already reads it from the environment:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npx playwright test
+```
+
+Without it every test fails at `browserType.launch` with a missing
+`chrome-headless-shell`, which looks like a broken suite and is not one. Do not run
+`npx playwright install`.
+
+---
+
 ## Exit criteria
 
 - All 27 planned tasks done; the 2 cut tasks recorded in [Cut](#cut) with their reasons.
