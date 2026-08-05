@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  geometryStale,
   handDeltas,
   handMoved,
   isSettled,
@@ -159,5 +160,33 @@ describe('whether the remembered geometry is still usable', () => {
   it('discards everything when the hand changed size', () => {
     expect(handMoved(box(500, 0, 360), box(500, 0, 320))).toBe(true);
     expect(handMoved(box(500, 0, 360, 110), box(500, 0, 360, 96))).toBe(true);
+  });
+});
+
+describe('a direction switch', () => {
+  const box = (top: number, left = 0, width = 360, height = 110): DOMRectReadOnly =>
+    ({ top, left, width, height }) as DOMRectReadOnly;
+
+  it('invalidates everything, even though nothing about the hand moved', () => {
+    /*
+     * Measured in a real browser at 1280 px wide: switching between English and
+     * Hebrew moves the outermost card 560 pixels, from 320 to 880, because the row
+     * is mirrored. The hand's own box is unchanged and so is the set of cards, so
+     * this is the only thing that notices — and without it the next card played
+     * dragged the entire hand across the screen.
+     */
+    const frame = { box: box(500), direction: 'ltr' };
+    expect(geometryStale(frame, { box: box(500), direction: 'rtl' })).toBe(true);
+    expect(geometryStale(frame, { box: box(500), direction: 'ltr' })).toBe(false);
+  });
+
+  it('still notices the hand moving, in either direction', () => {
+    expect(geometryStale({ box: box(563), direction: 'rtl' }, { box: box(500), direction: 'rtl' })).toBe(
+      true,
+    );
+  });
+
+  it('has nothing to compare on the first measurement', () => {
+    expect(geometryStale(null, { box: box(500), direction: 'rtl' })).toBe(false);
   });
 });

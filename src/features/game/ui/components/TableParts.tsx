@@ -23,7 +23,14 @@ import {
   type HandLayout,
 } from '../handLayout.ts';
 import { animate, cancelAnimations } from '../../../../lib/motion.ts';
-import { handDeltas, handMoved, isSettled, sameCards, type SlotGeometry, type SlotMap } from '../handFlip.ts';
+import {
+  geometryStale,
+  handDeltas,
+  isSettled,
+  sameCards,
+  type SlotGeometry,
+  type SlotMap,
+} from '../handFlip.ts';
 import type { AnchorRegistry } from '../anchors.ts';
 import { depthBucket } from '../pileDepth.ts';
 import { sweepStyle } from '../sweepDirection.ts';
@@ -365,7 +372,7 @@ function useHandFlip(
   solvedCount: number,
 ): void {
   const previous = useRef<SlotMap>(new Map());
-  const previousBox = useRef<DOMRectReadOnly | null>(null);
+  const previousFrame = useRef<{ readonly box: DOMRectReadOnly; readonly direction: string } | null>(null);
   const running = useRef<Animation[]>([]);
 
   useLayoutEffect(() => {
@@ -407,22 +414,25 @@ function useHandFlip(
     }
 
     const before = previous.current;
-    const box = list.getBoundingClientRect();
-    const moved = handMoved(previousBox.current, box);
+    const frame = {
+      box: list.getBoundingClientRect(),
+      direction: typeof document === 'undefined' ? 'ltr' : document.documentElement.dir,
+    };
+    const stale = geometryStale(previousFrame.current, frame);
     previous.current = slots;
-    previousBox.current = box;
+    previousFrame.current = frame;
     // Nothing arrived or left: this is the solver's second commit, not a move.
     if (before.size === 0 || sameCards(before, slots)) {
       return;
     }
     /*
-     * The hand itself moved, so nothing remembered about where its cards were is
-     * usable. A viewport can change height without changing anything the solver
-     * solves for, so this cannot be caught by watching the layout — and animating
-     * from the stale positions sent cards in from below the screen, which is what
-     * the layout test found.
+     * Nothing remembered is comparable any more, so record and animate nothing.
+     * Either the hand moved as a whole — a viewport can change height without
+     * changing anything the solver solves for — or the writing direction changed,
+     * which mirrors the row and moves the outermost card by more than half the
+     * screen.
      */
-    if (moved) {
+    if (stale) {
       return;
     }
 

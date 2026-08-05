@@ -111,6 +111,30 @@ export function handMoved(before: DOMRectReadOnly | null, after: DOMRectReadOnly
   );
 }
 
+/**
+ * Whether what was remembered about the hand is still comparable to it.
+ *
+ * Two ways it stops being. The hand can move as a whole — a viewport can get
+ * shorter without changing anything the layout solver solves for, so nothing
+ * re-renders while every remembered position is now wrong by the difference.
+ *
+ * And the *writing direction* can change, which mirrors the row wholesale:
+ * measured at 1280 px wide, switching between English and Hebrew moves the
+ * outermost card by 560 pixels. Nothing about the hand's own box changes when that
+ * happens, and neither does the set of cards, so this is the only thing that
+ * notices — and without it the next card played drags the whole hand across the
+ * screen.
+ */
+export function geometryStale(
+  before: { readonly box: DOMRectReadOnly; readonly direction: string } | null,
+  after: { readonly box: DOMRectReadOnly; readonly direction: string },
+): boolean {
+  if (!before) {
+    return false;
+  }
+  return before.direction !== after.direction || handMoved(before.box, after.box);
+}
+
 /** Whether the hand holds a different set of cards than it did. */
 export function sameCards(before: SlotMap, after: SlotMap): boolean {
   if (before.size !== after.size) {
