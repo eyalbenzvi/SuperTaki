@@ -13,7 +13,7 @@
  * muted after two rounds and never unmuted.
  */
 
-/** Every sound the table can make. Seven, out of twenty-three possible events. */
+/** Every sound the table can make. Seven, out of twenty-four possible events. */
 export type Cue = 'play' | 'draw' | 'yourTurn' | 'penalty' | 'lastCard' | 'caught' | 'win';
 
 /** Nothing is ever louder than this. */

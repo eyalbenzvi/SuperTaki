@@ -16,7 +16,7 @@ export interface PlayContext {
   readonly openTakiColor: CardColor | null;
   /**
    * Cards the player to move owes from a run of +2 cards; `0` when none. While
-   * this is above zero the only legal card is another +2.
+   * this is above zero the only legal cards are another +2 and a King.
    */
   readonly pendingDraw: number;
   /** Set after a King: anything in hand is legal. */
@@ -33,18 +33,18 @@ export interface PlayContext {
  * colour may be played on a Taki**, which carries the sequence on in the new
  * colour. Taki on Taki is a colour change, not a colour mismatch.
  *
- * Two situations override all of that: a pending +2 run can only be answered
- * with another +2 — the King is not an answer to it — and the free play a King
- * grants accepts anything. See `docs/rules.md`.
+ * Two situations override all of that: a pending +2 run can only be met with
+ * another +2 or with a King, and the free play a King grants accepts anything.
+ * See `docs/rules.md`.
  */
 export function isCardPlayable(card: Card, context: PlayContext): boolean {
   if (context.openTakiColor !== null) {
     return cardColor(card) === context.openTakiColor || card.kind === 'taki';
   }
   if (context.pendingDraw > 0) {
-    // Only a +2 answers a +2. A player holding a King and no +2 draws the run
-    // like anybody else: the King is not a get-out-of-a-run card.
-    return card.kind === 'plusTwo';
+    // Two cards meet a run, and they meet it differently: a +2 raises it and
+    // passes it on, a King wipes it. Everything else draws the run.
+    return card.kind === 'plusTwo' || card.kind === 'king';
   }
   if (context.freePlay || isWildCard(card)) {
     return true;

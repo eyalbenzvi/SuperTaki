@@ -1,6 +1,6 @@
 # Wire protocol
 
-Version: **4** sent, **3 and 4** accepted (`PROTOCOL_VERSION` and
+Version: **5** sent, **5 only** accepted (`PROTOCOL_VERSION` and
 `SUPPORTED_PROTOCOL_VERSIONS` in `src/features/game/network/protocol.ts`)
 
 Every message is JSON, travels over a WebRTC data channel with `serialization: 'json'`, and
@@ -49,7 +49,7 @@ parseClientMessage(raw) / parseHostMessage(raw)
   1. not an object / array / null            -> { ok:false, error:'notAnObject' }
   2. JSON longer than 64 KiB or cyclic       -> { ok:false, error:'tooLarge' }
   3. envelope shape invalid                  -> { ok:false, error:'malformedEnvelope' }
-  4. protocolVersion !== 1                   -> { ok:false, error:'protocolMismatch', received }
+  4. protocolVersion unsupported             -> { ok:false, error:'protocolMismatch', received }
   5. unknown `type`                          -> { ok:false, error:'unknownType', received }
   6. payload fails its schema                -> { ok:false, error:'invalidPayload', issues }
   7. otherwise                               -> { ok:true, message }
@@ -422,3 +422,7 @@ or its meaning.
   versions of a private game.
 - Additive, optional fields do **not** need a bump: unknown fields are stripped, and an older
   peer simply ignores them. `wantsSpectator` is an example of a field reserved this way.
+- A **rule** change does need one, and it cannot be softened by accepting the older version
+  as 4 did with 3. Version 5 — the King cancelling a +2 run — is the first of those: two peers
+  on different sides of it would refuse each other's legal moves, so the older one is told to
+  reload rather than left to argue.

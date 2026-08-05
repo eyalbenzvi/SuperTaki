@@ -19,7 +19,7 @@ import {
  * Every decision about what animates lives in this one pure function, which is
  * the point: a table-driven test over the whole event vocabulary is possible
  * here and would not be possible if the same decisions were spread through the
- * view. The event union has 23 members and every one of them is named below —
+ * view. The event union has 24 members and every one of them is named below —
  * including the nine that are deliberately silent, because "we chose not to
  * animate this" is a decision worth defending in a test rather than an omission.
  */
@@ -81,6 +81,11 @@ describe('what each event is worth', () => {
     { event: { type: 'colorChosen', playerId: THEM, color: 'blue' }, count: 0, note: 'same' },
     { event: { type: 'playerSkipped', playerId: THEM }, count: 1, note: 'a Stop is felt at the seat' },
     { event: { type: 'drawStacked', playerId: THEM, total: 4 }, count: 1, note: 'escalates' },
+    {
+      event: { type: 'drawRunCancelled', playerId: THEM, cancelled: 4 },
+      count: 1,
+      note: 'the run dying, on the pile that grew it',
+    },
     { event: { type: 'plusThreePlayed', playerId: THEM }, count: 1, note: 'threatens' },
     { event: { type: 'plusThreeBroken', playerId: THEM, targetId: THIRD }, count: 2, note: 'reverses' },
     { event: { type: 'lastCardDeclared', playerId: THEM }, count: 1, note: 'the shout' },
@@ -105,11 +110,11 @@ describe('what each event is worth', () => {
     { event: { type: 'roundAbandoned' }, count: 0, note: 'the screen changes instead' },
   ];
 
-  it('covers all 23 members of the event union', () => {
+  it('covers all 24 members of the event union', () => {
     const covered = new Set(table.map((row) => row.event.type));
     // Kept honest by a compile-time exhaustive map, below.
-    expect(covered.size).toBe(23);
-    expect(table).toHaveLength(23);
+    expect(covered.size).toBe(24);
+    expect(table).toHaveLength(24);
   });
 
   for (const row of table) {
@@ -130,6 +135,7 @@ describe('what each event is worth', () => {
       colorChosen: true,
       playerSkipped: true,
       drawStacked: true,
+      drawRunCancelled: true,
       plusThreePlayed: true,
       plusThreeBroken: true,
       lastCardDeclared: true,
@@ -145,7 +151,7 @@ describe('what each event is worth', () => {
       playerLeft: true,
       roundAbandoned: true,
     };
-    expect(Object.keys(decided)).toHaveLength(23);
+    expect(Object.keys(decided)).toHaveLength(24);
   });
 });
 
@@ -376,14 +382,14 @@ describe('purity', () => {
 describe('what each event is worth in sound', () => {
   /*
    * Sound answers a different question from motion: motion says where something
-   * happened, sound says that something happened *to me*. Seven of the twenty-three
-   * events make a noise; the sixteen silences below are decisions, not omissions.
+   * happened, sound says that something happened *to me*. Seven of the twenty-four
+   * events make a noise; the seventeen silences below are decisions, not omissions.
    */
   function cue(events: readonly GameEvent[], me: string | null = ME): ReturnType<typeof cueFor> {
     return cueFor(beatOf(events), me);
   }
 
-  it('says nothing for the sixteen events that are deliberately silent', () => {
+  it('says nothing for the seventeen events that are deliberately silent', () => {
     const silent: GameEvent[] = [
       { type: 'gameStarted', firstPlayerId: THEM, activeColor: 'red' },
       { type: 'takiOpened', playerId: THEM, color: 'red', superTaki: false },
@@ -391,6 +397,9 @@ describe('what each event is worth in sound', () => {
       { type: 'takiColorChanged', playerId: THEM, color: 'blue' },
       { type: 'colorChosen', playerId: THEM, color: 'blue' },
       { type: 'playerSkipped', playerId: THEM },
+      // The King that cancelled the run is a `cardPlayed` in the same beat, and
+      // that already makes the sound. A second one for the relief is noise.
+      { type: 'drawRunCancelled', playerId: THEM, cancelled: 4 },
       { type: 'plusThreePlayed', playerId: THEM },
       { type: 'plusThreeBroken', playerId: THEM, targetId: THIRD },
       { type: 'breakerSpent', playerId: THEM, penalty: 3 },
@@ -402,7 +411,7 @@ describe('what each event is worth in sound', () => {
       { type: 'playerLeft', playerId: THEM },
       { type: 'roundAbandoned' },
     ];
-    expect(silent).toHaveLength(16);
+    expect(silent).toHaveLength(17);
     for (const event of silent) {
       expect(cue([event]), event.type).toBeNull();
     }

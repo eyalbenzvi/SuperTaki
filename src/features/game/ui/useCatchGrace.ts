@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { LAST_CARD_GRACE_MS } from '../network/timing.ts';
 import type { OpponentView } from '../state/selectors.ts';
 
-/** Which set of exposed seats has already served its half second. */
+/** Which set of exposed seats has already served its window. */
 const NONE = { seats: '', served: false } as const;
 
 /**
@@ -18,7 +18,7 @@ const NONE = { seats: '', served: false } as const;
  * only ever makes the button appear later than the host would allow, never
  * earlier, so the two can disagree about the exact instant without a player ever
  * meeting a refusal. Measuring anything sharper would need the host's clock on
- * the wire, for a quarter second of a social rule.
+ * the wire, for the sliver of a social rule this window is.
  *
  * The window is held for the whole set of exposed seats rather than one each, and
  * the served flag is stored *with* the set it was measured for — which is what
@@ -26,7 +26,8 @@ const NONE = { seats: '', served: false } as const;
  * inheriting the old one. The cost is that a second seat coming down to a silent
  * last card restarts the window for both, so an existing button can blink off for
  * a moment. That needs two players to reach their last card inside the same
- * 250 ms, and it errs in the direction the rule already leans.
+ * `LAST_CARD_GRACE_MS`, which is now barely a frame wide, and it errs in the
+ * direction the rule already leans.
  */
 export function useCatchGrace(opponents: readonly OpponentView[]): readonly OpponentView[] {
   const seats = opponents

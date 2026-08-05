@@ -97,7 +97,7 @@ export const CATCH_UP_LAG = 2;
  *
  * Pure and separate from the motion plan, because sound answers a different
  * question: motion says *where* something happened, sound says *that something
- * happened to me*. Seven of the twenty-three events make a noise. The rest are
+ * happened to me*. Seven of the twenty-four events make a noise. The rest are
  * silent on purpose — an opponent's draw happens several times a minute and would
  * become wallpaper, and an illegal card says nothing at all, because a buzzer for a
  * mistap is punishment for a UI we designed.
@@ -232,6 +232,15 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
           intensity: Math.min(3, Math.max(1, Math.ceil(event.total / 4))),
         }),
       ];
+
+    case 'drawRunCancelled':
+      /*
+       * The mirror of the stack, and it belongs on the same anchor: the pile has
+       * been pulsing danger as the run grew, so the run dying is that same pile
+       * going the other way. Intensity does not scale with the run — the relief is
+       * the same size whether two cards or ten just evaporated.
+       */
+      return [pulse(id('runCancelled'), 'pile:discard', 'success', { intensity: 2 })];
 
     case 'plusThreePlayed':
       return [pulse(id('plusThree'), seatAnchor(event.playerId, me), 'danger', { intensity: 2 })];

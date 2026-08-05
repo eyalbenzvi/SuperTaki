@@ -49,6 +49,15 @@ describe('event descriptions', () => {
     [{ type: 'takiClosed', playerId: 'p1', cardsPlayed: 4 }, 'Dana closed the sequence after 4 cards.'],
     [{ type: 'colorChosen', playerId: 'p1', color: 'blue' }, 'Dana chose Blue.'],
     [{ type: 'playerSkipped', playerId: 'p2' }, 'Eli was skipped.'],
+    [{ type: 'drawStacked', playerId: 'p1', total: 4 }, 'Dana raised the penalty to 4 cards.'],
+    [
+      { type: 'drawRunCancelled', playerId: 'p2', cancelled: 4 },
+      'Eli played a King — the 4-card penalty is cancelled.',
+    ],
+    [
+      { type: 'drawRunCancelled', playerId: 'p2', cancelled: 1 },
+      'Eli played a King — the 1-card penalty is cancelled.',
+    ],
     [{ type: 'directionChanged', direction: 1 }, 'The play order is now forwards.'],
     [{ type: 'directionChanged', direction: -1 }, 'The play order is now reversed.'],
     [{ type: 'extraTurn', playerId: 'p1' }, 'Dana plays again.'],

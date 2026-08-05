@@ -51,7 +51,7 @@ describe('+2', () => {
     expect(events.find((event) => event.type === 'drawStacked')).toMatchObject({ total: 4 });
   });
 
-  it('refuses anything but another +2 while a run is open', () => {
+  it('refuses anything but another +2 or a King while a run is open', () => {
     let state = makeState({
       hands: {
         'p-alice': cards('red:plusTwo', 'blue:3'),
@@ -62,8 +62,8 @@ describe('+2', () => {
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
     expectRejected(play(state, 'p-bob', 'red:1'), 'mustAnswerDraw');
     expectRejected(play(state, 'p-bob', 'colorChange', 'blue'), 'mustAnswerDraw');
-    // The King is refused like anything else: it is not an answer to a run.
-    expectRejected(play(state, 'p-bob', 'king'), 'mustAnswerDraw');
+    // The King is the other way out, and it is not a rejection.
+    expectOk(play(state, 'p-bob', 'king'));
   });
 
   it('hands the whole run to whoever cannot answer', () => {
@@ -110,22 +110,90 @@ describe('king', () => {
     expect(eventTypes(events)).toEqual(['cardPlayed', 'extraTurn']);
   });
 
-  it('is no answer to a pending run: the holder pays it like anybody else', () => {
+  it('wipes a pending run and takes the free turn instead of the cards', () => {
     let state = makeState({
       hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('king', 'blue:3') },
       drawPile: cards('green:4', 'green:5'),
       discardPile: cards('red:9'),
     });
     state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
+    expect(state.pendingDraw).toBe(2);
 
-    expectRejected(play(state, 'p-bob', 'king'), 'mustAnswerDraw');
+    const { state: next, events } = expectOk(play(state, 'p-bob', 'king'));
 
-    // Bob holds a King and no +2, so the only way out is the whole run.
+    // Nothing owed, nothing drawn, and the turn stays with the player who wiped it.
+    expect(next.pendingDraw).toBe(0);
+    expect(handOf(next, 'p-bob')).toHaveLength(1);
+    expect(next.freePlay).toBe(true);
+    expect(next.pendingPlus).toBe(true);
+    expect(currentPlayer(next)?.id).toBe('p-bob');
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'drawRunCancelled', 'extraTurn']);
+    expect(events.find((event) => event.type === 'drawRunCancelled')).toMatchObject({
+      playerId: 'p-bob',
+      cancelled: 2,
+    });
+  });
+
+  it('wipes a stacked run whole, however high it climbed', () => {
+    let state = makeState({
+      players: players('Alice', 'Bob', 'Carol'),
+      hands: {
+        'p-alice': cards('red:plusTwo', 'blue:3'),
+        'p-bob': cards('green:plusTwo', 'blue:3'),
+        'p-carol': cards('king', 'blue:5'),
+      },
+      drawPile: cards('green:4', 'green:5', 'green:6', 'green:7'),
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
+    state = expectOk(play(state, 'p-bob', 'green:plusTwo')).state;
+    expect(state.pendingDraw).toBe(4);
+
+    const { state: next, events } = expectOk(play(state, 'p-carol', 'king'));
+    expect(next.pendingDraw).toBe(0);
+    expect(handOf(next, 'p-carol')).toHaveLength(1);
+    // The King takes no colour, so the run's colour is simply left standing.
+    expect(next.activeColor).toBe('green');
+    expect(events.find((event) => event.type === 'drawRunCancelled')).toMatchObject({ cancelled: 4 });
+  });
+
+  it('lets the free turn it bought be declined by drawing a single card', () => {
+    let state = makeState({
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('king', 'blue:3') },
+      drawPile: cards('green:4', 'green:5', 'green:6'),
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
+    state = expectOk(play(state, 'p-bob', 'king')).state;
+
+    // One card, not the run: the King cancelled that before the turn came back.
     const { state: next } = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-bob' }));
-    expect(handOf(next, 'p-bob')).toHaveLength(4);
+    expect(handOf(next, 'p-bob')).toHaveLength(2);
     expect(next.pendingDraw).toBe(0);
     expect(next.freePlay).toBe(false);
     expect(currentPlayer(next)?.id).toBe('p-alice');
+  });
+
+  it('announces no cancellation when there was no run to wipe', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('king', 'blue:3'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+    });
+    const { events } = expectOk(play(state, 'p-alice', 'king'));
+    expect(eventTypes(events)).not.toContain('drawRunCancelled');
+  });
+
+  it('wins on a King played against a run, taking none of the cards', () => {
+    let state = makeState({
+      hands: { 'p-alice': cards('red:plusTwo', 'blue:3'), 'p-bob': cards('king') },
+      drawPile: cards('green:4', 'green:5'),
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'red:plusTwo')).state;
+    const { state: next } = expectOk(play(state, 'p-bob', 'king'));
+    expect(next.phase).toBe('finished');
+    expect(next.winnerId).toBe('p-bob');
+    expect(next.pendingDraw).toBe(0);
   });
 
   it('leaves the leading colour alone and refuses a colour choice', () => {
