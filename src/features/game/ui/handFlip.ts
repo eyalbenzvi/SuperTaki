@@ -90,6 +90,27 @@ export function isSettled(slots: SlotMap): boolean {
   return true;
 }
 
+/**
+ * Whether the hand as a whole has moved, rather than its cards within it.
+ *
+ * A reflow moves cards inside a stationary hand. A viewport change moves the hand
+ * itself — and a viewport can change height without changing anything the layout
+ * solver solves for, so no re-render happens and nothing notices that every
+ * remembered position is now wrong by the difference. Animating from those is how
+ * cards come flying in from off the screen.
+ */
+export function handMoved(before: DOMRectReadOnly | null, after: DOMRectReadOnly): boolean {
+  if (!before) {
+    return false;
+  }
+  return (
+    Math.abs(before.top - after.top) > NEGLIGIBLE_PX ||
+    Math.abs(before.left - after.left) > NEGLIGIBLE_PX ||
+    Math.abs(before.width - after.width) > NEGLIGIBLE_PX ||
+    Math.abs(before.height - after.height) > NEGLIGIBLE_PX
+  );
+}
+
 /** Whether the hand holds a different set of cards than it did. */
 export function sameCards(before: SlotMap, after: SlotMap): boolean {
   if (before.size !== after.size) {

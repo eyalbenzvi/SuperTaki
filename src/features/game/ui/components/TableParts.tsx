@@ -23,7 +23,7 @@ import {
   type HandLayout,
 } from '../handLayout.ts';
 import { animate, cancelAnimations } from '../../../../lib/motion.ts';
-import { handDeltas, isSettled, sameCards, type SlotGeometry, type SlotMap } from '../handFlip.ts';
+import { handDeltas, handMoved, isSettled, sameCards, type SlotGeometry, type SlotMap } from '../handFlip.ts';
 import { depthBucket } from '../pileDepth.ts';
 import { sweepStyle } from '../sweepDirection.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
@@ -328,13 +328,31 @@ export interface HandProps {
  * the animation ends for the same reason — fourteen permanently promoted layers is
  * how a phone loses its frame budget.
  */
-function useHandFlip(listRef: RefObject<HTMLUListElement | null>, cards: readonly Card[]): void {
+function useHandFlip(
+  listRef: RefObject<HTMLUListElement | null>,
+  cards: readonly Card[],
+  solvedCount: number,
+): void {
   const previous = useRef<SlotMap>(new Map());
+  const previousBox = useRef<DOMRectReadOnly | null>(null);
   const running = useRef<Animation[]>([]);
 
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) {
+      return;
+    }
+
+    /*
+     * Only ever measure a settled hand.
+     *
+     * A count change produces a commit whose cards are new and whose track width
+     * is still the old one. Measuring it recorded halfway positions as though they
+     * were where the player last saw the cards, so the next move animated from a
+     * wrong baseline — and the error compounded until cards were flying in from
+     * off the screen, which is exactly what the layout test caught.
+     */
+    if (solvedCount !== cards.length) {
       return;
     }
 
@@ -358,9 +376,22 @@ function useHandFlip(listRef: RefObject<HTMLUListElement | null>, cards: readonl
     }
 
     const before = previous.current;
+    const box = list.getBoundingClientRect();
+    const moved = handMoved(previousBox.current, box);
     previous.current = slots;
+    previousBox.current = box;
     // Nothing arrived or left: this is the solver's second commit, not a move.
     if (before.size === 0 || sameCards(before, slots)) {
+      return;
+    }
+    /*
+     * The hand itself moved, so nothing remembered about where its cards were is
+     * usable. A viewport can change height without changing anything the solver
+     * solves for, so this cannot be caught by watching the layout — and animating
+     * from the stale positions sent cards in from below the screen, which is what
+     * the layout test found.
+     */
+    if (moved) {
       return;
     }
 
@@ -396,7 +427,7 @@ function useHandFlip(listRef: RefObject<HTMLUListElement | null>, cards: readonl
       }
     }
     // The card identities are what a move changes; their order is derived from it.
-  }, [listRef, cards]);
+  }, [listRef, cards, solvedCount]);
 
   useEffect(
     () => () => {
@@ -415,12 +446,26 @@ function useHandFlip(listRef: RefObject<HTMLUListElement | null>, cards: readonl
  */
 function useHandLayout(count: number): {
   readonly layout: HandLayout;
+  /**
+   * The card count `layout` was solved for.
+   *
+   * Reported because a layout takes two commits to settle: the scale is computed
+   * inline from the count and lands one render before the solver's track width
+   * does. Anything that measures the hand has to know whether what it is looking
+   * at is the finished arrangement or the halfway one — and the count is the only
+   * signal that works, because when the solved tracks happen to be unchanged the
+   * solver reuses the previous object and there is no second commit to notice.
+   */
+  readonly solvedCount: number;
   readonly areaRef: RefObject<HTMLElement | null>;
   readonly listRef: RefObject<HTMLUListElement | null>;
 } {
   const areaRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
-  const [layout, setLayout] = useState<HandLayout>(UNMEASURED);
+  const [solved, setSolved] = useState<{ readonly layout: HandLayout; readonly count: number }>({
+    layout: UNMEASURED,
+    count: -1,
+  });
 
   useLayoutEffect(() => {
     const area = areaRef.current;
@@ -431,10 +476,13 @@ function useHandLayout(count: number): {
       const first = listRef.current?.querySelector<HTMLElement>('.card');
       const card = first?.getBoundingClientRect().width ?? 0;
       const next = solveHandLayout(area.clientWidth - EDGE_MARGIN_PX * 2, card, count);
-      setLayout((previous) =>
-        previous.perRow === next.perRow && previous.strip === next.strip && previous.card === next.card
+      setSolved((previous) =>
+        previous.count === count &&
+        previous.layout.perRow === next.perRow &&
+        previous.layout.strip === next.strip &&
+        previous.layout.card === next.card
           ? previous
-          : next,
+          : { layout: next, count },
       );
     };
     measure();
@@ -445,7 +493,7 @@ function useHandLayout(count: number): {
     };
   }, [count]);
 
-  return { layout, areaRef, listRef };
+  return { layout: solved.layout, solvedCount: solved.count, areaRef, listRef };
 }
 
 /**
@@ -468,7 +516,7 @@ export function Hand({
   locked = false,
 }: HandProps): ReactNode {
   const playable = new Set(playableIds);
-  const { layout, areaRef, listRef } = useHandLayout(cards.length);
+  const { layout, solvedCount, areaRef, listRef } = useHandLayout(cards.length);
 
   /** The roving tab stop starts on the first legal card, or on the first card. */
   const firstPlayable = cards.findIndex((card) => playable.has(card.id));
@@ -553,7 +601,7 @@ export function Hand({
    * decision in the game — precisely the moment the cue is worth most.
    */
   const armed = playable.size > 0;
-  useHandFlip(listRef, cards);
+  useHandFlip(listRef, cards, solvedCount);
 
   return (
     <section className="hand-area" aria-label={t('game.yourHand')} ref={areaRef}>

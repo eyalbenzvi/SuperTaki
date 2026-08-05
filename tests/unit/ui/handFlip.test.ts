@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   handDeltas,
+  handMoved,
   isSettled,
   sameCards,
   type SlotGeometry,
@@ -129,5 +130,34 @@ describe('whether the hand holds the same cards', () => {
     const before = slots({ a: [0, 0, 68], b: [0, 0, 68] });
     const after = slots({ a: [0, 0, 68], c: [0, 0, 68] });
     expect(sameCards(before, after)).toBe(false);
+  });
+});
+
+describe('whether the remembered geometry is still usable', () => {
+  const box = (top: number, left = 0, width = 360, height = 110): DOMRectReadOnly =>
+    ({ top, left, width, height }) as DOMRectReadOnly;
+
+  it('has nothing to compare on the first measurement', () => {
+    expect(handMoved(null, box(500))).toBe(false);
+  });
+
+  it('is content when the hand stayed put', () => {
+    expect(handMoved(box(500), box(500))).toBe(false);
+    expect(handMoved(box(500), box(500.2))).toBe(false);
+  });
+
+  it('discards everything when the hand itself moved', () => {
+    /*
+     * The bug this exists for: the viewport got shorter, the hand moved 63 px up
+     * with it, and nothing re-solved — a shorter viewport does not change how many
+     * cards fit on a row. So every remembered position was wrong by 63 px, and the
+     * next reflow animated the cards in from below the bottom of the screen.
+     */
+    expect(handMoved(box(563), box(500))).toBe(true);
+  });
+
+  it('discards everything when the hand changed size', () => {
+    expect(handMoved(box(500, 0, 360), box(500, 0, 320))).toBe(true);
+    expect(handMoved(box(500, 0, 360, 110), box(500, 0, 360, 96))).toBe(true);
   });
 });
