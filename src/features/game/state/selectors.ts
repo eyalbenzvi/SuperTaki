@@ -171,6 +171,10 @@ export interface OpponentView {
   readonly left: boolean;
   /** On one card and still silent, so this seat can be called out. */
   readonly catchable: boolean;
+  /** A robot seat: there is nobody behind it. */
+  readonly bot: boolean;
+  /** A robot is playing this human's seat while nobody answers for it. */
+  readonly standIn: boolean;
 }
 
 /**
@@ -202,6 +206,8 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
         isHost: lobbyPlayer?.isHost ?? false,
         declaredLastCard: publicState.declaredLastCard.includes(player.id),
         left: player.left === true,
+        bot: lobbyPlayer?.bot === true,
+        standIn: lobbyPlayer?.standIn === true,
         catchable:
           publicState.phase === 'playing' &&
           player.cardCount === 1 &&
@@ -211,9 +217,13 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
            * Somebody who is not there cannot shout, so calling them out for
            * silence is not a catch, it is farming — four cards an orbit off a
            * player whose phone is rebooting. The host refuses it too; this only
-           * keeps the button from appearing.
+           * keeps the button from appearing. A seat a robot is playing *can*
+           * shout, so it stays as catchable as anybody else — a robot that could
+           * not be called out would be the one player at the table above the rule.
            */
-          (lobbyPlayer?.health ?? 'connected') === 'connected',
+          ((lobbyPlayer?.health ?? 'connected') === 'connected' ||
+            lobbyPlayer?.bot === true ||
+            lobbyPlayer?.standIn === true),
       };
     });
 }
@@ -237,13 +247,45 @@ export function absentPlayers(
   if (!lobby) {
     return [];
   }
+  return (
+    lobby.players
+      /*
+       * A seat a robot is playing is not a held seat. The countdown, the "skip now"
+       * button and the "we are holding Noa's seat" line would all contradict what
+       * the table can see happening — her cards are being played. The robot notice
+       * takes its place, and says who it is standing in for.
+       */
+      .filter((player) => player.absentSince !== undefined && player.left !== true && player.standIn !== true)
+      .map((player) => ({
+        id: player.id,
+        name: player.name,
+        absentSince: player.absentSince as number,
+      }))
+  );
+}
+
+/** Seats a robot is playing for their absent or silent owner. */
+export function standInPlayers(
+  state: Pick<TableSnapshot, 'lobby'>,
+): readonly { readonly id: string; readonly name: string }[] {
+  const lobby = state.lobby;
+  if (!lobby) {
+    return [];
+  }
   return lobby.players
-    .filter((player) => player.absentSince !== undefined && player.left !== true)
-    .map((player) => ({
-      id: player.id,
-      name: player.name,
-      absentSince: player.absentSince as number,
-    }));
+    .filter((player) => player.standIn === true && player.left !== true)
+    .map((player) => ({ id: player.id, name: player.name }));
+}
+
+/** Whether this seat is a robot's, or is being played by one. */
+export function robotSeat(state: Pick<TableSnapshot, 'lobby'>, playerId: string): boolean {
+  const player = state.lobby?.players.find((candidate) => candidate.id === playerId);
+  return player?.bot === true || player?.standIn === true || player?.robotPlayed === true;
+}
+
+/** Whether the table lets a robot play a seat nobody is answering for. */
+export function standInEnabled(state: Pick<TableSnapshot, 'lobby'>): boolean {
+  return state.lobby?.standInEnabled !== false;
 }
 
 export function isPaused(state: { readonly pausedBy: string | null }): boolean {
@@ -290,5 +332,7 @@ export function connectedCount(state: Pick<TableSnapshot, 'lobby'>): number {
 }
 
 export function everyoneConnected(state: Pick<TableSnapshot, 'lobby'>): boolean {
-  return seatedPlayers(state).every((player) => player.health === 'connected');
+  // A robot is always here, so it never triggers the "start with somebody
+  // unstable?" question. Nothing about it can improve by waiting.
+  return seatedPlayers(state).every((player) => player.health === 'connected' || player.bot === true);
 }

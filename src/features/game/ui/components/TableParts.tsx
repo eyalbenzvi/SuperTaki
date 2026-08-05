@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
+import { Badge } from '../../../../components/Badge.tsx';
 import { Icon } from '../../../../components/Icon.tsx';
 import { countLabel, type TextDirection, type Translator } from '../../../../i18n/index.ts';
 import type { Card, CardColor } from '../../engine/cards.ts';
@@ -161,6 +162,18 @@ const OpponentSeat = memo(function OpponentSeat({
       <span className="seat__name truncate" title={opponent.name}>
         {opponent.name}
       </span>
+      {/*
+        Said in a badge rather than in the name, so nobody at the table is ever
+        unsure whether they are playing a person: a robot seat says so, and a seat a
+        robot is standing in for says that instead — it is still that player's seat.
+      */}
+      {opponent.bot ? (
+        <Badge icon="robot">{t('robot.badge')}</Badge>
+      ) : opponent.standIn ? (
+        <Badge tone="warning" icon="robot">
+          {t('robot.badge')}
+        </Badge>
+      ) : null}
       <span className={`seat__count ${lastCard ? 'seat__count--low' : ''}`.trim()}>
         {countLabel(t, 'game.cardsLeft', opponent.cardCount)}
       </span>
@@ -189,7 +202,7 @@ const OpponentSeat = memo(function OpponentSeat({
       ) : lastCard ? (
         <span className="sr-only">{t('game.lastCard')}</span>
       ) : null}
-      <HealthBadge health={opponent.health} t={t} />
+      {opponent.bot || opponent.standIn ? null : <HealthBadge health={opponent.health} t={t} />}
       {opponent.isCurrent ? (
         <>
           <span className="seat__marker" aria-hidden="true" />

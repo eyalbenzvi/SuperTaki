@@ -491,3 +491,92 @@ describe('the flight layer', () => {
     expect(document.querySelectorAll('.hand__slot[data-card-id]').length).toBeGreaterThan(0);
   });
 });
+
+describe('robots at the table', () => {
+  it('marks a robot seat, so nobody thinks they are playing a person', () => {
+    // The seat's name comes from the table state; its robot-ness comes from the
+    // lobby, which is the only place either fact is published.
+    table({
+      hand: [red5, red7],
+      patch: {
+        players: [
+          { id: HOST_ID, name: 'דנה', cardCount: 2 },
+          { id: GUEST_ID, name: 'רובוט תמר', cardCount: 5 },
+        ],
+      },
+    });
+    setState({
+      lobby: lobbyFixture({
+        phase: 'inGame',
+        players: [
+          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'רובוט תמר', isHost: false, health: 'connected', seat: 1, bot: true },
+        ],
+      }),
+    });
+    renderApp();
+    const seat = screen.getByText('רובוט תמר').closest('li');
+    expect(seat).not.toBeNull();
+    expect(within(seat as HTMLElement).getByText('רובוט')).toBeInTheDocument();
+  });
+
+  it('says plainly when a robot is playing somebody else’s hand', () => {
+    table({ hand: [red5, red7], myTurn: false });
+    setState({
+      lobby: lobbyFixture({
+        phase: 'inGame',
+        sentAt: 1_000_000,
+        seatGraceMs: 300_000,
+        players: [
+          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+          {
+            id: GUEST_ID,
+            name: 'אלי',
+            isHost: false,
+            health: 'disconnected',
+            seat: 1,
+            absentSince: 900_000,
+            standIn: true,
+          },
+        ],
+      }),
+    });
+    renderApp();
+
+    expect(screen.getByText('רובוט משחק במקום אלי')).toBeInTheDocument();
+    // And the seat-hold countdown is gone: the table is not waiting for anybody, and
+    // saying both at once would contradict what everyone can see happening.
+    expect(screen.queryByText(/שומרים את המושב/)).not.toBeInTheDocument();
+  });
+
+  it('lets the host hand the seat back, and offers a guest no such control', () => {
+    table({ hand: [red5, red7], myTurn: false });
+    const players = [
+      { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected' as const, seat: 0 },
+      {
+        id: GUEST_ID,
+        name: 'אלי',
+        isHost: false,
+        health: 'disconnected' as const,
+        seat: 1,
+        absentSince: 900_000,
+        standIn: true,
+      },
+    ];
+    setState({ lobby: lobbyFixture({ phase: 'inGame', sentAt: 1_000_000, players }) });
+    const first = renderApp();
+    expect(screen.getByRole('button', { name: 'עצירת הרובוט' })).toBeInTheDocument();
+    first.unmount();
+
+    resetStore();
+    table({ hand: [red5, red7], myTurn: false });
+    setState({
+      role: 'client',
+      localPlayerId: HOST_ID,
+      lobby: lobbyFixture({ phase: 'inGame', sentAt: 1_000_000, players }),
+    });
+    renderApp();
+    expect(screen.getByText('רובוט משחק במקום אלי')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'עצירת הרובוט' })).not.toBeInTheDocument();
+  });
+});

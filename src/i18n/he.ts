@@ -30,6 +30,9 @@ export const he: Translations = {
   'common.host': 'מנחה',
   'common.leave': 'יציאה',
 
+  'common.on': 'מופעל',
+  'common.off': 'כבוי',
+
   'home.create': 'פתיחת משחק',
   'home.join': 'הצטרפות למשחק',
   'home.howTitle': 'איך זה עובד',
@@ -304,6 +307,19 @@ export const he: Translations = {
   'reject.nothingToSkip': 'השולחן לא מחכה לשחקן הזה.',
   'reject.tablePaused': 'המשחק מושהה. שום דבר לא מתקדם עד שממשיכים.',
   'reject.alreadyLeft': 'השחקן הזה כבר עזב את הסבב.',
+
+  'robot.badge': 'רובוט',
+  'robot.add': 'הוספת רובוט',
+  'robot.addHint': 'הרובוט מקבל מושב ומשחק כמו כולם. שני מושבים זה משחק.',
+  'robot.roomFull': 'השולחן מלא. אפשר להגדיל את מספר השחקנים ואז להוסיף רובוט.',
+  'robot.standInLabel': 'רובוט ימשיך במקום מי שנעלם',
+  'robot.standInHint':
+    'כששחקן מפסיק להגיב, רובוט משחק את היד שלו כדי שהסבב יימשך. ברגע שהוא חוזר, המושב חוזר אליו.',
+  'robot.standInOff': 'מי שנעלם מדולג, ואף אחד לא משחק את היד שלו.',
+  'robot.playingFor': 'רובוט משחק במקום {name}',
+  'robot.playingForBody': 'היד שלו משוחקת עד שיחזור. המושב שלו, לא של הרובוט.',
+  'robot.standInNow': 'שרובוט ימשיך',
+  'robot.standInStop': 'עצירת הרובוט',
 
   'absent.title': 'מחכים ל{name}',
   'absent.holdingSeat': 'שומרים את המושב: נשארו {time}.',

@@ -3,7 +3,14 @@ import { Button } from '../../../../components/Button.tsx';
 import { Callout } from '../../../../components/Callout.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
-import { absentPlayers, isHost, playerName, waitingFor } from '../../state/selectors.ts';
+import {
+  absentPlayers,
+  isHost,
+  playerName,
+  standInEnabled,
+  standInPlayers,
+  waitingFor,
+} from '../../state/selectors.ts';
 
 /** `4:07`, or `0:09`. */
 function formatDuration(ms: number): string {
@@ -90,9 +97,13 @@ export function WaitingNotice(): ReactNode {
   const localPlayerId = useAppStore((state) => state.localPlayerId);
   const skipAbsentTurn = useAppStore((state) => state.skipAbsentTurn);
   const removeFromRound = useAppStore((state) => state.removeFromRound);
+  const standInNow = useAppStore((state) => state.standInNow);
+  const stopStandIn = useAppStore((state) => state.stopStandIn);
   const announce = useAppStore((state) => state.announce);
 
   const absent = absentPlayers({ lobby });
+  const standIns = standInPlayers({ lobby });
+  const robotsAllowed = standInEnabled({ lobby });
   const waiting = waitingFor({ lobby });
 
   /*
@@ -120,16 +131,63 @@ export function WaitingNotice(): ReactNode {
     );
   }
 
-  if (absent.length === 0) {
+  const host = isHost({ role });
+
+  if (absent.length === 0 && standIns.length === 0) {
     return null;
   }
 
-  const host = isHost({ role });
   const graceMs = lobby?.seatGraceMs ?? 0;
   const sentAt = lobby?.sentAt;
 
   return (
     <>
+      {/*
+        A robot playing somebody's hand is stated plainly, to everybody. It is the
+        one thing at this table that is not a person, and a table that could not tell
+        would be being deceived by omission — so the seat keeps its owner's name and
+        the notice says who is being covered for.
+      */}
+      {standIns.map((player) => (
+        <Callout
+          key={player.id}
+          tone="info"
+          icon="robot"
+          title={t('robot.playingFor', { name: player.name })}
+          role="status"
+          actions={
+            host ? (
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    stopStandIn(player.id);
+                  }}
+                >
+                  {t('robot.standInStop')}
+                </Button>
+                {/*
+                  A covered seat is not listed as held, so this is the only place the
+                  table can still take an absent player out of the round. Without it,
+                  a robot covering somebody whose phone is dead left the host with the
+                  abandon vote as their one way out.
+                */}
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    removeFromRound(player.id);
+                  }}
+                >
+                  {t('absent.removeFromRound')}
+                </Button>
+              </>
+            ) : null
+          }
+        >
+          {t('robot.playingForBody')}
+        </Callout>
+      ))}
+
       {absent.map((player) => {
         const isWaitingOnThem = waiting?.playerId === player.id && waiting.reason === 'absent';
         return (
@@ -149,6 +207,22 @@ export function WaitingNotice(): ReactNode {
                   >
                     {t('absent.skipNow')}
                   </Button>
+                  {/*
+                    The impatient option, and the reason the automatic threshold can
+                    afford to be slow: a table that does not want to wait another
+                    thirty seconds says so here.
+                  */}
+                  {robotsAllowed ? (
+                    <Button
+                      variant="ghost"
+                      icon="robot"
+                      onClick={() => {
+                        standInNow(player.id);
+                      }}
+                    >
+                      {t('robot.standInNow')}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="ghost"
                     onClick={() => {

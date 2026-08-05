@@ -10,6 +10,12 @@ static files on GitHub Pages, and game traffic flows through a tiny WebSocket re
 Durable Object per room on Cloudflare's free plan — that routes frames between the players
 and knows nothing about the game.
 
+A table can also seat **robot players**, which is what makes one player a game and what keeps a
+round moving when somebody's phone dies: after a long absence — or a long silence — a robot can
+play that seat until its owner comes back, and hands it over the moment they do. Robots run in
+the host's tab and see exactly what a remote player sees, never anybody's hand. See
+[docs/robots.md](docs/robots.md).
+
 The interface is Hebrew by default (right-to-left), with English one tap away in Settings. The deck is the
 full Super Taki deck — numbers 1 and 3–9, Stop, Plus, +2, Change Direction and Taki in four
 colours, plus Change Colour, Super Taki, King, +3 and the +3 Breaker. There is no plain 2:
@@ -308,6 +314,7 @@ no UI imports, and the UI holds no game rules.
 - [docs/architecture.md](docs/architecture.md) — static hosting constraints, host authority, data flow, reconnection, limitations
 - [docs/protocol.md](docs/protocol.md) — message envelope, every message type, validation, versioning, examples
 - [docs/rules.md](docs/rules.md) — exact deck, exact rules, +2 runs, the King, the +3 breaker window, decisions where editions disagree (bilingual)
+- [docs/robots.md](docs/robots.md) — robot players: what they know, how they play, when one covers a human seat
 - [docs/threat-model.md](docs/threat-model.md) — what a malicious peer can and cannot do
 - [docs/deployment.md](docs/deployment.md) — GitHub Pages step by step
 - [docs/qa-report.md](docs/qa-report.md) — what was tested, coverage, manual checklist, known limitations

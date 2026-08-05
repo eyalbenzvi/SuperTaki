@@ -80,7 +80,7 @@ describe('create room form', () => {
     });
     renderApp();
 
-    expect(screen.getByText(/לא הצלחנו להגיע לשירות החיבור החינמי/)).toBeInTheDocument();
+    expect(screen.getByText(/לא הצלחנו להגיע לממסר המשחק/)).toBeInTheDocument();
     expect(screen.getByText('למה זה קורה?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'חזרה לדף הבית' })).toBeInTheDocument();
   });

@@ -272,6 +272,24 @@ turn simply passes. No player is ever stuck.
 | **Plus**             | Unchanged: you play again, or take a card instead.                                                |
 | **+3**               | Your single opponent draws three, or breaks it and hands the three to you.                        |
 
+### Robot players
+
+A table may seat **robots**, and a robot plays by exactly these rules — the same legality
+check, the same last-card declaration, the same penalties. Three things about them are rules
+rather than implementation, so they are stated here:
+
+- **A robot cannot see your cards.** It is given the public table and its own hand, which is
+  what every other player has. It does not know the draw pile's order, and it does not know who
+  holds a +3 Breaker.
+- **A robot can be caught on its last card.** It declares after a moment, not instantly, and
+  that moment is a real window: call it out and it draws four, like anybody else.
+- **A robot will not call out a player who is not there.** Somebody who cannot shout cannot be
+  caught for silence. A seat a robot is _playing_ is fair game, because the robot can shout.
+
+A robot may also play a **human's** seat, when the table has that turned on — see the absent
+player table below. That seat stays entirely its owner's: the same seat, the same name, the
+same place in the standings, handed back the moment they act.
+
 ### Decisions we made where editions disagree
 
 Each of these is a genuine fork. We picked one, implemented it, and tested it.
@@ -673,3 +691,15 @@ opened it in. One turn is one sequence, and one colour.
 | חזר בתוך חלון ההמתנה                      | הדילוג מבוטל והוא מקבל תור מלא.                                                                                                                     |
 | עזב את הסבב לתמיד                         | המושב **מסומן** ולא נמחק: הקלפים שלו קפואים מחוץ למשחק, הוא נשאר בטבלה המסכמת, וסך הקלפים במשחק אינו משתנה.                                         |
 | נשארו פחות משני שחקנים                    | הסבב מסתיים **בלי מנצח**. "האחרון שנשאר מנצח" היה מעניק את הסבב למי שמודד את ההתנתקות.                                                              |
+
+#### רובוט שממלא מקום
+
+אם השולחן בחר בכך (זו הגדרה של החדר, וברירת המחדל מופעלת), רובוט מתחיל לשחק את היד של מי שאינו
+כאן **אחרי 45 שניות** של היעדרות — הרבה אחרי שהתור שלו כבר עבר בחינם פעם או פעמיים — או אחרי
+**90 שניות** שבהן הוא מחובר אבל לא מבקש שום דבר. השורה החשובה היא האחרונה: **ברגע שהוא מבקש
+משהו, המושב חוזר אליו**, עוד לפני שהבקשה שלו מוחלת. המושב נשאר שלו לכל דבר — השם, האסימון
+לחזרה, והמקום בטבלה המסכמת.
+
+לא ממלאים מקום של מי ש**נפרד לשלום** (זו החלטה, לא תקלה), של מי שנראה **בדרך חזרה**, של מי
+ש**עזב את הסבב**, ולא בזמן ש**השולחן בהמתנה**. רובוט שמשחק מושב של אדם **אפשר לתפוס** על קלף
+אחרון בדיוק כמו כל שחקן אחר. הפירוט המלא: [robots.md](robots.md).

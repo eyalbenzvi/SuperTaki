@@ -185,6 +185,14 @@ export interface AppActions {
   readonly setMaxPlayers: (value: number) => void;
   readonly removePlayer: (playerId: string) => void;
   readonly startGame: () => void;
+  /** Seats a robot. Lobby only, host only. */
+  readonly addBot: () => void;
+  /** Whether a robot may play a seat nobody is answering for. Host only. */
+  readonly setStandInEnabled: (enabled: boolean) => void;
+  /** Puts a robot on somebody's seat now, rather than waiting. Host only. */
+  readonly standInNow: (playerId: string) => void;
+  /** Hands a seat back from the robot playing it. Host only. */
+  readonly stopStandIn: (playerId: string) => void;
   /** Passes the turn of a player who is away. Host only. */
   readonly skipAbsentTurn: (playerId: string) => void;
   /** Takes an absent player out of the round, keeping their cards out of play. */
@@ -193,8 +201,8 @@ export interface AppActions {
   readonly setPaused: (paused: boolean) => void;
   readonly voteAbandon: (agree: boolean) => void;
   readonly nudgePlayer: (playerId: string) => void;
-  /** Offers the room to another player and leaves. Host only. */
-  readonly handOver: (playerId: string) => void;
+  /** Offers the room to another player. Returns whether the offer went out. */
+  readonly handOver: (playerId: string) => boolean;
   readonly playCard: (cardId: string, chosenColor?: 'red' | 'blue' | 'green' | 'yellow') => void;
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
@@ -1069,6 +1077,30 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
+    addBot: () => {
+      if (session instanceof HostSession) {
+        session.addBot();
+      }
+    },
+
+    setStandInEnabled: (enabled) => {
+      if (session instanceof HostSession) {
+        session.setStandInEnabled(enabled);
+      }
+    },
+
+    standInNow: (playerId) => {
+      if (session instanceof HostSession) {
+        session.standInNow(playerId);
+      }
+    },
+
+    stopStandIn: (playerId) => {
+      if (session instanceof HostSession) {
+        session.stopStandIn(playerId);
+      }
+    },
+
     skipAbsentTurn: (playerId) => {
       if (session instanceof HostSession) {
         session.skipAbsentTurn(playerId);
@@ -1084,6 +1116,9 @@ export const useAppStore = create<AppStore>((set, get) => {
     setPaused: (paused) => {
       const active = session;
       if (active instanceof HostSession) {
+        // Asking the table to hold is something a person does, so it takes the host's
+        // own seat back from a robot that had stepped in for their silence.
+        active.noteLocalIntent();
         active.setPaused(paused ? active.localPlayerId : null);
       } else if (active instanceof ClientSession) {
         active.requestPause(paused);
@@ -1109,12 +1144,13 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     handOver: (playerId) => {
-      if (session instanceof HostSession) {
-        // A living host, vouching on a channel both sides already trust. That is
-        // what makes this safe without any of the verification an automatic
-        // takeover from a silent host would need — and could not get.
-        session.offerHandoff(playerId);
+      if (!(session instanceof HostSession)) {
+        return false;
       }
+      // A living host, vouching on a channel both sides already trust. That is
+      // what makes this safe without any of the verification an automatic
+      // takeover from a silent host would need — and could not get.
+      return session.offerHandoff(playerId);
     },
 
     playCard: (cardId, chosenColor) => {

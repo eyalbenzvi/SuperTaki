@@ -3,7 +3,7 @@ import { Badge } from '../../../../components/Badge.tsx';
 import { Button } from '../../../../components/Button.tsx';
 import { Icon } from '../../../../components/Icon.tsx';
 import { useT } from '../../../../app/useT.ts';
-import { standings, wasAbandoned, winnerName } from '../../state/selectors.ts';
+import { robotSeat, standings, wasAbandoned, winnerName } from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 
@@ -23,7 +23,15 @@ export function GameOverScreen(): ReactNode {
   const iWon = winner !== null && winner === state.localPlayerId;
   const agreed = state.playAgain?.agreed ?? [];
   const required = state.playAgain?.required ?? 0;
-  const iAgreed = state.localPlayerId !== null && agreed.includes(state.localPlayerId);
+  const mySeat = state.lobby?.players.find((player) => player.id === state.localPlayerId);
+  /*
+   * A robot covering your seat agrees to play again on your behalf — a table with one
+   * could never deal a second round otherwise. That agreement is not yours, though,
+   * so the button must not come up already pressed: your first tap means yes, not
+   * "actually, no".
+   */
+  const iAgreed =
+    state.localPlayerId !== null && agreed.includes(state.localPlayerId) && mySeat?.standIn !== true;
 
   return (
     <div className="page">
@@ -75,6 +83,11 @@ export function GameOverScreen(): ReactNode {
                         {t('over.winnerBadge')}
                       </Badge>
                     ) : null}
+                    {/* Who was a robot, and whose hand one played, belongs in the
+                        result: a round decided partly by a robot reads differently
+                        from one that was not, and the table should not have to
+                        remember. */}
+                    {robotSeat(state, row.playerId) ? <Badge icon="robot">{t('robot.badge')}</Badge> : null}
                   </span>
                 </td>
                 {/* The column header carries the unit; repeating it in every

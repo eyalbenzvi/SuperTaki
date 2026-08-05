@@ -37,7 +37,14 @@ export function TableControls(): ReactNode {
    * sit there for ever while the host was waiting on a number that never arrives.
    */
   const required = seatedPlayers({ lobby }).filter(
-    (player) => player.health === 'connected' && player.left !== true,
+    (player) =>
+      player.health === 'connected' &&
+      player.left !== true &&
+      // Robots have no view about stopping, and a seat a robot is covering has
+      // nobody to ask, so the host does not wait for either. Counting them here
+      // showed "1 of 2 agreed" on a table the host had already stopped.
+      player.bot !== true &&
+      player.standIn !== true,
   ).length;
   const paused = pausedBy !== null;
 
