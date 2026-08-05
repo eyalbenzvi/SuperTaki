@@ -1,5 +1,13 @@
 # Disconnect resilience — plan of record
 
+> **Historical note (2026-08).** This plan was written for the WebRTC/PeerJS architecture,
+> and much of its transport-level reasoning (ICE consent, the public broker's id hold, TURN
+> relays, S2/S5) describes machinery that has since been **removed**: game traffic now flows
+> through the project's own WebSocket relay (`worker/`), and the host snapshot moved to
+> `localStorage`, so a closed tab or crashed browser is recoverable. The session-level work
+> (S6–S11, S13) survives unchanged on top of the new transport. Kept for the record and for
+> the review findings, which remain instructive.
+
 Goal: **a disconnect is a pause, never the end of a game.** Every item is in-repo only: no
 account, no server, no TURN credential to obtain, no environment variable set elsewhere.
 Constraints kept: static site on GitHub Pages, exactly zero third-party cost, `engine/` stays

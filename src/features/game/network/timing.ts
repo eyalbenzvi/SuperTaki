@@ -104,7 +104,7 @@ export const JOIN_TIMEOUT_MS = 15_000;
  *
  * The first attempt is immediate because the thing that triggered it — a wake,
  * an `online` event, a channel close — is new information. The 30 s cap keeps a
- * five-player room to a defensible number of lookups against a donated broker.
+ * quiet ceiling on how hard a room full of phones hammers the relay.
  */
 export const RECONNECT_BACKOFF_MS = [0, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000] as const;
 
@@ -150,10 +150,11 @@ export const RESUME_ATTEMPT_SUPPRESSES_SKIP_MS = 20_000;
  * How long a returning host keeps trying to reclaim its own room code, as a
  * schedule of attempt times.
  *
- * The PeerJS server's `alive_timeout` defaults to 60 s, so a host whose tab was
- * killed by the OS can find its id still registered for a full minute. Giving up
- * earlier means conceding the room code — and invalidating every invite already
- * sent — at the exact moment it was still recoverable.
+ * The relay recognises the host's stored claim and hands the id straight back,
+ * so the first attempt normally succeeds — the rest of the schedule exists for
+ * the network, not the server: a host reclaiming from a train needs the loop to
+ * survive a tunnel's worth of failed connects before it concedes the code and
+ * invalidates every invite already sent.
  */
 export const HOST_ID_RETRY_SCHEDULE_MS = [0, 2_000, 5_000, 10_000, 20_000, 35_000, 55_000, 75_000] as const;
 

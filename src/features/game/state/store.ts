@@ -78,10 +78,9 @@ const ROOM_CODE_ATTEMPTS = 4;
 /**
  * How many times a returning host tries to reclaim its own room code.
  *
- * The schedule spans seventy-five seconds because the broker holds a dropped peer
- * id for up to a minute: the id being refused is usually our own ghost, so giving
- * up early means conceding the room code — and invalidating every invite already
- * sent — at the moment it was still recoverable.
+ * The relay recognises the stored claim, so the first attempt normally wins; the
+ * rest of the schedule is patience with the *network*, because giving up means
+ * conceding the room code and invalidating every invite already sent.
  */
 const HOST_ID_ATTEMPTS = HOST_ID_RETRY_SCHEDULE_MS.length;
 
@@ -869,11 +868,10 @@ export const useAppStore = create<AppStore>((set, get) => {
      *
      * Keeping the code is the whole point: every invite already sent stays valid,
      * and every client's stored credential still fits, so the players reconnect on
-     * their own without being told anything. It has to be patient, though — the
-     * broker holds a dropped peer id for up to a minute, so the id we are trying to
-     * reclaim is very often our own ghost. Giving up early would concede the code
-     * and silently invalidate all those invites at the exact moment they were
-     * recoverable.
+     * their own without being told anything. The stored claim makes the relay hand
+     * the id straight back — even if the room still shows our old socket as
+     * present, the claim supersedes it — so failures here are network failures,
+     * and network failures deserve patience rather than conceding the code.
      */
     resumeHosting: async () => {
       const hostable = get().hostable;

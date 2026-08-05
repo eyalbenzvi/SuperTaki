@@ -33,13 +33,14 @@ the system, so none of those can be lost.
 ```
   Player's browser (trusted by that player only)
         │
-        │  WebRTC data channel — DTLS encrypted, host-authoritative
+        │  wss:// (TLS) frames, routed by the relay, host-authoritative
+        ▼
+  Room relay — worker/ on the operator's Cloudflare account
+  (semi-trusted: routes and can read frames, stores only peer-id claims,
+   holds no game state, runs code from this repository)
+        │
         ▼
   Host's browser (authoritative; trusted by the players who joined its room)
-        │
-        │  one-time handshake
-        ▼
-  Public PeerJS broker (untrusted: sees peer ids, never game content)
 ```
 
 ## Threats and mitigations
@@ -82,12 +83,18 @@ a wrong token is rejected.
 useful for logs. Anything received on a data connection is treated as coming from whoever owns
 that connection, which is exactly what the transport guarantees:
 
-- WebRTC data channels are encrypted (DTLS) and authenticated per connection, so a third party
-  on the network cannot inject messages into an established channel or read them.
-- The signalling broker could, in principle, mis-direct a _new_ connection attempt. That is
-  inherent to using a free public broker and cannot be mitigated without our own signalling
-  server, which the zero-cost constraint forbids. The exposure is limited to who can join a
-  private room, not to reading an existing channel.
+- Traffic to and from the relay is TLS-encrypted, so a third party on the network cannot
+  inject frames or read them.
+- The relay stamps the sender's authenticated peer id on every frame it routes, so no client
+  can speak in another peer's name — spoofing a player requires owning their relay claim,
+  not editing a field.
+- The relay itself could read or mis-route frames if its operator modified it: it is code
+  from this repository running on the room owner's own Cloudflare account, which is a
+  meaningfully smaller leap of trust than the anonymous public broker it replaced — but it
+  is a component players trust the room owner about, and this document says so. What passes
+  through it: game intents, public state, and each player's own hand on its way to them.
+  What never exists on it: any stored game data — claims (peer id → secret, last seen) are
+  the only state, and they expire with the room.
 - The `BroadcastChannel` transport is same-origin and same-browser only. It is not a security
   boundary at all; it exists for tests and same-device play, and is never the default.
 
@@ -152,7 +159,8 @@ the README rather than papered over.
   name render as another), not about HTML escaping, which React already handles.
 - A Content Security Policy is set in `index.html`: `default-src 'self'`, `object-src 'none'`,
   `frame-ancestors 'none'`, `form-action 'none'`, no `unsafe-inline` for scripts, and
-  `connect-src` limited to the PeerJS broker plus STUN/TURN schemes. `style-src` allows
+  `connect-src` limited to exactly two destinations — the page's own origin and the relay
+  it was built for (injected from `VITE_RELAY_URL` at build time). `style-src` allows
   `unsafe-inline` because the app sets `color-scheme` on the root element and Vite injects a
   style tag in development — a documented, narrow exception.
 - No external images, no remote fonts, no CDN scripts, no analytics. Nothing to compromise.
@@ -216,8 +224,9 @@ silently corrupt games. Not implemented, not claimed.
 | Room-code guessing             | Partially mitigated (10^6 codes, short-lived, 6 seats, closed after start) |
 | Flooding by a joined peer      | **Not mitigated** — kick or close the room                                 |
 | Host cheating                  | **Not mitigated** — inherent to a server-free design                       |
-| Blocked by strict NAT          | **Not mitigated** — needs a paid TURN relay; explained in the UI           |
-| Signalling broker misbehaving  | **Not mitigated** — inherent to free public signalling                     |
+| Relay outage                   | **Not mitigated** — single point of failure, reported honestly in the UI   |
+| Relay operator misbehaving     | **Accepted** — the operator is the room owner running this repo's code     |
+| Room-code squatting            | Bounded — a peer-id claim expires 5 minutes after its socket dies          |
 
 ## The host's saved room
 
@@ -227,12 +236,17 @@ already holds in memory — but written down, it outlives the moment.
 
 The choices that follow from that:
 
-- **`sessionStorage`, never `localStorage`.** It survives a reload, which is the accident worth
-  recovering from, and it is cleared when the tab closes. A persistent copy would cover the
-  rarer crash-with-tab-close, at the price of leaving everybody's cards on a device that may be
-  shared or borrowed. That trade was declined.
-- **A six-hour ceiling** on top of that, so a snapshot from a much earlier session is refused
-  rather than restored.
+- **`localStorage`, deliberately, with its eyes open.** An earlier revision kept the snapshot
+  in `sessionStorage`, which made a reload recoverable and a closed tab fatal to the whole
+  table. "The game survives anybody dropping, including the host" is a requirement now, so
+  the snapshot persists — and the exposure it creates (everybody's cards on a device that may
+  be shared) is bounded rather than ignored:
+  - **A six-hour ceiling**, validated on every read; an expired or unparseable record is
+    deleted, not restored.
+  - **Erased on intent.** Leaving the room, handing it over, or "start fresh" removes it
+    immediately; only an accident leaves it behind, and only for the ceiling's duration.
+  - The room's relay claim is stored with it, which is what makes the recovery real: it
+    proves ownership of the room code to the relay. It grants nothing else.
 - **Nothing is transmitted.** The record never leaves the device, and neither does the
   diagnostics log beside it.
 
