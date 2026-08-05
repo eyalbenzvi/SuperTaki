@@ -146,12 +146,17 @@ test('rotating and resizing mid-animation strands nothing', async ({ context }) 
 });
 
 test('the winner always reaches the standings', async ({ context }) => {
+  // Driving a whole round to its end plus the post-round assertions can run past
+  // the 45 s default; a round's length is nondeterministic, so the headroom has to
+  // be generous rather than tuned to the median. QA caught this racing its own
+  // 45 s ceiling.
+  test.setTimeout(120_000);
   const host = await context.newPage();
   const guest = await context.newPage();
   await seat(host, guest);
 
-  // Drive to the end of the round.
-  const deadline = Date.now() + 45_000;
+  // Drive to the end of the round, bounded well inside the test's own timeout.
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if ((await host.getByRole('heading', { name: 'Round finished' }).count()) > 0) break;
     let acted = false;
@@ -266,11 +271,14 @@ test('switching language mid-round does not drag the hand across the screen', as
 });
 
 test('leaving during the win hold does not drag the player to the standings', async ({ context }) => {
+  // Same reason as the standings test above: a full round plus the leave-and-settle
+  // assertions do not fit inside the 45 s default with any margin.
+  test.setTimeout(120_000);
   const host = await context.newPage();
   const guest = await context.newPage();
   await seat(host, guest);
 
-  const deadline = Date.now() + 40_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     let acted = false;
     for (const page of [host, guest]) {

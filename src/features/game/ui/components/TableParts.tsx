@@ -22,7 +22,7 @@ import {
   solveHandLayout,
   type HandLayout,
 } from '../handLayout.ts';
-import { animate, cancelAnimations } from '../../../../lib/motion.ts';
+import { animate, cancelAnimations, prefersReducedMotion } from '../../../../lib/motion.ts';
 import {
   geometryStale,
   handDeltas,
@@ -450,6 +450,22 @@ function useHandFlip(
     }
     cancelAnimations(running.current);
     running.current = [];
+
+    /*
+     * Let the hand snap when less motion was asked for.
+     *
+     * The DOM has already committed the cards to their new places, so the FLIP
+     * only ever animates the journey *to* them. That journey is a transform — cards
+     * sliding sideways to close a gap — and it is a consequence of a move that
+     * already announced itself through its own cue. Sliding them to show the
+     * rearrangement is precisely the movement the preference exists to remove, so
+     * under it the cards are simply left where they already are. This mirrors what
+     * `FlightLayer` does, and it is the gap QA found: the overlay honoured the
+     * preference and the hand did not, so cards still slid up to 68 px.
+     */
+    if (prefersReducedMotion()) {
+      return;
+    }
 
     for (const delta of handDeltas(before, slots)) {
       const slot = list.querySelector<HTMLElement>(`[data-card-id="${delta.cardId}"]`);

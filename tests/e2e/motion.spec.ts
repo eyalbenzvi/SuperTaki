@@ -25,7 +25,7 @@ function seconds(value: string): number {
 /** Restored cues run for a perceptible time; stopped ones are effectively zero. */
 const RESTORED_S = 0.05;
 
-async function seatAndDeal(host: Page, guest: Page): Promise<void> {
+async function dealOnce(host: Page, guest: Page): Promise<void> {
   await openApp(host, `/${BROADCAST}`);
   const roomCode = await createRoom(host, 'Dana', 2);
   await openApp(guest, `/${BROADCAST}`);
@@ -42,6 +42,30 @@ async function seatAndDeal(host: Page, guest: Page): Promise<void> {
    * broken feature rather than a paused one.
    */
   await host.bringToFront();
+}
+
+/**
+ * Seats a two-player game with the host holding a legal opening move.
+ *
+ * The e2e deal is not seeded, and a rare opening hand has no playable card — so
+ * the armed lift and the landing cue never appear, and any test that reads or acts
+ * on a playable card flakes on the deal instead of failing on a defect. Re-dealing
+ * a handful of times makes that vanishingly unlikely; the guarantee lives here so
+ * every test gets it. Best-effort: a test that genuinely needs no playable card is
+ * unaffected either way.
+ */
+async function seatAndDeal(host: Page, guest: Page): Promise<void> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await dealOnce(host, guest);
+    const armed = await host
+      .locator('.hand .card--playable')
+      .first()
+      .isVisible({ timeout: 2000 })
+      .catch(() => false);
+    if (armed) {
+      return;
+    }
+  }
 }
 
 /**
@@ -137,6 +161,47 @@ test.describe('reduced motion', () => {
     expect(seconds(cascade.seat), 'the turn ring survives').toBeGreaterThan(RESTORED_S);
     expect(seconds(cascade.ticker), 'a new log line still announces itself').toBeGreaterThan(RESTORED_S);
     expect(seconds(cascade.banner), 'the banner scales, so it stays stopped').toBeLessThan(0.001);
+  });
+
+  test('does not slide the hand when it reflows', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+    await host.emulateMedia({ reducedMotion: 'reduce' });
+    await seatAndDeal(host, guest);
+
+    /*
+     * The gap QA found: the flight overlay honoured the preference but the hand
+     * FLIP did not, so cards still slid up to 68 px sideways to close a gap. The
+     * FLIP is a WAAPI animation, so the CSS blanket rule never touched it — only a
+     * `prefersReducedMotion()` guard in the hook does. Here the hand is made to
+     * reflow (a card leaves it) and every slot is watched for a running transform.
+     */
+    await playOneCard(host);
+    const moving = await host.evaluate(async () => {
+      const seen: string[] = [];
+      const until = Date.now() + 350;
+      while (Date.now() < until) {
+        for (const slot of document.querySelectorAll('.hand__slot')) {
+          for (const animation of slot.getAnimations()) {
+            const effect = animation.effect;
+            if (effect instanceof KeyframeEffect) {
+              for (const frame of effect.getKeyframes()) {
+                for (const property of Object.keys(frame)) {
+                  if (['transform', 'scale', 'rotate', 'translate'].includes(property)) {
+                    seen.push(property);
+                  }
+                }
+              }
+            }
+          }
+        }
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => resolve(null));
+        });
+      }
+      return seen;
+    });
+    expect(moving).toEqual([]);
   });
 
   test('leaves the looping cues stopped', async ({ context }) => {
@@ -438,7 +503,14 @@ test.describe('residue', () => {
       }
     }
 
-    // Long enough for every flight and pulse in flight to have finished.
+    /*
+     * Measure the host in the foreground. The move loop leaves whichever player
+     * acted last in front, and a backgrounded tab freezes its animations — so a
+     * clone still in flight on a backgrounded host is frozen, not leaked, and would
+     * read here as residue that clears the instant the tab is looked at. Bring it
+     * forward, then wait long enough for every flight and pulse to finish.
+     */
+    await host.bringToFront();
     await host.waitForTimeout(1500);
 
     const left = await residue(host);

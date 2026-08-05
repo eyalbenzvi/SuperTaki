@@ -142,9 +142,16 @@ export function GameScreen(): ReactNode {
    *
    * Cues are dropped while the page is hidden — a returning player would otherwise
    * get every sound of the last two minutes at once, which is the commonest bug in
-   * browser audio. They are also skipped for a beat the announcer is about to read
-   * out, so a screen-reader user is not hearing speech and a card at the same time:
-   * the words carry more than the sound does, so the sound is the one that yields.
+   * browser audio.
+   *
+   * They are deliberately *not* gated on the live region below. Every beat updates
+   * that region, so a "skip the cue when something is being announced" rule would
+   * silence the sound feature for everyone — there is no browser signal for whether
+   * a screen reader is actually listening. Sound and speech carry different things
+   * (that something happened to me, versus what happened) and are meant to coexist;
+   * a player who finds them competing turns Sound off in Settings, where it is a
+   * first-class, persisted control defaulting on. An earlier version of this comment
+   * claimed a ducking behaviour that was never wired, which QA rightly caught.
    */
   const beatSeq = beat?.seq ?? 0;
   useEffect(() => {
