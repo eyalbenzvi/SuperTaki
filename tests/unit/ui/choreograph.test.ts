@@ -19,7 +19,7 @@ import {
  * Every decision about what animates lives in this one pure function, which is
  * the point: a table-driven test over the whole event vocabulary is possible
  * here and would not be possible if the same decisions were spread through the
- * view. The event union has 24 members and every one of them is named below —
+ * view. The event union has 23 members and every one of them is named below —
  * including the nine that are deliberately silent, because "we chose not to
  * animate this" is a decision worth defending in a test rather than an omission.
  */
@@ -74,11 +74,10 @@ describe('what each event is worth', () => {
     },
     { event: { type: 'takiClosed', playerId: THEM, cardsPlayed: 3 }, count: 0, note: 'same' },
     {
-      event: { type: 'takiColorChanged', playerId: THEM, color: 'blue' },
+      event: { type: 'colorChosen', playerId: THEM, color: 'blue' },
       count: 0,
       note: 'the colour rail already cross-fades',
     },
-    { event: { type: 'colorChosen', playerId: THEM, color: 'blue' }, count: 0, note: 'same' },
     { event: { type: 'playerSkipped', playerId: THEM }, count: 1, note: 'a Stop is felt at the seat' },
     { event: { type: 'drawStacked', playerId: THEM, total: 4 }, count: 1, note: 'escalates' },
     {
@@ -110,11 +109,11 @@ describe('what each event is worth', () => {
     { event: { type: 'roundAbandoned' }, count: 0, note: 'the screen changes instead' },
   ];
 
-  it('covers all 24 members of the event union', () => {
+  it('covers all 23 members of the event union', () => {
     const covered = new Set(table.map((row) => row.event.type));
     // Kept honest by a compile-time exhaustive map, below.
-    expect(covered.size).toBe(24);
-    expect(table).toHaveLength(24);
+    expect(covered.size).toBe(23);
+    expect(table).toHaveLength(23);
   });
 
   for (const row of table) {
@@ -131,7 +130,6 @@ describe('what each event is worth', () => {
       cardDrawn: true,
       takiOpened: true,
       takiClosed: true,
-      takiColorChanged: true,
       colorChosen: true,
       playerSkipped: true,
       drawStacked: true,
@@ -151,7 +149,7 @@ describe('what each event is worth', () => {
       playerLeft: true,
       roundAbandoned: true,
     };
-    expect(Object.keys(decided)).toHaveLength(24);
+    expect(Object.keys(decided)).toHaveLength(23);
   });
 });
 
@@ -383,18 +381,17 @@ describe('what each event is worth in sound', () => {
   /*
    * Sound answers a different question from motion: motion says where something
    * happened, sound says that something happened *to me*. Seven of the twenty-four
-   * events make a noise; the seventeen silences below are decisions, not omissions.
+   * events make a noise; the sixteen silences below are decisions, not omissions.
    */
   function cue(events: readonly GameEvent[], me: string | null = ME): ReturnType<typeof cueFor> {
     return cueFor(beatOf(events), me);
   }
 
-  it('says nothing for the seventeen events that are deliberately silent', () => {
+  it('says nothing for the sixteen events that are deliberately silent', () => {
     const silent: GameEvent[] = [
       { type: 'gameStarted', firstPlayerId: THEM, activeColor: 'red' },
       { type: 'takiOpened', playerId: THEM, color: 'red', superTaki: false },
       { type: 'takiClosed', playerId: THEM, cardsPlayed: 3 },
-      { type: 'takiColorChanged', playerId: THEM, color: 'blue' },
       { type: 'colorChosen', playerId: THEM, color: 'blue' },
       { type: 'playerSkipped', playerId: THEM },
       // The King that cancelled the run is a `cardPlayed` in the same beat, and
@@ -411,7 +408,7 @@ describe('what each event is worth in sound', () => {
       { type: 'playerLeft', playerId: THEM },
       { type: 'roundAbandoned' },
     ];
-    expect(silent).toHaveLength(17);
+    expect(silent).toHaveLength(16);
     for (const event of silent) {
       expect(cue([event]), event.type).toBeNull();
     }

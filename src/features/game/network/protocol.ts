@@ -177,7 +177,6 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     playerId: playerIdSchema,
     cardsPlayed: z.number().int().min(1).max(200),
   }),
-  z.object({ type: z.literal('takiColorChanged'), playerId: playerIdSchema, color: colorSchema }),
   z.object({ type: z.literal('colorChosen'), playerId: playerIdSchema, color: colorSchema }),
   z.object({ type: z.literal('playerSkipped'), playerId: playerIdSchema }),
   z.object({

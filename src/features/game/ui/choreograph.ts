@@ -335,7 +335,7 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
     /*
      * Deliberately silent.
      *
-     * `colorChosen` and `takiColorChanged` repaint the table, and the colour rail
+     * `colorChosen` repaints the table, and the colour rail
      * around the discard pile already cross-fades — animating them again would be
      * two answers to one question. `takiOpened` and `takiClosed` are bracketed by
      * the `cardPlayed` events that caused them. `gameStarted` deals instantly on
@@ -346,7 +346,6 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
     case 'gameStarted':
     case 'takiOpened':
     case 'takiClosed':
-    case 'takiColorChanged':
     case 'colorChosen':
     case 'turnChanged':
     case 'drawPileExhausted':
