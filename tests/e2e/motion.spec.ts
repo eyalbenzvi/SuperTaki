@@ -10,6 +10,21 @@ import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, ope
  * transform — are unanswerable anywhere else.
  */
 
+/**
+ * A CSS duration in seconds.
+ *
+ * Chromium reports the blanket rule's `0.001ms` as `1e-06s`, so comparing against
+ * the literal string silently passes for a *killed* animation as well as a restored
+ * one — which made the first version of these assertions prove nothing.
+ */
+function seconds(value: string): number {
+  const trimmed = value.split(',')[0]?.trim() ?? '0s';
+  return trimmed.endsWith('ms') ? Number.parseFloat(trimmed) / 1000 : Number.parseFloat(trimmed);
+}
+
+/** Restored cues run for a perceptible time; stopped ones are effectively zero. */
+const RESTORED_S = 0.05;
+
 async function seatAndDeal(host: Page, guest: Page): Promise<void> {
   await openApp(host, `/${BROADCAST}`);
   const roomCode = await createRoom(host, 'Dana', 2);
@@ -20,6 +35,13 @@ async function seatAndDeal(host: Page, guest: Page): Promise<void> {
   await expect(host.locator('.hand .card')).toHaveCount(8);
   // Both hands, because the comparisons below read one state off each page.
   await expect(guest.locator('.hand .card')).toHaveCount(8);
+  /*
+   * The host is the tab under test, so it has to be the focused one. Chromium
+   * freezes animations in a background tab, which holds a filled animation at its
+   * first keyframe — an un-lifted card, a landing that never lands — and reads as a
+   * broken feature rather than a paused one.
+   */
+  await host.bringToFront();
 }
 
 /**
@@ -61,7 +83,7 @@ test.describe('reduced motion', () => {
       return { name: style.animationName, duration: style.animationDuration };
     });
     expect(animation.name).toBe('land-reduced');
-    expect(animation.duration).not.toBe('0.001ms');
+    expect(seconds(animation.duration)).toBeGreaterThan(RESTORED_S);
 
     // And it is opacity only. `land` translates, rotates and scales as well as
     // fading, which is exactly why it is not the animation that runs here.
@@ -93,7 +115,28 @@ test.describe('reduced motion', () => {
     const discardDuration = await host
       .locator('.discard')
       .evaluate((node) => getComputedStyle(node).transitionDuration);
-    expect(discardDuration).not.toBe('0.001ms');
+    expect(seconds(discardDuration)).toBeGreaterThan(RESTORED_S);
+
+    /*
+     * Each restore has to win the cascade against a blanket `!important` rule, and
+     * each has to be the *right* kind of cue. The seat ring and the ticker survive;
+     * the turn banner does not, because it scales — and something that moves is
+     * exactly what the preference is asking to be spared.
+     */
+    const cascade = await host.evaluate(() => {
+      const read = (selector: string, property: 'transitionDuration' | 'animationDuration'): string => {
+        const node = document.querySelector(selector);
+        return node ? getComputedStyle(node)[property] : 'MISSING';
+      };
+      return {
+        seat: read('.seat', 'transitionDuration'),
+        ticker: read('.ticker', 'animationDuration'),
+        banner: read('.turn-banner', 'animationDuration'),
+      };
+    });
+    expect(seconds(cascade.seat), 'the turn ring survives').toBeGreaterThan(RESTORED_S);
+    expect(seconds(cascade.ticker), 'a new log line still announces itself').toBeGreaterThan(RESTORED_S);
+    expect(seconds(cascade.banner), 'the banner scales, so it stays stopped').toBeLessThan(0.001);
   });
 
   test('leaves the looping cues stopped', async ({ context }) => {
@@ -273,6 +316,65 @@ test.describe('reduced motion, in the overlay too', () => {
       return seen;
     });
     expect(transforms).toEqual([]);
+  });
+});
+
+test.describe('lift and press', () => {
+  test('compose instead of overriding each other', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+    await seatAndDeal(host, guest);
+
+    /*
+     * The trap this design exists to avoid. Lift and press both want `transform`,
+     * and layering two rules made one of them lose every time: a state-driven lift
+     * is less specific than `:active`, so pressing dropped the card, while the old
+     * hover rule was *more* specific, so a hovered card had no press feedback at
+     * all. Each owns a custom property now — and the arming keyframe animates
+     * `--lift` rather than `transform`, because a keyframe on `transform` would
+     * out-cascade the base declaration and take `--press` with it.
+     */
+    await expect(host.locator('.hand .card--playable').first()).toBeVisible();
+    // Long enough for the staggered wave to have settled.
+    await host.waitForTimeout(700);
+
+    const card = host.locator('.hand .card--playable').first();
+    const resting = await card.evaluate((node) => getComputedStyle(node).transform);
+    // Raised, unscaled.
+    expect(resting).toMatch(/matrix\(1, 0, 0, 1, 0, -\d/);
+
+    const box = await card.boundingBox();
+    if (!box) {
+      throw new Error('no card to press');
+    }
+    await host.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await host.mouse.down();
+    await host.waitForTimeout(80);
+    const pressed = await card.evaluate((node) => ({
+      transform: getComputedStyle(node).transform,
+      lift: getComputedStyle(node).getPropertyValue('--lift'),
+      press: getComputedStyle(node).getPropertyValue('--press'),
+    }));
+    await host.mouse.up();
+
+    // Both at once: scaled down *and* still raised.
+    expect(pressed.press.trim()).toBe('.96');
+    expect(pressed.lift.trim()).not.toBe('0px');
+    const matrix = /matrix\(([\d.]+), 0, 0, [\d.]+, 0, (-?[\d.]+)\)/.exec(pressed.transform);
+    expect(matrix, pressed.transform).not.toBeNull();
+    expect(Number(matrix?.[1]), 'pressed scale').toBeLessThan(1);
+    expect(Number(matrix?.[2]), 'still lifted while pressed').toBeLessThan(0);
+  });
+
+  test('interpolates the lift rather than stepping it', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+    await seatAndDeal(host, guest);
+    // `@property` is what makes a custom property animate smoothly; unregistered,
+    // it would jump. Its absence degrades to a step, which is why it is checked
+    // rather than assumed.
+    const registered = await host.evaluate(() => typeof CSS !== 'undefined' && 'registerProperty' in CSS);
+    expect(registered).toBe(true);
   });
 });
 
