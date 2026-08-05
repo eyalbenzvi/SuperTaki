@@ -11,13 +11,16 @@ and the test that proves it. Constraints kept: static site on GitHub Pages, zero
 cost, no external asset of any kind, `engine/` stays pure, RTL and LTR identical, both themes,
 `prefers-reduced-motion` honoured, and excellent on a 320 px phone.
 
-> **This is v3.** Two review rounds by an external frontend architect. Round one found that three
+> **This is v4.** Two review rounds by an external frontend architect. Round one found that three
 > of the four substrate pieces had design holes that would have surfaced as rework: `origin` could
 > not be derived as described, the planner could not be both pure and do cross-beat compression, and
 > the FLIP measured the wrong frame. Two task premises were factually wrong. Round two found three
 > blockers in the fixes themselves: T11 silently breaks four existing assertions and neuters two
 > end-to-end action guards, T7's edit did not satisfy T7's own acceptance, and T17's epoch guard
 > missed the disconnection it was written for. All are addressed here. What the reviews changed is
+> Round three found two runtime breakages inside those very fixes — an arming keyframe on
+> `transform` would have out-cascaded the press it was written to preserve, and a named-animation
+> allowlist would have revived a transform under reduced motion. What the reviews changed is
 > recorded in [What the review changed](#what-the-review-changed).
 
 ---
@@ -433,7 +436,16 @@ Nothing visible ships in this wave. It exists so that the twenty-six tasks after
   `cards.css:445`) dead and so failed T7's own acceptance — and taken T8 and T12 with it, since both
   are CSS _animations_ replayed by a `key` remount, not transitions. So: replace both blanket kills
   with an allowlist that keeps short `opacity` and `background-color` transitions **and** a named
-  set of short keyframe animations, and keep zeroing everything else. Verified against all eight
+  set of short keyframe animations, and keep zeroing everything else.
+- **The allowlist must not name `land`, or any keyframe that touches `transform`.** `land`
+  (`cards.css:448-453`) animates `transform: translateY(-14px) rotate(-4deg) scale(1.04)` _and_
+  `opacity: 0.5`; allowlisting it by name would revive the transform under
+  `prefers-reduced-motion: reduce` and break the one constraint this plan calls non-negotiable. The
+  reduced-motion branch gets a **separate opacity-only keyframe**, and the same rule binds any
+  T8/T12 keyframe: opacity-only, or it does not go on the list.
+- **Keep `animation-iteration-count: 1 !important` blanket.** The health dot's `pulse`
+  (`components.css:428`) is `infinite` and opacity-only — exactly the shape a permissive allowlist
+  lets through — and a reduced-motion user would get a dot that pulses for ever. Verified against all eight
   existing `transition:` declarations — `base.css:143`, `components.css:27`, `components.css:242`,
   `cards.css:220`, `cards.css:416`, `cards.css:525`, `screens.css:437`, `screens.css:523` — before
   landing.
@@ -482,6 +494,17 @@ in the plan and it ships first.
   one-shot event rather than a state transition, so it is a one-shot `@keyframes` with
   `animation-delay: var(--lift-delay)`, and `transition: transform` stays delay-free for press and
   focus.
+- **That keyframe animates `--lift`, never `transform`.** CSS animations outrank normal declarations
+  in the cascade, so a keyframe on `transform` would override the base `transform` for the whole
+  arming window — up to 250 ms of stagger plus 260 ms — and `:active { --press: 0.96 }` would
+  recompute a value the animation is busy ignoring. Press would be dead on exactly the cards just
+  armed, and neither fill mode rescues it: `none` drops the card at animation end, `forwards` makes
+  the override permanent so `--press` never applies at all. Animating the variable instead keeps
+  `transform: translateY(var(--lift)) scale(var(--press))` a base declaration that both mechanisms
+  can feed. `--lift` is registered with `@property { syntax: "<length>"; inherits: false;
+initial-value: 0px }` so it interpolates rather than stepping — an unregistered custom property
+  animates discretely — and `@property` is plain CSS, so it is clean under
+  `style-src 'self' 'unsafe-inline'`.
 - **320 px and landscape.** `.hand` has `padding-block: 14px` (`cards.css:328`), cut to 12 px at
   `max-height: 40rem` and to **8 px** in landscape (`screens.css:842`), and `.game__hand` is
   `overflow-y: auto`. A permanent 10 px lift will clip or introduce a scrollbar in landscape, and

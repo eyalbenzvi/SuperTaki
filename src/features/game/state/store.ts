@@ -45,6 +45,7 @@ import {
   type ResumableRoom,
   type ThemeChoice,
 } from './persistence.ts';
+import { tableSignature, type Beat, type TableSignature } from './beat.ts';
 
 const log = createLogger('store');
 
@@ -99,6 +100,15 @@ export interface AppState {
   publicState: PublicGameState | null;
   hand: readonly Card[];
   feed: readonly FeedEntry[];
+  /**
+   * The newest accepted command, for the presentation layer only.
+   *
+   * Nothing about the game depends on it: it carries no authority and no state
+   * that is not already in `publicState`, `hand` and `feed`. It exists so that a
+   * cue can be driven by "what just happened, from where, to where" without
+   * having to reconstruct that from three separate writes.
+   */
+  beat: Beat | null;
   playAgain: { readonly agreed: readonly string[]; readonly required: number } | null;
 
   error: SessionError | null;
@@ -217,6 +227,18 @@ let rejectionCounter = 0;
 let announcementCounter = 0;
 let nudgeCounter = 0;
 let caughtCounter = 0;
+let beatCounter = 0;
+/**
+ * The table as it stood before the update now arriving.
+ *
+ * Captured when a new public state lands and spent when that command's events
+ * do, because those are two separate writes and only the second knows what the
+ * change was for. Module-level for the same reason the counters are: it belongs
+ * to the store's lifetime, not to any one session.
+ */
+let pendingFrom: TableSignature | null = null;
+/** Version of the last published beat, so a replayed batch does not mint another. */
+let lastBeatVersion = -1;
 let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * The intent currently in flight.
@@ -253,6 +275,7 @@ function initialState(): AppState {
     publicState: null,
     hand: [],
     feed: [],
+    beat: null,
     playAgain: null,
     error: null,
     rejection: null,
@@ -281,6 +304,7 @@ const CLEARED_SESSION: Partial<AppState> = {
   publicState: null,
   hand: [],
   feed: [],
+  beat: null,
   playAgain: null,
   actionPending: false,
   leaveIntent: false,
@@ -301,6 +325,19 @@ function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
 
 export const useAppStore = create<AppStore>((set, get) => {
   /** Releases the "move in flight" lock, whatever released it. */
+  /**
+   * Forgets what the table looked like a moment ago.
+   *
+   * Called at every boundary that already clears the feed — a new room, a resumed
+   * one, a fresh round. Without it the first beat of a round would carry a `from`
+   * belonging to the previous one, and its version check would compare against a
+   * version that no longer means anything.
+   */
+  function resetBeatTracking(): void {
+    pendingFrom = null;
+    lastBeatVersion = -1;
+  }
+
   function clearActionLock(): void {
     if (actionLockTimer !== null) {
       clearTimeout(actionLockTimer);
@@ -448,9 +485,18 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ lobby: update.lobby, screen: screenForLobbyPhase(update.lobby.phase) });
         return;
       }
-      case 'publicState':
+      case 'publicState': {
+        /*
+         * The table as it stood a moment ago, taken before it is overwritten.
+         * This is the only instant at which it can be had: the hand arrives in
+         * the next write and the events in the one after, so by the time anything
+         * knows what the change was for, the "before" is already gone.
+         */
+        const previous = get().publicState;
+        pendingFrom = previous ? tableSignature(previous, get().hand) : null;
         set({ publicState: update.state });
         return;
+      }
       case 'hand':
         set({ hand: update.cards });
         return;
@@ -468,8 +514,32 @@ export const useAppStore = create<AppStore>((set, get) => {
         if (lastCatch !== undefined) {
           caughtCounter += 1;
         }
+        /*
+         * One beat per accepted command, identified by the version it produced.
+         * The version is the right identity because one accepted command is one
+         * bump, and the check has to live here: the client drops event batches
+         * only when the version is strictly older, so a host replaying its log
+         * after a reconnect sends an exact-version batch straight through — and
+         * the update carries no version of its own to compare.
+         */
+        const current = get().publicState;
+        const beat =
+          current !== null && current.version !== lastBeatVersion
+            ? ((): Beat => {
+                lastBeatVersion = current.version;
+                beatCounter += 1;
+                return {
+                  seq: beatCounter,
+                  events: update.events,
+                  from: pendingFrom,
+                  to: tableSignature(current, get().hand),
+                };
+              })()
+            : null;
+        pendingFrom = null;
         set((state) => ({
           feed: [...state.feed, ...entries].slice(-FEED_LIMIT),
+          ...(beat !== null ? { beat } : {}),
           ...(lastCatch !== undefined
             ? {
                 caught: {
@@ -665,7 +735,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       const cleaned = sanitizeDisplayName(name);
-      set({ busy: true, error: null, closedReason: null, feed: [] });
+      resetBeatTracking();
+      set({ busy: true, error: null, closedReason: null, feed: [], beat: null });
       saveDisplayName(cleaned);
 
       for (let attempt = 0; attempt < ROOM_CODE_ATTEMPTS; attempt += 1) {
@@ -730,11 +801,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (!hostable || get().busy) {
         return;
       }
+      resetBeatTracking();
       set({
         busy: true,
         error: null,
         closedReason: null,
         feed: [],
+        beat: null,
         role: 'host',
         roomCode: hostable.roomCode,
         hostPeerId: hostable.hostPeerId,
@@ -836,11 +909,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       const cleaned = sanitizeDisplayName(name);
       const targetHost = hostPeerId ?? hostPeerIdForRoom(roomCode);
+      resetBeatTracking();
       set({
         busy: true,
         error: null,
         closedReason: null,
         feed: [],
+        beat: null,
         role: 'client',
         roomCode,
         hostPeerId: targetHost,
@@ -901,7 +976,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     startGame: () => {
       if (session instanceof HostSession) {
         clearActionLock();
-        set({ feed: [], caught: null });
+        resetBeatTracking();
+        set({ feed: [], beat: null, caught: null });
         session.startGame();
       }
     },
