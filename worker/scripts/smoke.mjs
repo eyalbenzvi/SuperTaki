@@ -31,9 +31,8 @@ class Client {
       this.ws.addEventListener('close', resolve);
     });
     this.ws.addEventListener('message', (event) => {
-      const frame = typeof event.data === 'string' && event.data.startsWith('{')
-        ? JSON.parse(event.data)
-        : event.data;
+      const frame =
+        typeof event.data === 'string' && event.data.startsWith('{') ? JSON.parse(event.data) : event.data;
       const waiter = this.waiters.shift();
       if (waiter) {
         waiter(frame);
@@ -115,7 +114,10 @@ async function run() {
 
   // --- channel handshake and routing, with the server stamping `from` ---
   guest.send({ t: 'open', to: HOST_ID, ch: 'c-1', d: { forged: 'from' }, from: 'somebody-else' });
-  await host.expect((f) => f.t === 'open' && f.from === 'p-guest1' && f.ch === 'c-1', 'open routed, from stamped');
+  await host.expect(
+    (f) => f.t === 'open' && f.from === 'p-guest1' && f.ch === 'c-1',
+    'open routed, from stamped',
+  );
   host.send({ t: 'accept', to: 'p-guest1', ch: 'c-1' });
   await guest.expect((f) => f.t === 'accept' && f.from === HOST_ID, 'accept routed back');
   guest.send({ t: 'msg', to: HOST_ID, ch: 'c-1', d: { move: 'playCard', card: 'red:7' } });

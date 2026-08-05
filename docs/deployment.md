@@ -189,7 +189,7 @@ in two tabs.
 | Workflow ran but both jobs were skipped             | Same cause: the push was not to the default branch. The skip is intentional.                                                        |
 | Site works, rooms never connect                     | Signalling or NAT, not deployment. Try `?debug=1` and read the console; see the README's limitations section.                       |
 | Invite links 404                                    | Only happens if routing was changed away from hash-based. Keep the `#/join?...` form.                                               |
-| Assets load over HTTP and features fail             | Enable **Enforce HTTPS**. Secure WebSockets and the Clipboard API need a secure context.                                                       |
+| Assets load over HTTP and features fail             | Enable **Enforce HTTPS**. Secure WebSockets and the Clipboard API need a secure context.                                            |
 
 ## Deploying somewhere else
 

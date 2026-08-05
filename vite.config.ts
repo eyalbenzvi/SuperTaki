@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 /**
@@ -14,8 +14,9 @@ const base = process.env.VITE_BASE_PATH ?? '/';
 
 /**
  * The CSP names the relay explicitly, and the relay is configured per build —
- * so the `connect-src` entry has to be derived, not hard-coded. `%RELAY_CSP%`
- * in `index.html` becomes the configured relay origin, or the local
+ * so the `connect-src` entry has to be derived, not hard-coded. Vite's native
+ * HTML env replacement substitutes `%VITE_RELAY_CSP%` in `index.html`; the
+ * value is computed here from `VITE_RELAY_URL`, falling back to the local
  * `wrangler dev` origins when no relay is set (development and previews).
  */
 function relayCspSource(): string {
@@ -26,18 +27,11 @@ function relayCspSource(): string {
   return 'ws://127.0.0.1:8787 http://127.0.0.1:8787';
 }
 
-function injectRelayCsp(): Plugin {
-  return {
-    name: 'super-taki:relay-csp',
-    transformIndexHtml(html) {
-      return html.replace('%RELAY_CSP%', relayCspSource());
-    },
-  };
-}
+process.env.VITE_RELAY_CSP = relayCspSource();
 
 export default defineConfig({
   base,
-  plugins: [react(), injectRelayCsp()],
+  plugins: [react()],
   build: {
     outDir: 'dist',
     sourcemap: true,
