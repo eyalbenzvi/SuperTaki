@@ -3,7 +3,7 @@
 Version: **5** sent, **5 only** accepted (`PROTOCOL_VERSION` and
 `SUPPORTED_PROTOCOL_VERSIONS` in `src/features/game/network/protocol.ts`)
 
-Every message is JSON, travels over a WebRTC data channel with `serialization: 'json'`, and
+Every message is JSON, travels over the room relay as a routed frame, and
 is validated with Zod **before it can influence any state**. Schemas are the single source of
 truth; this document describes them.
 
@@ -38,7 +38,7 @@ Every message is a flat object with these fields plus a `type` and a `payload`:
 `timestamp` is deliberately **not** used to order anything — clocks on separate devices are
 not comparable. Ordering comes from `GameState.version`.
 
-De-duplication uses a bounded LRU of the last 512 message ids per connection. WebRTC data
+De-duplication uses a bounded LRU of the last 512 message ids per connection. Relay
 channels are reliable and ordered, so duplicates are rare in practice; the guard exists for
 resends after a reconnect and for deliberate replay by a hostile peer.
 
