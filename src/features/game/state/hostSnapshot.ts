@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { record } from '../../../lib/diagnostics.ts';
-import { STORAGE_KEYS, readSessionJson, removeSessionRaw, writeSessionJson } from '../../../lib/storage.ts';
+import { STORAGE_KEYS, readJson, removeRaw, writeJson } from '../../../lib/storage.ts';
 import { cardSchema } from '../network/protocol.ts';
 import { isValidPeerId, isValidRoomCode } from '../network/roomCode.ts';
 import type { HostRestoreState } from '../network/hostSession.ts';
@@ -13,12 +13,18 @@ import type { HostRestoreState } from '../network/hostSession.ts';
  * single most common way a table lost an evening, and by some distance the most
  * annoying, because nothing had gone wrong with anybody's network.
  *
- * Kept in `sessionStorage`, deliberately. It contains every player's hand and the
- * order of the draw pile, so it must not outlive the tab that needs it; and a
- * reload — which `sessionStorage` survives — is the case worth recovering from.
- * A crash that also closes the tab is not recoverable this way, and that is an
- * accepted limit rather than an oversight: the alternative is writing everybody's
- * cards to persistent storage on a device that may be shared.
+ * Kept in `localStorage`, with a TTL. It used to live in `sessionStorage`,
+ * which made a host's reload recoverable but a closed tab or a crashed browser
+ * fatal to the whole table — and "the game must survive anybody dropping,
+ * including the host" is a requirement now. The snapshot contains every
+ * player's hand and the order of the draw pile, so the price of persistence is
+ * paid deliberately: the entry expires after `HOST_SNAPSHOT_TTL_MS`, is
+ * validated (and removed) on every read, and is cleared the moment the host
+ * leaves the room on purpose. See docs/threat-model.md.
+ *
+ * The relay holds the other half of the promise: the room's peer-id claim in
+ * the snapshot is what the returning host presents to take its room code back,
+ * however long it was away.
  *
  * Writes are split by cost. The small fields go down on every change; the full
  * game is throttled, because it is 8–12 KB of synchronous JSON and doing that on
@@ -84,6 +90,11 @@ const seatSchema = z.object({
 const snapshotSchema = z.object({
   roomCode: z.string().min(3).max(32),
   hostPeerId: z.string().min(1).max(64),
+  /** Relay claim for `hostPeerId`; what makes the room code reclaimable. */
+  claim: z
+    .string()
+    .regex(/^[a-f0-9]{16,64}$/)
+    .optional(),
   generation: z.number().int().min(0).max(16),
   savedAt: z.number().int().min(0),
   hostPlayerId: z.string().min(1).max(64),
@@ -99,6 +110,7 @@ const snapshotSchema = z.object({
 export interface HostedRoom {
   readonly roomCode: string;
   readonly hostPeerId: string;
+  readonly claim: string | null;
   readonly generation: number;
   readonly savedAt: number;
   readonly restore: HostRestoreState;
@@ -119,6 +131,7 @@ function validate(value: unknown, now: number): HostedRoom | null {
   return {
     roomCode: data.roomCode,
     hostPeerId: data.hostPeerId,
+    claim: data.claim ?? null,
     generation: data.generation,
     savedAt: data.savedAt,
     restore: {
@@ -164,7 +177,7 @@ export function validateHandoffSnapshot(value: unknown): HostRestoreState | null
 }
 
 export function loadHostedRoom(now: number = Date.now()): HostedRoom | null {
-  return readSessionJson(STORAGE_KEYS.hostedRoom, (value) => validate(value, now));
+  return readJson(STORAGE_KEYS.hostedRoom, (value) => validate(value, now));
 }
 
 /**
@@ -204,15 +217,17 @@ function shapeOf(args: WriteArgs): string {
 interface WriteArgs {
   readonly roomCode: string;
   readonly hostPeerId: string;
+  readonly claim: string | null;
   readonly generation: number;
   readonly restore: HostRestoreState;
 }
 
 function write(args: WriteArgs, now: number): void {
   lastFullWriteAt = now;
-  writeSessionJson(STORAGE_KEYS.hostedRoom, {
+  writeJson(STORAGE_KEYS.hostedRoom, {
     roomCode: args.roomCode,
     hostPeerId: args.hostPeerId,
+    ...(args.claim === null ? {} : { claim: args.claim }),
     generation: args.generation,
     savedAt: now,
     hostPlayerId: args.restore.hostPlayerId,
@@ -272,7 +287,7 @@ export function clearHostedRoom(): void {
     pending = null;
   }
   lastShape = '';
-  removeSessionRaw(STORAGE_KEYS.hostedRoom);
+  removeRaw(STORAGE_KEYS.hostedRoom);
 }
 
 /** Test seam: forgets the throttle. */

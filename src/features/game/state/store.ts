@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_LANGUAGE, directionFor, type Language } from '../../../i18n/index.ts';
 import { record } from '../../../lib/diagnostics.ts';
 import { onSleep } from '../../../lib/lifecycle.ts';
+import { createRoomClaim } from '../../../lib/id.ts';
 import { releaseSound, setSoundEnabled, unlockSound } from '../../../lib/audio.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
@@ -217,6 +218,12 @@ export type AppStore = AppState & AppActions;
  */
 let session: HostSession | ClientSession | null = null;
 /**
+ * Relay claim for the room this device is hosting. Minted when the room is
+ * created, persisted in the host snapshot, and presented again on reclaim — it
+ * is what proves to the relay that this device owns the room code.
+ */
+let activeRoomClaim: string | null = null;
+/**
  * Which session the store is currently listening to.
  *
  * A session's observer is fixed when it is constructed, so a session that has
@@ -403,7 +410,10 @@ export const useAppStore = create<AppStore>((set, get) => {
     const peerId = hostPeerIdForRoom(roomCode, generation);
     let transport: Transport | null = null;
     try {
-      transport = createTransport({ id: peerId });
+      // A fresh claim: the successor owns a new generation id, not the old one.
+      const claim = createRoomClaim();
+      transport = createTransport({ id: peerId, claim });
+      activeRoomClaim = claim;
       const previous = session;
       sessionEpoch += 1;
       const hostSession = await createHostSession({
@@ -450,6 +460,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     saveHostedRoom({
       roomCode: active.roomCode,
       hostPeerId: active.hostPeerId,
+      claim: activeRoomClaim,
       generation: active.generation,
       restore,
     });
@@ -484,6 +495,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       flushHostedRoom({
         roomCode: active.roomCode,
         hostPeerId: active.hostPeerId,
+        claim: activeRoomClaim,
         generation: active.generation,
         restore: active.snapshot(),
       });
@@ -673,6 +685,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         }
         if (get().role === 'host') {
           clearHostedRoom();
+          activeRoomClaim = null;
         }
         set({
           ...CLEARED_SESSION,
@@ -776,6 +789,7 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     forgetHostable: () => {
       clearHostedRoom();
+      activeRoomClaim = null;
       set({ hostable: null });
     },
 
@@ -805,11 +819,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       for (let attempt = 0; attempt < ROOM_CODE_ATTEMPTS; attempt += 1) {
         const roomCode = generateRoomCode();
         const peerId = hostPeerIdForRoom(roomCode);
+        const claim = createRoomClaim();
         // Held outside the try so a failed attempt can tear its transport down
         // instead of leaving an orphaned socket that may still fire `open`.
         let transport: Transport | null = null;
         try {
-          transport = createTransport({ id: peerId });
+          transport = createTransport({ id: peerId, claim });
+          activeRoomClaim = claim;
           set({ role: 'host', roomCode, hostPeerId: peerId, phase: 'initializing' });
           sessionEpoch += 1;
           const hostSession = await createHostSession({
@@ -900,7 +916,15 @@ export const useAppStore = create<AppStore>((set, get) => {
         }
         let transport: Transport | null = null;
         try {
-          transport = createTransport({ id: hostable.hostPeerId });
+          /*
+           * The stored claim is the room key: presenting it makes the relay hand
+           * the id straight back, however long this device was gone. A snapshot
+           * from before claims existed falls back to a fresh one, which succeeds
+           * once the relay's hold on the old id expires.
+           */
+          const claim = hostable.claim ?? createRoomClaim();
+          transport = createTransport({ id: hostable.hostPeerId, claim });
+          activeRoomClaim = claim;
           const hostSession = await createHostSession({
             transport,
             roomCode: hostable.roomCode,
@@ -1146,6 +1170,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       detachSleepHook = null;
       clearResumableRoom();
       clearHostedRoom();
+      activeRoomClaim = null;
       clearActionLock();
       set({
         ...CLEARED_SESSION,

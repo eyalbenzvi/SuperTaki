@@ -69,14 +69,11 @@ jobs:
       - name: Build
         env:
           VITE_BASE_PATH: ${{ steps.base.outputs.base }}
-          # Optional: point at your own PeerServer / TURN by setting these as
-          # repository variables. Leaving them empty keeps the free defaults.
-          VITE_PEER_HOST: ${{ vars.VITE_PEER_HOST }}
-          VITE_PEER_PORT: ${{ vars.VITE_PEER_PORT }}
-          VITE_PEER_PATH: ${{ vars.VITE_PEER_PATH }}
-          VITE_PEER_SECURE: ${{ vars.VITE_PEER_SECURE }}
-          VITE_PEER_KEY: ${{ vars.VITE_PEER_KEY }}
-          VITE_ICE_SERVERS: ${{ vars.VITE_ICE_SERVERS }}
+          # The game's relay (the Cloudflare Worker in `worker/`). Set the
+          # RELAY_URL repository variable to the deployed worker URL with a
+          # `wss://` scheme — the deploy-worker workflow prints it. Without it
+          # the build only knows how to reach a local `wrangler dev`.
+          VITE_RELAY_URL: ${{ vars.RELAY_URL }}
         run: npm run build
 
       - name: Add SPA fallback

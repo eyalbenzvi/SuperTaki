@@ -363,15 +363,6 @@ export const en = {
   'closed.handoff': 'Another player has taken over as host.',
   'closed.abandoned': 'The round ended because too few players were left.',
 
-  'probe.title': 'Checking this network',
-  'probe.direct': 'This network looks fine for playing together.',
-  'probe.relayNeeded': 'This network needs a relay. It should still work, but it may be slower.',
-  'probe.blocked':
-    'This network blocks the direct connections the game needs. Playing on one device will work.',
-  'probe.unknown': 'This browser could not be checked.',
-  'probe.oneDevice': 'Play on one device instead',
-  'probe.tryAnyway': 'Try anyway',
-
   'local.title': 'One device',
   'local.subtitle': 'Everyone plays on this device, passing it around. Nothing can disconnect.',
   'local.start': 'Play on one device',

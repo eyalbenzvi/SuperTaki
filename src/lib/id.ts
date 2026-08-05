@@ -26,6 +26,14 @@ export function createResumeToken(): string {
   return randomHex(16);
 }
 
+/**
+ * Secret that proves ownership of a room's peer id to the relay. Presenting it
+ * again is what lets a host take its room code back after a crash.
+ */
+export function createRoomClaim(): string {
+  return randomHex(16);
+}
+
 /** Random integer in [0, maxExclusive) drawn from the CSPRNG. */
 export function randomInt(maxExclusive: number): number {
   if (maxExclusive <= 0 || !Number.isInteger(maxExclusive)) {

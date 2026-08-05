@@ -124,7 +124,7 @@ describe('creating a room through the store', () => {
     // broker produces when it accepts a socket and goes quiet.
     const destroy = vi.fn();
     holder.create = () => ({
-      kind: 'peerjs',
+      kind: 'relay',
       localId: null,
       ready: () => Promise.reject(new TransportError('signalingUnavailable', 'no response')),
       connect: () => Promise.reject(new TransportError('closed', 'n/a')),
@@ -152,7 +152,7 @@ describe('creating a room through the store', () => {
       attempts += 1;
       if (attempts === 1) {
         return {
-          kind: 'peerjs',
+          kind: 'relay',
           localId: null,
           ready: () => Promise.reject(new TransportError('idUnavailable', 'taken')),
           connect: () => Promise.reject(new TransportError('closed', 'n/a')),
@@ -511,6 +511,7 @@ describe('taking a hosted room back', () => {
   function hostedRoom(): {
     roomCode: string;
     hostPeerId: string;
+    claim: string | null;
     generation: number;
     savedAt: number;
     restore: HostRestoreState;
@@ -518,6 +519,7 @@ describe('taking a hosted room back', () => {
     return {
       roomCode: TEST_ROOM,
       hostPeerId: hostPeerIdForRoom(TEST_ROOM),
+      claim: 'c0ffee00c0ffee00c0ffee00c0ffee00',
       generation: 0,
       savedAt: Date.now(),
       restore: {

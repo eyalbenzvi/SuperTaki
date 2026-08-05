@@ -8,7 +8,6 @@ import { parseInvite } from '../../network/roomCode.ts';
 import { useAppStore } from '../../state/store.ts';
 import { hostPeerIdForRoom } from '../../network/roomCode.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
-import { ConnectivityNotice } from '../components/ConnectivityNotice.tsx';
 import { ResumeCard } from '../components/ResumeCard.tsx';
 
 export function JoinRoomScreen(): ReactNode {
@@ -86,7 +85,6 @@ export function JoinRoomScreen(): ReactNode {
       <h1>{t('join.title')}</h1>
 
       <ConnectionPhaseNotice />
-      <ConnectivityNotice />
 
       <ResumeCard onResume={resume} busy={busy} />
 

@@ -86,7 +86,12 @@ export type ServerFrame =
   | { readonly t: 'peerDown'; readonly peerId: string }
   /** The routed frame's target is not in the room. */
   | { readonly t: 'gone'; readonly peerId: string; readonly ch: string }
-  | { readonly t: 'open' | 'accept' | 'msg' | 'close'; readonly from: string; readonly ch: string; readonly d?: unknown };
+  | {
+      readonly t: 'open' | 'accept' | 'msg' | 'close';
+      readonly from: string;
+      readonly ch: string;
+      readonly d?: unknown;
+    };
 
 const ROUTED_TYPES: readonly string[] = ['open', 'accept', 'msg', 'close'];
 

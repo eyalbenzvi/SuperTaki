@@ -200,6 +200,8 @@ describe('frame parsing limits', () => {
   it('rejects invalid peer ids and channels', () => {
     expect(parseClientFrame(JSON.stringify({ t: 'msg', to: 'bad id!', ch: 'c1' }))).toBeNull();
     expect(parseClientFrame(JSON.stringify({ t: 'msg', to: 'ok-id', ch: 'bad ch!' }))).toBeNull();
-    expect(parseClientFrame(JSON.stringify({ t: 'hello', v: 1, peerId: 'ok', claim: 'TOO SHORT' }))).toBeNull();
+    expect(
+      parseClientFrame(JSON.stringify({ t: 'hello', v: 1, peerId: 'ok', claim: 'TOO SHORT' })),
+    ).toBeNull();
   });
 });

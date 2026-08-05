@@ -50,8 +50,10 @@ function restore(overrides: Partial<HostRestoreState> = {}): HostRestoreState {
   };
 }
 
+const CLAIM = 'c0ffee00c0ffee00c0ffee00c0ffee00';
+
 function args(overrides: Partial<HostRestoreState> = {}) {
-  return { roomCode: ROOM, hostPeerId: PEER, generation: 0, restore: restore(overrides) };
+  return { roomCode: ROOM, hostPeerId: PEER, claim: CLAIM, generation: 0, restore: restore(overrides) };
 }
 
 beforeEach(() => {
@@ -95,8 +97,8 @@ describe('remembering a hosted room', () => {
 
   it('refuses a corrupt snapshot instead of restoring half a room', () => {
     saveHostedRoom(args(), 1_000);
-    const raw = window.sessionStorage.getItem('superTaki:hostedRoom') ?? '';
-    window.sessionStorage.setItem(
+    const raw = window.localStorage.getItem('superTaki:hostedRoom') ?? '';
+    window.localStorage.setItem(
       'superTaki:hostedRoom',
       raw.replace('"phase":"inGame"', '"phase":"nonsense"'),
     );

@@ -25,7 +25,9 @@ interface Attachment {
 /** Synchronous claim persistence over the object's SQLite storage. */
 class SqlClaimStore implements ClaimStore {
   constructor(private readonly sql: SqlStorage) {
-    this.sql.exec('CREATE TABLE IF NOT EXISTS claims (peer_id TEXT PRIMARY KEY, claim TEXT NOT NULL, last_seen INTEGER NOT NULL)');
+    this.sql.exec(
+      'CREATE TABLE IF NOT EXISTS claims (peer_id TEXT PRIMARY KEY, claim TEXT NOT NULL, last_seen INTEGER NOT NULL)',
+    );
   }
 
   get(peerId: string): ClaimRecord | undefined {
