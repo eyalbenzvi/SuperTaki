@@ -18,7 +18,7 @@ export type IconName =
   | 'users'
   | 'crown'
   | 'clockwise'
-  | 'anticlockwise'
+  | 'playOrder'
   | 'leave'
   | 'chevronDown'
   | 'chevronUp'
@@ -68,10 +68,18 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M21 3v6h-6" />
     </>
   ),
-  anticlockwise: (
+  /*
+   * The play order, drawn as what it is: a straight arrow along a row of seats.
+   *
+   * It replaced a circular "turning" glyph, which had no circle of seats on screen
+   * to turn around — the table is a row — and which could not be mirrored for
+   * Hebrew, where the seating order runs the other way. The arrow is drawn pointing
+   * right and flipped by the chip when the order runs left.
+   */
+  playOrder: (
     <>
-      <path d="M3 12a9 9 0 1 0 3.5-7.14" />
-      <path d="M3 3v6h6" />
+      <path d="M3 12h14" />
+      <path d="m12 6.5 5.5 5.5-5.5 5.5" />
     </>
   ),
   leave: (

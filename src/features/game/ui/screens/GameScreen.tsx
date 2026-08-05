@@ -3,7 +3,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Button } from '../../../../components/Button.tsx';
 import { Callout } from '../../../../components/Callout.tsx';
 import { Icon } from '../../../../components/Icon.tsx';
-import { useT } from '../../../../app/useT.ts';
+import { useDirection, useT } from '../../../../app/useT.ts';
 import { countLabel, type Translator } from '../../../../i18n/index.ts';
 import { LAST_CARD_PENALTY, requiresColorChoice, type Card, type CardColor } from '../../engine/cards.ts';
 import {
@@ -54,6 +54,12 @@ type TableView = TableSnapshot & {
  */
 export function GameScreen(): ReactNode {
   const t = useT();
+  /*
+   * The play-order arrow points at seats, and the seats are laid out in the
+   * document's direction, so the chip needs it. Passed in rather than read from
+   * `document` inside the component, which keeps it a pure render of props.
+   */
+  const textDirection = useDirection();
 
   /*
    * Subscribed field by field. The table used to re-render on every store change
@@ -286,7 +292,7 @@ export function GameScreen(): ReactNode {
           <p key={currentId ?? 'none'} className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
             {myTurn ? t('game.yourTurn') : t('game.turnOf', { name: turnName ?? '—' })}
           </p>
-          <DirectionIndicator direction={publicState.direction} t={t} />
+          <DirectionIndicator direction={publicState.direction} textDirection={textDirection} t={t} />
         </div>
 
         <GameLog

@@ -119,9 +119,10 @@ export const en = {
   'game.waitingFor': 'Waiting for {name}…',
   'game.playOrDraw': 'Play a card, or draw one.',
   'game.activeColor': 'Current colour: {color}',
+  /* The chip's visible label is the noun; the arrow beside it is the value. */
   'game.direction': 'Play order',
-  'game.directionCw': 'Play order: forwards',
-  'game.directionCcw': 'Play order: reversed',
+  'game.directionCw': 'Play order: forwards, following the seats',
+  'game.directionCcw': 'Play order: reversed, against the seats',
   'game.drawPile': 'Draw pile',
   'game.drawPileAria.one': 'Draw pile, 1 card. Draw a card.',
   'game.drawPileAria.other': 'Draw pile, {count} cards. Draw a card.',

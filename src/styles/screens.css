@@ -860,24 +860,6 @@
 }
 
 /*
- * On a narrow screen the direction chip's label wraps the turn row onto a second
- * line, which costs more than the words are worth. The arrow carries it, and the
- * words stay in the accessible name.
- */
-@media (max-width: 26rem) {
-  .direction-chip__label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-
-/*
  * Landscape on a phone: about 350 px of height for everything, and 800 px of
  * width doing nothing.
  *

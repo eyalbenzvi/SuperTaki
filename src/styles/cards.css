@@ -644,14 +644,58 @@ button.card--playable::after {
   background: var(--card-yellow);
 }
 
+/*
+ * The play order: two words and an arrow, in a pill.
+ *
+ * A pill rather than loose muted text, because this is a piece of table state that
+ * changes mid-round and has to be findable at a glance — and because a reversal is
+ * worth colouring. The arrow, not the words, carries which way play runs; the words
+ * only say what the arrow is about, so they stay short enough to keep on screen at
+ * every width.
+ */
 .direction-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+/*
+ * Reversed takes the accent. The arrow already says which way play goes; the colour
+ * says "this is not how the round started", which is the part a player who looked
+ * away for a moment has missed.
+ */
+.direction-chip--reversed {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.direction-chip__arrow {
+  display: inline-flex;
+  /*
+   * The glyph is drawn pointing right and mirrored when the order runs left, which
+   * is the default in Hebrew. Turning it is the chip's whole story, so it turns
+   * rather than jumping — over the same duration as the sweep it agrees with.
+   */
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.direction-chip__arrow--mirrored {
+  transform: scaleX(-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .direction-chip__arrow {
+    transition: none;
+  }
 }
 
 .color-picker-intro {
