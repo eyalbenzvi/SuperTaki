@@ -46,12 +46,24 @@ export const UNMEASURED: HandLayout = { perRow: 0, strip: 0, card: 0 };
  * A function of the count alone, deliberately. Scaling from the measured width
  * instead would feed the new card size back into the next measurement, and a hand
  * that sits on the boundary would oscillate between two sizes for ever.
+ *
+ * Four steps rather than two. The floor and the ceiling are unchanged; what
+ * changed is the size of the largest single jump, from fourteen per cent down to
+ * about seven. That was tolerable while the resize was instantaneous and read as
+ * nothing at all, but the hand now animates between layouts — and an animated
+ * fourteen per cent shrug is something you can watch happen.
  */
 export function handCardScale(count: number): number {
   if (count <= 8) {
     return 1;
   }
-  return count <= 12 ? 0.86 : 0.76;
+  if (count <= 10) {
+    return 0.93;
+  }
+  if (count <= 12) {
+    return 0.86;
+  }
+  return count <= 15 ? 0.81 : 0.76;
 }
 
 /**

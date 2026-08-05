@@ -218,6 +218,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* So the flight layer can pin itself to the table without escaping it. */
+  position: relative;
   padding: var(--space-2) var(--space-3);
   padding-block-end: calc(var(--space-2) + var(--safe-bottom));
   width: 100%;
@@ -434,9 +436,16 @@
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface);
+  /*
+   * `box-shadow` belongs here: `.seat--current` sets a ring below and the property
+   * was not in this list, so the one cue that says "it is their turn now" snapped
+   * on while the colours around it cross-faded. One word, no JavaScript, and it
+   * survives reduced motion once the blanket rule is scoped.
+   */
   transition:
     border-color var(--transition-medium),
-    background-color var(--transition-medium);
+    background-color var(--transition-medium),
+    box-shadow var(--transition-medium);
 }
 
 /*
@@ -567,6 +576,63 @@
   text-wrap: balance;
 }
 
+/*
+ * The banner re-enters when the turn changes, keyed on whose turn it is.
+ *
+ * On my own turn this *is* the whole cue: `opponents()` filters the local player
+ * out, so there is no seat of mine on the table to ring. The hand arming itself
+ * carries the rest.
+ */
+.turn-banner {
+  animation: turn-enter var(--dur-base) var(--ease-out);
+}
+
+@keyframes turn-enter {
+  from {
+    opacity: 0.3;
+    scale: 0.97;
+  }
+}
+
+/*
+ * A direction change is the one state in the game with no place of its own on the
+ * screen, so it borrows the row of seats and crosses it. The sign is applied here,
+ * from the document's direction — the planner emits the rule's direction, which
+ * runs the other way round in Hebrew.
+ */
+.seats__list {
+  position: relative;
+}
+
+.seats__sweep {
+  position: absolute;
+  inset-block: 0;
+  inline-size: 12px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent-border), transparent);
+  animation: seats-sweep var(--dur-slow) var(--ease-in-out);
+}
+
+@keyframes seats-sweep {
+  from {
+    translate: var(--sweep-from, -12px);
+  }
+  to {
+    translate: var(--sweep-to, 100%);
+  }
+}
+
+/* A penalty that landed on me, said once behind the hand. Not a shake. */
+.game__hand--struck {
+  animation: struck var(--dur-base) var(--ease-out);
+}
+
+@keyframes struck {
+  50% {
+    background-color: var(--danger-soft);
+  }
+}
+
 @keyframes declare-pulse {
   50% {
     box-shadow: 0 0 0 4px var(--accent-border);
@@ -590,6 +656,16 @@
 
 /* Turn banner ------------------------------------------------------------- */
 
+/*
+ * Whose turn it is, which changes several times a minute.
+ *
+ * One font size for both states, on purpose. The emphasised state used to step
+ * from `--text-md` to `--text-lg`, and font size is a layout property: becoming
+ * the current player reflowed the banner and the row around it, with nothing
+ * transitioned, on the most frequent state change in the game. The emphasis is
+ * carried by a scale and the colour instead, both of which the compositor can
+ * animate without touching layout.
+ */
 .turn-banner {
   margin: 0;
   padding: var(--space-1) var(--space-4);
@@ -600,13 +676,19 @@
   border: 1px solid var(--border);
   background: var(--surface-sunken);
   color: var(--text-muted);
+  transform: scale(1);
+  transition:
+    transform var(--transition-medium),
+    background-color var(--transition-medium),
+    border-color var(--transition-medium),
+    color var(--transition-medium);
 }
 
 .turn-banner--mine {
   background: var(--success-soft);
   border-color: var(--success);
   color: var(--text);
-  font-size: var(--text-lg);
+  transform: scale(1.04);
 }
 
 /* Log --------------------------------------------------------------------- */
@@ -633,6 +715,26 @@
   margin: 0;
   font-size: var(--text-sm);
   color: var(--text-muted);
+}
+
+/*
+ * A new line announces itself.
+ *
+ * The pill flashes; the text does not move. The text is the comprehension
+ * fallback and the semantic neighbour of the live region, and animating a string
+ * that a screen reader is about to read is a way of making it harder to read. The
+ * flash is driven by a `key` on this element rather than a timer in state —
+ * `react-hooks/set-state-in-effect` forbids the timer, and a remount replays a
+ * CSS animation for free.
+ */
+.ticker__flash {
+  animation: ticker-flash var(--dur-fast) var(--ease-out);
+}
+
+@keyframes ticker-flash {
+  from {
+    background-color: var(--accent-border);
+  }
 }
 
 /*
@@ -688,8 +790,13 @@
     --pile-max: 6.25rem;
   }
 
+  /*
+   * A little more emphasis where there is room for it — expressed as a scale for
+   * the same reason as the base rule: font size is a layout property, and the
+   * turn changes several times a minute.
+   */
   .turn-banner--mine {
-    font-size: var(--text-xl);
+    transform: scale(1.07);
   }
 }
 
@@ -742,6 +849,8 @@
 
   .hand {
     padding-block: 12px var(--space-1);
+    --hand-lift: -8px;
+    --hand-lift-deep: -13px;
   }
 
   /* The reason fits on the button only where there is height for two lines. */
@@ -841,6 +950,9 @@
   .hand {
     padding-block: 8px 2px;
     min-height: 0;
+    /* Landscape has eight pixels of room, so the wave is proportionate to it. */
+    --hand-lift: -5px;
+    --hand-lift-deep: -8px;
   }
 
   .turn-banner {

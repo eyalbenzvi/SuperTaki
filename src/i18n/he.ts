@@ -38,6 +38,9 @@ export const he: Translations = {
   'home.step3': 'כל שחקן משחק מהמכשיר שלו. 2 עד 6 שחקנים.',
 
   'theme.label': 'ערכת צבעים',
+  'sound.label': 'צלילים',
+  'sound.on': 'מופעל',
+  'sound.off': 'כבוי',
   'theme.system': 'לפי המערכת',
   'theme.light': 'בהיר',
   'theme.dark': 'כהה',

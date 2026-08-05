@@ -23,7 +23,12 @@ import { useAppStore, type FeedEntry } from '../../state/store.ts';
 import { colorName } from '../cardText.ts';
 import { describeEvent } from '../eventText.ts';
 import { useCatchGrace } from '../useCatchGrace.ts';
+import { playCue } from '../../../../lib/audio.ts';
+import { penaltyBuzz, returnBuzz } from '../../../../lib/haptics.ts';
+import { AnchorRegistry } from '../anchors.ts';
+import { cueFor } from '../choreograph.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
+import { FlightLayer } from '../components/FlightLayer.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 import { CaughtNotice, NudgeButton, NudgeNotice } from '../components/TableControls.tsx';
 import { WaitingNotice } from '../components/WaitingNotice.tsx';
@@ -66,6 +71,14 @@ export function GameScreen(): ReactNode {
       actionPending: state.actionPending,
     })),
   );
+  /*
+   * Its own selector, deliberately.
+   *
+   * Folding `beat` into the shallow object above would change `table`'s identity
+   * on every move, which would defeat the `useMemo` on `opponents(table)` below
+   * and re-render every seat — the exact cost that memo exists to avoid.
+   */
+  const beat = useAppStore((state) => state.beat);
   const playCard = useAppStore((state) => state.playCard);
   const drawCard = useAppStore((state) => state.drawCard);
   const closeTaki = useAppStore((state) => state.closeTaki);
@@ -73,6 +86,14 @@ export function GameScreen(): ReactNode {
   const declareLastCard = useAppStore((state) => state.declareLastCard);
   const catchLastCard = useAppStore((state) => state.catchLastCard);
   const announce = useAppStore((state) => state.announce);
+
+  /*
+   * One registry for the table's lifetime. Anchors register themselves as they
+   * mount and deregister as they go, so nothing here has to know which of them
+   * currently exist — a player's own seat never does, and a card's slot stops
+   * existing the moment it is played.
+   */
+  const [registry] = useState(() => new AnchorRegistry());
 
   const [pendingWild, setPendingWild] = useState<Card | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -88,6 +109,22 @@ export function GameScreen(): ReactNode {
     table.localPlayerId !== null &&
     hasDeclaredLastCard(table, table.localPlayerId);
   const cards = useMemo(() => sortHandForDisplay(table.hand), [table.hand]);
+  /*
+   * The cues this screen draws itself, read off the newest beat.
+   *
+   * Everything here is derived during render from state the store already holds,
+   * so there is no effect, no timer and no ref — which is both simpler and the
+   * only shape the compiler's lint rules allow.
+   */
+  const landed = beat?.events.some((event) => event.type === 'cardPlayed') ?? false;
+  const reversal = beat?.events.find((event) => event.type === 'directionChanged');
+  const sweep = beat && reversal ? { key: `${beat.seq}`, direction: reversal.direction } : undefined;
+  const struck =
+    beat?.events.some(
+      (event) =>
+        (event.type === 'cardDrawn' && event.playerId === table.localPlayerId) ||
+        (event.type === 'lastCardCaught' && event.playerId === table.localPlayerId),
+    ) ?? false;
   const seats = useCatchGrace(useMemo(() => opponents(table), [table]));
   const turnName = currentPlayerName(table);
 
@@ -99,6 +136,33 @@ export function GameScreen(): ReactNode {
     },
     [],
   );
+
+  /*
+   * The table's voice, and a buzz on the two moments worth one.
+   *
+   * Cues are dropped while the page is hidden — a returning player would otherwise
+   * get every sound of the last two minutes at once, which is the commonest bug in
+   * browser audio. They are also skipped for a beat the announcer is about to read
+   * out, so a screen-reader user is not hearing speech and a card at the same time:
+   * the words carry more than the sound does, so the sound is the one that yields.
+   */
+  const beatSeq = beat?.seq ?? 0;
+  useEffect(() => {
+    if (!beat || typeof document === 'undefined' || document.visibilityState === 'hidden') {
+      return;
+    }
+    const cue = cueFor(beat, table.localPlayerId);
+    if (cue !== null) {
+      playCue(cue);
+    }
+    if (cue === 'penalty') {
+      penaltyBuzz();
+    } else if (cue === 'yourTurn' && document.visibilityState !== 'visible') {
+      returnBuzz();
+    }
+    // One beat is one accepted command; everything else here is read from it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [beatSeq]);
 
   /*
    * One announcement per change of state, carrying both halves of the answer to
@@ -192,7 +256,7 @@ export function GameScreen(): ReactNode {
        * stack of notices from pushing it off the bottom of the screen.
        */}
       <div className="game__info">
-        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} />
+        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} sweep={sweep} registry={registry} />
 
         {/*
          * The nudge renders only while the table is genuinely waiting on a
@@ -209,7 +273,10 @@ export function GameScreen(): ReactNode {
         {/* Outside the scrollable region below: on a short screen, whose turn it is
             is the last thing that should ever scroll out of sight. */}
         <div className="turn-row">
-          <p className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
+          {/* Keyed on whose turn it is, so the banner re-enters when it changes.
+              On my own turn this is the whole cue: there is no seat of mine on
+              the table to ring. */}
+          <p key={currentId ?? 'none'} className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
             {myTurn ? t('game.yourTurn') : t('game.turnOf', { name: turnName ?? '—' })}
           </p>
           <DirectionIndicator direction={publicState.direction} t={t} />
@@ -222,11 +289,21 @@ export function GameScreen(): ReactNode {
         />
 
         <div className="game__action">
+          {/*
+           * Alongside the prompt, not instead of it.
+           *
+           * A refusal used to replace the whole prompt for 2.6 seconds. That was
+           * survivable while only a card could be refused, but the draw pile now
+           * explains itself too — and the commonest reason it is blocked is "not
+           * your turn", where the prompt it would have hidden is the only useful
+           * thing on the screen.
+           */}
           {refusal ? (
             <Callout tone="warning" role="alert">
               {refusal}
             </Callout>
-          ) : (
+          ) : null}
+          {
             <ActionPrompt
               t={t}
               myTurn={myTurn}
@@ -246,18 +323,21 @@ export function GameScreen(): ReactNode {
               onBreak={onBreakPlusThree}
               onPassBreak={passBreak}
             />
-          )}
+          }
         </div>
       </div>
 
       <div className="game__table">
         <Piles
           t={t}
+          landed={landed}
+          registry={registry}
           discardTop={publicState.discardTop}
           drawPileCount={publicState.drawPileCount}
           activeColor={publicState.activeColor}
           canDraw={canDraw}
           onDraw={drawCard}
+          onDrawBlocked={onRefuse}
           drawBlockedReason={
             publicState.takiMode ? t('reject.cannotDrawDuringTaki') : t('game.drawPileBlocked')
           }
@@ -295,9 +375,14 @@ export function GameScreen(): ReactNode {
         </div>
       ) : null}
 
-      <div className="game__hand">
+      <div
+        // Keyed so a penalty that lands on me is said once, behind the hand.
+        key={struck ? `struck-${beat?.seq ?? 0}` : 'hand'}
+        className={`game__hand ${struck ? 'game__hand--struck' : ''}`.trim()}
+      >
         <Hand
           cards={cards}
+          registry={registry}
           playableIds={playable}
           t={t}
           onPlay={onPlay}
@@ -306,6 +391,9 @@ export function GameScreen(): ReactNode {
           disabledReason={myTurn ? t('game.notPlayable') : t('game.notYourTurn')}
         />
       </div>
+
+      {/* Last, so it paints over the table it is describing. */}
+      <FlightLayer beat={beat} localPlayerId={table.localPlayerId} registry={registry} />
 
       <ColorPickerModal
         open={pendingWild !== null}

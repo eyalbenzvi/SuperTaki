@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_LANGUAGE, directionFor, type Language } from '../../../i18n/index.ts';
 import { record } from '../../../lib/diagnostics.ts';
 import { onSleep } from '../../../lib/lifecycle.ts';
+import { releaseSound, setSoundEnabled, unlockSound } from '../../../lib/audio.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import type { Card } from '../engine/cards.ts';
@@ -37,14 +38,17 @@ import {
   loadDisplayName,
   loadLanguage,
   loadResumableRoom,
+  loadSound,
   loadTheme,
   saveDisplayName,
   saveLanguage,
   saveResumableRoom,
+  saveSound,
   saveTheme,
   type ResumableRoom,
   type ThemeChoice,
 } from './persistence.ts';
+import type { Beat } from './beat.ts';
 
 const log = createLogger('store');
 
@@ -83,6 +87,8 @@ const HOST_ID_ATTEMPTS = HOST_ID_RETRY_SCHEDULE_MS.length;
 export interface AppState {
   language: Language;
   theme: ThemeChoice;
+  /** Whether the table makes a sound. */
+  sound: boolean;
   displayName: string;
 
   screen: Screen;
@@ -99,6 +105,15 @@ export interface AppState {
   publicState: PublicGameState | null;
   hand: readonly Card[];
   feed: readonly FeedEntry[];
+  /**
+   * The newest accepted command, for the presentation layer only.
+   *
+   * Nothing about the game depends on it: it carries no authority and no state
+   * that is not already in `publicState`, `hand` and `feed`. It exists so that a
+   * cue can be driven by "what just happened, from where, to where" without
+   * having to reconstruct that from three separate writes.
+   */
+  beat: Beat | null;
   playAgain: { readonly agreed: readonly string[]; readonly required: number } | null;
 
   error: SessionError | null;
@@ -140,6 +155,7 @@ export interface AppState {
 export interface AppActions {
   readonly setLanguage: (language: Language) => void;
   readonly setTheme: (theme: ThemeChoice) => void;
+  readonly setSound: (on: boolean) => void;
   readonly setDisplayName: (name: string) => void;
 
   readonly goTo: (screen: Screen) => void;
@@ -217,6 +233,28 @@ let rejectionCounter = 0;
 let announcementCounter = 0;
 let nudgeCounter = 0;
 let caughtCounter = 0;
+let beatCounter = 0;
+/**
+ * How long the table is held after somebody wins, before the standings.
+ *
+ * The payoff of a whole round used to be thrown away: the winning card was still
+ * landing when the route changed under it.
+ */
+const WIN_HOLD_MS = 900;
+/**
+ * Identifies the hold currently in flight, so a stale one cannot fire.
+ *
+ * Deliberately not `sessionEpoch`. That counter answers "which session owns the
+ * store", and it moves on create, join, resume and handover — not on leaving, and
+ * not on a connection closing. Worse, a close keeps the screen for every reason
+ * except a voluntary leave, precisely so the dialog explaining it can be drawn on
+ * top. A hold guarded by the epoch would therefore have survived a disconnection
+ * and routed the player to the standings of a round that was interrupted.
+ */
+let holdToken = 0;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+/** Version of the last published beat, so a replayed batch does not mint another. */
+let lastBeatVersion = -1;
 let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * The intent currently in flight.
@@ -240,6 +278,7 @@ function initialState(): AppState {
   return {
     language,
     theme,
+    sound: loadSound(),
     displayName: loadDisplayName(),
     screen: 'home',
     role: null,
@@ -253,6 +292,7 @@ function initialState(): AppState {
     publicState: null,
     hand: [],
     feed: [],
+    beat: null,
     playAgain: null,
     error: null,
     rejection: null,
@@ -281,6 +321,7 @@ const CLEARED_SESSION: Partial<AppState> = {
   publicState: null,
   hand: [],
   feed: [],
+  beat: null,
   playAgain: null,
   actionPending: false,
   leaveIntent: false,
@@ -301,6 +342,34 @@ function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
 
 export const useAppStore = create<AppStore>((set, get) => {
   /** Releases the "move in flight" lock, whatever released it. */
+  /**
+   * Forgets what the table looked like a moment ago.
+   *
+   * Called at every boundary that already clears the feed — a new room, a resumed
+   * one, a fresh round. Without it the first beat of a round would carry a `from`
+   * belonging to the previous one, and its version check would compare against a
+   * version that no longer means anything.
+   */
+  /**
+   * Abandons a pending win hold.
+   *
+   * Called from every path that takes the player off the table for a reason other
+   * than the round ending: leaving, a closed session, an error. The token is bumped
+   * as well as the timer cleared, because a callback already queued by the platform
+   * cannot be unqueued.
+   */
+  function clearHold(): void {
+    holdToken += 1;
+    if (holdTimer !== null) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+  }
+
+  function resetBeatTracking(): void {
+    lastBeatVersion = -1;
+  }
+
   function clearActionLock(): void {
     if (actionLockTimer !== null) {
       clearTimeout(actionLockTimer);
@@ -445,7 +514,31 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ phase: update.phase });
         return;
       case 'lobby': {
-        set({ lobby: update.lobby, screen: screenForLobbyPhase(update.lobby.phase) });
+        const next = screenForLobbyPhase(update.lobby.phase);
+        /*
+         * The round is over and the table is still on screen: hold it for a beat so
+         * the last card can land and the winner can be seen winning, then move.
+         *
+         * Only the screen is deferred. The lobby itself is applied at once, so the
+         * standings have their data the moment they do render — and nothing on the
+         * table reads `phase === 'finished'`, so holding the screen changes nothing
+         * about what is being looked at meanwhile.
+         */
+        if (next === 'over' && get().screen === 'game') {
+          set({ lobby: update.lobby });
+          clearHold();
+          const token = holdToken;
+          holdTimer = setTimeout(() => {
+            holdTimer = null;
+            // Anything that took the player off the table in the meantime wins.
+            if (token === holdToken && get().screen === 'game') {
+              set({ screen: 'over' });
+            }
+          }, WIN_HOLD_MS);
+          return;
+        }
+        clearHold();
+        set({ lobby: update.lobby, screen: next });
         return;
       }
       case 'publicState':
@@ -468,8 +561,26 @@ export const useAppStore = create<AppStore>((set, get) => {
         if (lastCatch !== undefined) {
           caughtCounter += 1;
         }
+        /*
+         * One beat per accepted command, identified by the version it produced.
+         * The version is the right identity because one accepted command is one
+         * bump, and the check has to live here: the client drops event batches
+         * only when the version is strictly older, so a host replaying its log
+         * after a reconnect sends an exact-version batch straight through — and
+         * the update carries no version of its own to compare.
+         */
+        const current = get().publicState;
+        const beat =
+          current !== null && current.version !== lastBeatVersion
+            ? ((): Beat => {
+                lastBeatVersion = current.version;
+                beatCounter += 1;
+                return { seq: beatCounter, events: update.events };
+              })()
+            : null;
         set((state) => ({
           feed: [...state.feed, ...entries].slice(-FEED_LIMIT),
+          ...(beat !== null ? { beat } : {}),
           ...(lastCatch !== undefined
             ? {
                 caught: {
@@ -496,6 +607,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         }
         return;
       case 'error':
+        clearHold();
         set({ error: update.error, busy: false });
         return;
       case 'paused':
@@ -537,6 +649,15 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'closed': {
+        /*
+         * A hold must not survive this. Every close reason except a voluntary
+         * leave deliberately *keeps* the screen, so the dialog explaining it can be
+         * drawn over the table — which means a pending hold would have fired
+         * afterwards and routed the player to the standings of a round that was
+         * interrupted.
+         */
+        clearHold();
+        releaseSound();
         session = null;
         detachSleepHook?.();
         detachSleepHook = null;
@@ -620,6 +741,12 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ theme });
     },
 
+    setSound: (on) => {
+      saveSound(on);
+      setSoundEnabled(on);
+      set({ sound: on });
+    },
+
     setDisplayName: (name) => {
       const cleaned = sanitizeDisplayName(name);
       set({ displayName: cleaned });
@@ -664,8 +791,15 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (get().busy) {
         return;
       }
+      /*
+       * Woken here, inside the gesture, and never on the first card tap: `resume()`
+       * is asynchronous, so a context woken by the tap that should have made a
+       * sound swallows or delays its own first cue.
+       */
+      unlockSound();
       const cleaned = sanitizeDisplayName(name);
-      set({ busy: true, error: null, closedReason: null, feed: [] });
+      resetBeatTracking();
+      set({ busy: true, error: null, closedReason: null, feed: [], beat: null });
       saveDisplayName(cleaned);
 
       for (let attempt = 0; attempt < ROOM_CODE_ATTEMPTS; attempt += 1) {
@@ -730,11 +864,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (!hostable || get().busy) {
         return;
       }
+      resetBeatTracking();
       set({
         busy: true,
         error: null,
         closedReason: null,
         feed: [],
+        beat: null,
         role: 'host',
         roomCode: hostable.roomCode,
         hostPeerId: hostable.hostPeerId,
@@ -831,16 +967,20 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     joinRoom: async ({ name, roomCode, hostPeerId, resume }) => {
+      // Same reason as `createRoom`: inside the gesture, before any cue is due.
+      unlockSound();
       if (get().busy) {
         return;
       }
       const cleaned = sanitizeDisplayName(name);
       const targetHost = hostPeerId ?? hostPeerIdForRoom(roomCode);
+      resetBeatTracking();
       set({
         busy: true,
         error: null,
         closedReason: null,
         feed: [],
+        beat: null,
         role: 'client',
         roomCode,
         hostPeerId: targetHost,
@@ -901,7 +1041,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     startGame: () => {
       if (session instanceof HostSession) {
         clearActionLock();
-        set({ feed: [], caught: null });
+        resetBeatTracking();
+        set({ feed: [], beat: null, caught: null });
         session.startGame();
       }
     },
@@ -995,6 +1136,10 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     leaveRoom: () => {
+      clearHold();
+      // The audio device goes back when the table does; holding one open for the
+      // life of the tab is a real cost on a phone and buys nothing.
+      releaseSound();
       session?.destroy('leftVoluntarily');
       session = null;
       detachSleepHook?.();

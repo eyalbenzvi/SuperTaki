@@ -66,6 +66,7 @@ function state(patch: Partial<AppState> = {}): AppState {
   return {
     language: 'he',
     theme: 'system',
+    sound: true,
     displayName: 'Ben',
     screen: 'game',
     role: 'client',
@@ -79,6 +80,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     publicState,
     hand: [red5, blue3, wild],
     feed: [],
+    beat: null,
     playAgain: null,
     error: null,
     rejection: null,

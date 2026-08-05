@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MIN_STRIP_RATIO,
   UNMEASURED,
+  handCardScale,
   rowCount,
   solveHandLayout,
 } from '../../../src/features/game/ui/handLayout.ts';
@@ -91,5 +92,40 @@ describe('arranging a hand', () => {
     expect(layout.perRow).toBe(1);
     expect(layout.strip).toBe(CARD);
     expect(rowCount(layout, 4)).toBe(4);
+  });
+});
+
+describe('handCardScale', () => {
+  it('never grows as the hand grows', () => {
+    let previous = Number.POSITIVE_INFINITY;
+    for (let count = 1; count <= 30; count += 1) {
+      const scale = handCardScale(count);
+      expect(scale).toBeLessThanOrEqual(previous);
+      previous = scale;
+    }
+  });
+
+  it('leaves a normal hand at full size', () => {
+    for (let count = 1; count <= 8; count += 1) {
+      expect(handCardScale(count)).toBe(1);
+    }
+  });
+
+  it('keeps the floor and the ceiling where they were', () => {
+    expect(handCardScale(1)).toBe(1);
+    expect(handCardScale(30)).toBe(0.76);
+  });
+
+  it('takes no single step larger than eight per cent', () => {
+    /*
+     * The reason this has a test at all: an instantaneous resize is invisible, so
+     * two steps were fine. An animated one is watchable, and a fourteen per cent
+     * jump animates as a shrug.
+     */
+    for (let count = 2; count <= 30; count += 1) {
+      const before = handCardScale(count - 1);
+      const after = handCardScale(count);
+      expect((before - after) / before).toBeLessThanOrEqual(0.08);
+    }
   });
 });

@@ -44,6 +44,9 @@ export const en = {
   'home.step3': 'Each player plays from their own phone. 2 to 6 players.',
 
   'theme.label': 'Theme',
+  'sound.label': 'Sound',
+  'sound.on': 'On',
+  'sound.off': 'Off',
   'theme.system': 'System',
   'theme.light': 'Light',
   'theme.dark': 'Dark',

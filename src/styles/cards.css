@@ -32,6 +32,8 @@
   padding: calc(var(--card-width) * 0.09);
   flex: none;
   overflow: hidden;
+  /* So the playable ring's pseudo-element anchors to the card, not the page. */
+  position: relative;
 }
 
 .card--red,
@@ -215,8 +217,27 @@
 
 /* Interactive cards -------------------------------------------------------- */
 
+/*
+ * A card's transform is composed from two custom properties, never set directly.
+ *
+ * Lift and press both want the transform, and layering two rules made one of them
+ * lose: a state-driven lift is less specific than `:active`, so pressing dropped
+ * the card, while the old hover rule was *more* specific than `:active`, so a
+ * hovered card had no press feedback at all. Composing them means each mechanism
+ * owns one variable and the cascade has nothing to arbitrate.
+ *
+ * `--lift` is registered so the arming wave can interpolate it. An unregistered
+ * custom property animates discretely — it would snap rather than rise.
+ */
+@property --lift {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 button.card {
   cursor: pointer;
+  transform: translateY(var(--lift, 0px)) scale(var(--press, 1));
   transition:
     transform var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out),
@@ -229,7 +250,7 @@ button.card[aria-disabled='true'] {
 
 /* Press feedback on every card, legal or not: a tap must always be felt. */
 button.card:active {
-  transform: scale(0.96);
+  --press: 0.96;
 }
 
 /*
@@ -237,13 +258,43 @@ button.card:active {
  * white stock, with a white line inboard of it so the ring stays visible where a
  * symbol runs close to the border. It is drawn inside deliberately — the focus
  * outline is drawn outside, so a card can carry both at once.
+ *
+ * The *ring* lives on a pseudo-element and fades its opacity; the raised shadow
+ * stays on the card. Splitting them is the point: a turn change can arm or disarm
+ * eight cards at once, and transitioning the whole four-layer `box-shadow` on a
+ * card containing five extruded symbol groups repaints all eight in full. Only the
+ * outer shadow still transitions, because it cannot move — `.card` is
+ * `overflow: hidden`, which clips a pseudo-element to the padding box, and an
+ * outer shadow drawn there would be invisible.
  */
 .card--playable {
   box-shadow:
-    inset 0 0 0 3px var(--card-outline),
-    inset 0 0 0 5px rgb(255 255 255 / 0.95),
     0 0 0 1px rgb(0 0 0 / 0.3),
     var(--shadow-card-raised);
+}
+
+button.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow:
+    inset 0 0 0 3px var(--card-outline),
+    inset 0 0 0 5px rgb(255 255 255 / 0.95);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/*
+ * `button.card--playable`, not `.card--playable`: the rule above it is
+ * `button.card::after`, and an element plus a class plus a pseudo-element
+ * outranks a class plus a pseudo-element. Dropping the tag here would leave the
+ * ring permanently invisible — which is exactly what happened, and what the
+ * end-to-end assertion caught.
+ */
+button.card--playable::after {
+  opacity: 1;
 }
 
 /*
@@ -262,11 +313,48 @@ button.card:active {
  * Only a card in the hand lifts. There it earns its keep — it brings a card that
  * a neighbour laps over fully into view — but on the draw pile it is a control
  * that moves out from under the pointer that is reaching for it.
+ *
+ * `hover: hover and pointer: fine` because this rule used to be the *only* way a
+ * card ever lifted, and on a touch screen it either never fires or — on iOS —
+ * fires and then sticks, leaving a card stranded in the air until the player taps
+ * somewhere else. A phone gets the state-driven wave below instead.
+ *
+ * Known gap: iPadOS Safari in desktop-class mode reports `hover: hover` and
+ * `pointer: fine`, as do Windows touch laptops, so the stranding is still
+ * reachable there. Nothing in this repo can prove otherwise — the end-to-end
+ * suite has no WebKit project and its mobile project is Chromium.
  */
-.hand button.card--playable:hover,
-.hand button.card--playable:focus-visible {
-  transform: translateY(-10px);
-  z-index: 3;
+@media (hover: hover) and (pointer: fine) {
+  .hand button.card--playable:hover,
+  .hand button.card--playable:focus-visible {
+    --lift: var(--hand-lift-deep, -16px);
+    z-index: 3;
+  }
+}
+
+/*
+ * The cue this whole task exists for: when the player holds a card they may
+ * legally play, those cards rise.
+ *
+ * It was already written — a ten-pixel lift on `:hover` — and unreachable on the
+ * platform the game is played on. Driving it from state is the difference between
+ * a decoration for mouse users and the answer to "it's me, and these are my
+ * options" for everybody.
+ *
+ * A one-shot animation rather than a transition, because the stagger has to ride
+ * on `animation-delay`: lift and press share the transform, so a per-card
+ * `transition-delay` would make the tenth card wait a quarter of a second before
+ * it acknowledged a tap.
+ */
+.hand--armed button.card--playable {
+  --lift: var(--hand-lift, -10px);
+  animation: card-arm var(--dur-base) var(--ease-out) var(--lift-delay, 0ms) both;
+}
+
+@keyframes card-arm {
+  from {
+    --lift: 0px;
+  }
 }
 
 /* Hand --------------------------------------------------------------------- */
@@ -324,8 +412,15 @@ button.card:active {
   grid-template-columns: repeat(var(--hand-per-row, 1), var(--hand-strip, var(--card-w-md)));
   justify-content: center;
   row-gap: var(--space-1);
-  /* Room above for a lifted card, and below for its shadow. */
+  /*
+   * Room above for a lifted card, and below for its shadow. The lift is declared
+   * here rather than once globally because this padding is a hard pixel value in
+   * three places, and a lift taller than the room it has clips inside
+   * `.game__hand`, which scrolls.
+   */
   padding-block: 14px var(--space-2);
+  --hand-lift: -10px;
+  --hand-lift-deep: -16px;
   padding-inline-start: 0;
   padding-inline-end: calc(var(--hand-card, var(--card-w-md)) - var(--hand-strip, var(--card-w-md)));
   list-style: none;
@@ -362,6 +457,67 @@ button.card:active {
 .hand__slot:hover,
 .hand__slot:focus-within {
   z-index: 20;
+}
+
+/*
+ * The draw pile has thickness.
+ *
+ * Two backs behind the top one, offset *inward* so they stay inside `.piles`'s own
+ * padding and clear of `.game__table`, which scrolls. They are absolutely
+ * positioned on a wrapper that contributes no layout at all, and that is not
+ * tidiness — `--card-w-lg` is solved from the container height minus
+ * `--pile-chrome`, a hand-measured constant declared four times with four values,
+ * so a wrapper with any block size of its own would make all four wrong at once
+ * and the pile would overflow the table. The wrapper *replaces* the button as a
+ * child of `.pile` for the same reason: a fourth child would add a flex gap.
+ */
+.pile__deck {
+  position: relative;
+  display: flex;
+  /* No padding, no border, no margin. See above. */
+}
+
+.pile__deck::before,
+.pile__deck::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  border-radius: calc(var(--card-width, var(--card-w-lg)) * 0.11);
+  background: var(--card-back-edge, rgb(0 0 0 / 0.35));
+}
+
+.pile__deck::before {
+  translate: calc(var(--depth, 0px) * 0.5) calc(var(--depth, 0px) * 0.5);
+}
+
+.pile__deck::after {
+  translate: var(--depth, 0px) var(--depth, 0px);
+}
+
+/* A deck that is nearly out shows it, without anybody having to read a number. */
+.pile__deck[data-depth='3'] {
+  --depth: 3px;
+}
+.pile__deck[data-depth='2'] {
+  --depth: 2px;
+}
+.pile__deck[data-depth='1'] {
+  --depth: 1px;
+}
+.pile__deck[data-depth='0'] {
+  --depth: 0px;
+}
+
+/*
+ * Pulling a card off, rather than pressing a button. Uses the same `--press`
+ * property the hand does, so the two cannot fight.
+ */
+.pile__deck button.card:active {
+  --press: 1;
+  --lift: -6px;
+  transition-duration: var(--dur-fast);
 }
 
 /* Piles -------------------------------------------------------------------- */
@@ -553,4 +709,66 @@ button.card:active {
 .color-picker__glyph {
   font-size: 1.6rem;
   line-height: 1;
+}
+
+/*
+ * The layer that carries flying cards.
+ *
+ * A sibling of the table rather than a child of it: the table region is a size
+ * container, which makes it a containing block for absolutely positioned
+ * descendants, and it scrolls — so an overlay inside it would be both
+ * mispositioned and clipped. `pointer-events: none` throughout, because nothing
+ * here is real: the cards on this layer are clones, and the table underneath them
+ * is already showing the finished state.
+ *
+ * The positioning is unconditional, never applied from JavaScript. In landscape
+ * `.game` becomes a grid with every child assigned an area, so a layer that was
+ * ever in flow would claim an implicit row and push the hand off the bottom.
+ */
+.flight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-sticky);
+  overflow: hidden;
+}
+
+.flight-layer__card {
+  position: absolute;
+  will-change: transform, opacity;
+}
+
+/*
+ * Where something just happened, marked on the place it happened to.
+ *
+ * Drawn on the flight layer rather than by each surface, because otherwise the
+ * same ring exists three times — on a seat, on the pile and on the hand — in three
+ * components that would each have to learn about beats. Intensity steps with the
+ * stake: a fourth +2 in a run is worth more than the first.
+ */
+.flight-layer__pulse {
+  position: absolute;
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  box-shadow: 0 0 0 calc(2px * var(--pulse-weight, 1)) currentColor;
+}
+
+.flight-layer__pulse[data-intensity='2'] {
+  --pulse-weight: 1.5;
+}
+
+.flight-layer__pulse[data-intensity='3'] {
+  --pulse-weight: 2.5;
+}
+
+.flight-layer__pulse--danger {
+  color: var(--danger);
+}
+
+.flight-layer__pulse--success {
+  color: var(--success);
+}
+
+.flight-layer__pulse--neutral {
+  color: var(--accent);
 }

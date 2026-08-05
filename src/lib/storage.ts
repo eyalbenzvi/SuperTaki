@@ -121,6 +121,7 @@ export function writeSessionJson(key: string, value: unknown): void {
 export const STORAGE_KEYS = {
   language: 'language',
   theme: 'theme',
+  sound: 'sound',
   displayName: 'displayName',
   identity: 'identity',
   resumableRoom: 'resumableRoom',

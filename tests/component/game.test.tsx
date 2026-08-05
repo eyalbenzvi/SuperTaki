@@ -191,21 +191,45 @@ describe('legal card highlighting', () => {
   });
 });
 
+/*
+ * The pile refuses with `aria-disabled`, not `disabled`.
+ *
+ * The same trade `PlayableCard` already made deliberately: a real `disabled`
+ * attribute takes the control out of the tab order, gives it no press feedback,
+ * and puts its `title` somewhere most browsers will not show — so a blocked tap
+ * was a silent dead end, while a blocked *card* has always explained itself. The
+ * cost, stated plainly, is a tab stop that now exists whenever the pile is
+ * blocked, which is most of the game.
+ *
+ * `jest-dom`'s `toBeDisabled()` reads the attribute and never `aria-disabled`, so
+ * these assertions had to change with the component rather than after it.
+ */
 describe('the draw pile', () => {
   it('is interactive on your turn and announces the count', () => {
     situation({ hand: [blue3], discardTop: red9, activeColor: 'red' });
     renderApp();
     const pile = screen.getByRole('button', { name: /חבילת משיכה, \d+ קלפים/ });
-    expect(pile).toBeEnabled();
+    expect(pile).toHaveAttribute('aria-disabled', 'false');
   });
 
-  it('is disabled when it is not your turn', () => {
+  it('refuses when it is not your turn, and says why', async () => {
     situation({ hand: [blue3], discardTop: red9, activeColor: 'red', myTurn: false });
-    renderApp();
-    expect(screen.getByRole('button', { name: /חבילת משיכה/ })).toBeDisabled();
+    const { user } = renderApp();
+    const pile = screen.getByRole('button', { name: /חבילת משיכה/ });
+    expect(pile).toHaveAttribute('aria-disabled', 'true');
+
+    await user.click(pile);
+    expect(screen.getByRole('alert')).toHaveTextContent('צריך לחכות לתור שלך.');
+    /*
+     * And the prompt survives. A refusal replaces the whole action prompt for
+     * 2.6 seconds, so routing this through the card path unchanged would have
+     * hidden the one line explaining what to do — in the most common blocked
+     * case there is.
+     */
+    expect(screen.getByText(/ממתינים ל/)).toBeInTheDocument();
   });
 
-  it('is disabled while a Taki sequence is open', () => {
+  it('refuses while a Taki sequence is open', () => {
     situation({
       hand: [red5],
       discardTop: redTaki,
@@ -213,7 +237,7 @@ describe('the draw pile', () => {
       takiMode: { color: 'red' },
     });
     renderApp();
-    expect(screen.getByRole('button', { name: /חבילת משיכה/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /חבילת משיכה/ })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('tells the player to draw when nothing is legal', () => {

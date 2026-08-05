@@ -38,7 +38,13 @@ export function GameLog({ feed, describe, t }: GameLogProps): ReactNode {
 
   return (
     <>
-      <div className="ticker">
+      {/*
+       * The pill is keyed on the newest entry, so a new line remounts it and
+       * replays the flash. A `key` rather than a timer in state: watching the id
+       * in an effect and setting a flag would be a `set-state-in-effect` error,
+       * and this costs nothing.
+       */}
+      <div key={latest?.id ?? 'empty'} className="ticker ticker__flash">
         <p className="ticker__text truncate">{latest ? describe(latest) : t('game.feedEmpty')}</p>
         <Button
           size="sm"

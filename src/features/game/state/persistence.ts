@@ -46,6 +46,21 @@ export function saveTheme(theme: ThemeChoice): void {
   writeRaw(STORAGE_KEYS.theme, theme);
 }
 
+/**
+ * Whether the table makes a sound. On unless the player has said otherwise.
+ *
+ * Default on because the cues are quiet and carry information a silent table
+ * cannot — but stored the moment it is changed, because somebody who turns a
+ * card game's sound off has decided something about it.
+ */
+export function loadSound(): boolean {
+  return readRaw(STORAGE_KEYS.sound) !== 'off';
+}
+
+export function saveSound(on: boolean): void {
+  writeRaw(STORAGE_KEYS.sound, on ? 'on' : 'off');
+}
+
 export function loadDisplayName(): string {
   return sanitizeDisplayName(readRaw(STORAGE_KEYS.displayName));
 }
