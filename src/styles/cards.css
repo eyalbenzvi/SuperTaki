@@ -710,3 +710,65 @@ button.card--playable::after {
   font-size: 1.6rem;
   line-height: 1;
 }
+
+/*
+ * The layer that carries flying cards.
+ *
+ * A sibling of the table rather than a child of it: the table region is a size
+ * container, which makes it a containing block for absolutely positioned
+ * descendants, and it scrolls — so an overlay inside it would be both
+ * mispositioned and clipped. `pointer-events: none` throughout, because nothing
+ * here is real: the cards on this layer are clones, and the table underneath them
+ * is already showing the finished state.
+ *
+ * The positioning is unconditional, never applied from JavaScript. In landscape
+ * `.game` becomes a grid with every child assigned an area, so a layer that was
+ * ever in flow would claim an implicit row and push the hand off the bottom.
+ */
+.flight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-sticky);
+  overflow: hidden;
+}
+
+.flight-layer__card {
+  position: absolute;
+  will-change: transform, opacity;
+}
+
+/*
+ * Where something just happened, marked on the place it happened to.
+ *
+ * Drawn on the flight layer rather than by each surface, because otherwise the
+ * same ring exists three times — on a seat, on the pile and on the hand — in three
+ * components that would each have to learn about beats. Intensity steps with the
+ * stake: a fourth +2 in a run is worth more than the first.
+ */
+.flight-layer__pulse {
+  position: absolute;
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  box-shadow: 0 0 0 calc(2px * var(--pulse-weight, 1)) currentColor;
+}
+
+.flight-layer__pulse[data-intensity='2'] {
+  --pulse-weight: 1.5;
+}
+
+.flight-layer__pulse[data-intensity='3'] {
+  --pulse-weight: 2.5;
+}
+
+.flight-layer__pulse--danger {
+  color: var(--danger);
+}
+
+.flight-layer__pulse--success {
+  color: var(--success);
+}
+
+.flight-layer__pulse--neutral {
+  color: var(--accent);
+}

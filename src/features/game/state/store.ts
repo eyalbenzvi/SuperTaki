@@ -229,6 +229,25 @@ let nudgeCounter = 0;
 let caughtCounter = 0;
 let beatCounter = 0;
 /**
+ * How long the table is held after somebody wins, before the standings.
+ *
+ * The payoff of a whole round used to be thrown away: the winning card was still
+ * landing when the route changed under it.
+ */
+const WIN_HOLD_MS = 900;
+/**
+ * Identifies the hold currently in flight, so a stale one cannot fire.
+ *
+ * Deliberately not `sessionEpoch`. That counter answers "which session owns the
+ * store", and it moves on create, join, resume and handover — not on leaving, and
+ * not on a connection closing. Worse, a close keeps the screen for every reason
+ * except a voluntary leave, precisely so the dialog explaining it can be drawn on
+ * top. A hold guarded by the epoch would therefore have survived a disconnection
+ * and routed the player to the standings of a round that was interrupted.
+ */
+let holdToken = 0;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+/**
  * The table as it stood before the update now arriving.
  *
  * Captured when a new public state lands and spent when that command's events
@@ -333,6 +352,22 @@ export const useAppStore = create<AppStore>((set, get) => {
    * belonging to the previous one, and its version check would compare against a
    * version that no longer means anything.
    */
+  /**
+   * Abandons a pending win hold.
+   *
+   * Called from every path that takes the player off the table for a reason other
+   * than the round ending: leaving, a closed session, an error. The token is bumped
+   * as well as the timer cleared, because a callback already queued by the platform
+   * cannot be unqueued.
+   */
+  function clearHold(): void {
+    holdToken += 1;
+    if (holdTimer !== null) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+  }
+
   function resetBeatTracking(): void {
     pendingFrom = null;
     lastBeatVersion = -1;
@@ -482,7 +517,31 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ phase: update.phase });
         return;
       case 'lobby': {
-        set({ lobby: update.lobby, screen: screenForLobbyPhase(update.lobby.phase) });
+        const next = screenForLobbyPhase(update.lobby.phase);
+        /*
+         * The round is over and the table is still on screen: hold it for a beat so
+         * the last card can land and the winner can be seen winning, then move.
+         *
+         * Only the screen is deferred. The lobby itself is applied at once, so the
+         * standings have their data the moment they do render — and nothing on the
+         * table reads `phase === 'finished'`, so holding the screen changes nothing
+         * about what is being looked at meanwhile.
+         */
+        if (next === 'over' && get().screen === 'game') {
+          set({ lobby: update.lobby });
+          clearHold();
+          const token = holdToken;
+          holdTimer = setTimeout(() => {
+            holdTimer = null;
+            // Anything that took the player off the table in the meantime wins.
+            if (token === holdToken && get().screen === 'game') {
+              set({ screen: 'over' });
+            }
+          }, WIN_HOLD_MS);
+          return;
+        }
+        clearHold();
+        set({ lobby: update.lobby, screen: next });
         return;
       }
       case 'publicState': {
@@ -566,6 +625,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         }
         return;
       case 'error':
+        clearHold();
         set({ error: update.error, busy: false });
         return;
       case 'paused':
@@ -607,6 +667,14 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       case 'closed': {
+        /*
+         * A hold must not survive this. Every close reason except a voluntary
+         * leave deliberately *keeps* the screen, so the dialog explaining it can be
+         * drawn over the table — which means a pending hold would have fired
+         * afterwards and routed the player to the standings of a round that was
+         * interrupted.
+         */
+        clearHold();
         session = null;
         detachSleepHook?.();
         detachSleepHook = null;
@@ -1071,6 +1139,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     leaveRoom: () => {
+      clearHold();
       session?.destroy('leftVoluntarily');
       session = null;
       detachSleepHook?.();

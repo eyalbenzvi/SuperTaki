@@ -24,6 +24,7 @@ import {
 } from '../handLayout.ts';
 import { animate, cancelAnimations } from '../../../../lib/motion.ts';
 import { handDeltas, handMoved, isSettled, sameCards, type SlotGeometry, type SlotMap } from '../handFlip.ts';
+import type { AnchorRegistry } from '../anchors.ts';
 import { depthBucket } from '../pileDepth.ts';
 import { sweepStyle } from '../sweepDirection.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
@@ -105,14 +106,21 @@ const OpponentSeat = memo(function OpponentSeat({
   opponent,
   t,
   onCatch,
+  registry,
 }: {
   readonly opponent: OpponentView;
   readonly t: Translator;
   readonly onCatch?: (playerId: string) => void;
+  readonly registry?: AnchorRegistry | undefined;
 }): ReactNode {
   const lastCard = opponent.cardCount === 1;
   return (
-    <li className={`seat ${opponent.isCurrent ? 'seat--current' : ''}`.trim()}>
+    <li
+      className={`seat ${opponent.isCurrent ? 'seat--current' : ''}`.trim()}
+      ref={(node) => {
+        registry?.set(`seat:${opponent.id}`, node);
+      }}
+    >
       <span className="seat__pile">
         <FaceDownCard t={t} size="xs" />
       </span>
@@ -171,11 +179,13 @@ export function OpponentList({
   t,
   onCatch,
   sweep,
+  registry,
 }: {
   readonly opponents: readonly OpponentView[];
   readonly t: Translator;
   readonly onCatch?: (playerId: string) => void;
   readonly sweep?: { readonly key: string; readonly direction: 1 | -1 } | undefined;
+  readonly registry?: AnchorRegistry | undefined;
 }): ReactNode {
   return (
     <section className="seats" aria-label={t('game.opponents')}>
@@ -194,7 +204,13 @@ export function OpponentList({
           />
         ) : null}
         {opponents.map((opponent) => (
-          <OpponentSeat key={opponent.id} opponent={opponent} t={t} {...(onCatch ? { onCatch } : {})} />
+          <OpponentSeat
+            key={opponent.id}
+            opponent={opponent}
+            t={t}
+            {...(onCatch ? { onCatch } : {})}
+            registry={registry}
+          />
         ))}
       </ul>
     </section>
@@ -208,6 +224,8 @@ export interface PilesProps {
   readonly activeColor: CardColor;
   /** True when the newest beat actually put a card here. */
   readonly landed: boolean;
+  /** Where flights start and end. */
+  readonly registry?: AnchorRegistry | undefined;
   readonly canDraw: boolean;
   readonly onDraw: () => void;
   /** Called when the pile is pressed while it cannot be used. */
@@ -230,6 +248,7 @@ export function Piles({
   drawPileCount,
   activeColor,
   landed,
+  registry,
   canDraw,
   onDraw,
   onDrawBlocked,
@@ -242,7 +261,13 @@ export function Piles({
             sitting beside it: a fourth child would add a flex gap, and the pile
             card's size is solved from the height left over after a hand-measured
             chrome constant. */}
-        <div className="pile__deck" data-depth={depthBucket(drawPileCount)}>
+        <div
+          className="pile__deck"
+          data-depth={depthBucket(drawPileCount)}
+          ref={(node) => {
+            registry?.set('pile:draw', node);
+          }}
+        >
           {/*
            * `aria-disabled` rather than `disabled`, the same trade `PlayableCard`
            * made and for the same reasons: a disabled button gets no press
@@ -275,7 +300,12 @@ export function Piles({
       </div>
 
       <div className="pile pile--discard">
-        <div className={`discard discard--${activeColor}`}>
+        <div
+          className={`discard discard--${activeColor}`}
+          ref={(node) => {
+            registry?.set('pile:discard', node);
+          }}
+        >
           {discardTop ? (
             /*
              * `card--landing` only when a card was actually played.
@@ -311,6 +341,7 @@ export interface HandProps {
   readonly onRefuse?: (card: Card) => void;
   readonly disabledReason: string;
   readonly locked?: boolean;
+  readonly registry?: AnchorRegistry | undefined;
 }
 
 /**
@@ -514,6 +545,7 @@ export function Hand({
   onRefuse,
   disabledReason,
   locked = false,
+  registry,
 }: HandProps): ReactNode {
   const playable = new Set(playableIds);
   const { layout, solvedCount, areaRef, listRef } = useHandLayout(cards.length);
@@ -604,7 +636,16 @@ export function Hand({
   useHandFlip(listRef, cards, solvedCount);
 
   return (
-    <section className="hand-area" aria-label={t('game.yourHand')} ref={areaRef}>
+    <section
+      className="hand-area"
+      aria-label={t('game.yourHand')}
+      ref={(node) => {
+        areaRef.current = node;
+        // Everything that happens to me anchors here: the seat list holds only
+        // opponents, so `seat:<me>` never resolves.
+        registry?.set('hand', node);
+      }}
+    >
       <div className="hand-area__head">
         <h2 className="hand-area__title">{t('game.yourHand')}</h2>
         <span className="hand-area__count">{countLabel(t, 'game.handCount', cards.length)}</span>
@@ -621,6 +662,9 @@ export function Hand({
             className="hand__slot"
             // The FLIP finds a slot by the card it holds, not by its position.
             data-card-id={card.id}
+            ref={(node) => {
+              registry?.set(`slot:${card.id}`, node);
+            }}
             /*
              * The wave runs across the hand rather than arriving all at once.
              * Ordered by position, not by which cards happen to be playable, so

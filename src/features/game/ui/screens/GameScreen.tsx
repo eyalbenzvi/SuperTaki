@@ -23,7 +23,9 @@ import { useAppStore, type FeedEntry } from '../../state/store.ts';
 import { colorName } from '../cardText.ts';
 import { describeEvent } from '../eventText.ts';
 import { useCatchGrace } from '../useCatchGrace.ts';
+import { AnchorRegistry } from '../anchors.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
+import { FlightLayer } from '../components/FlightLayer.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 import { CaughtNotice, NudgeButton, NudgeNotice } from '../components/TableControls.tsx';
 import { WaitingNotice } from '../components/WaitingNotice.tsx';
@@ -81,6 +83,14 @@ export function GameScreen(): ReactNode {
   const declareLastCard = useAppStore((state) => state.declareLastCard);
   const catchLastCard = useAppStore((state) => state.catchLastCard);
   const announce = useAppStore((state) => state.announce);
+
+  /*
+   * One registry for the table's lifetime. Anchors register themselves as they
+   * mount and deregister as they go, so nothing here has to know which of them
+   * currently exist — a player's own seat never does, and a card's slot stops
+   * existing the moment it is played.
+   */
+  const [registry] = useState(() => new AnchorRegistry());
 
   const [pendingWild, setPendingWild] = useState<Card | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -216,7 +226,7 @@ export function GameScreen(): ReactNode {
        * stack of notices from pushing it off the bottom of the screen.
        */}
       <div className="game__info">
-        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} sweep={sweep} />
+        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} sweep={sweep} registry={registry} />
 
         {/*
          * The nudge renders only while the table is genuinely waiting on a
@@ -291,6 +301,7 @@ export function GameScreen(): ReactNode {
         <Piles
           t={t}
           landed={landed}
+          registry={registry}
           discardTop={publicState.discardTop}
           drawPileCount={publicState.drawPileCount}
           activeColor={publicState.activeColor}
@@ -341,6 +352,7 @@ export function GameScreen(): ReactNode {
       >
         <Hand
           cards={cards}
+          registry={registry}
           playableIds={playable}
           t={t}
           onPlay={onPlay}
@@ -349,6 +361,9 @@ export function GameScreen(): ReactNode {
           disabledReason={myTurn ? t('game.notPlayable') : t('game.notYourTurn')}
         />
       </div>
+
+      {/* Last, so it paints over the table it is describing. */}
+      <FlightLayer beat={beat} localPlayerId={table.localPlayerId} registry={registry} />
 
       <ColorPickerModal
         open={pendingWild !== null}

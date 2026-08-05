@@ -455,3 +455,67 @@ describe('cues driven by the beat', () => {
     expect(ticker).toHaveClass('ticker__flash');
   });
 });
+
+describe('the flight layer', () => {
+  it('mounts over the table and is invisible to assistive technology', () => {
+    enterGame({ myTurn: true });
+    renderApp();
+    const layer = document.querySelector('.flight-layer');
+    expect(layer).not.toBeNull();
+    expect(layer).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('changes nothing about the table when the platform cannot animate', () => {
+    /*
+     * The regression that matters. jsdom implements no Web Animations API, which
+     * is the same situation as a browser that surprises us — and in both the
+     * table must be exactly what it would have been with no layer at all, because
+     * the layer only ever describes a state the DOM already holds.
+     */
+    const fixture = enterGame({ myTurn: true });
+    renderApp();
+    const before = document.querySelector('.hand')?.innerHTML;
+    const discardBefore = document.querySelector('.discard')?.innerHTML;
+
+    setState({
+      beat: {
+        seq: 11,
+        events: [
+          {
+            type: 'cardPlayed',
+            playerId: GUEST_ID,
+            card: fixture.hand[0] as Card,
+            resultingColor: 'red',
+          },
+        ],
+        from: null,
+        to: {
+          version: 3,
+          discardTopId: 'c1',
+          drawPileCount: 40,
+          activeColor: 'red',
+          direction: 1,
+          currentPlayerId: HOST_ID,
+          handIds: ['c1'],
+          counts: { [HOST_ID]: 8, [GUEST_ID]: 7 },
+        },
+      },
+    });
+
+    expect(document.querySelector('.hand')?.innerHTML).toBe(before);
+    expect(document.querySelector('.discard')?.innerHTML).toBe(discardBefore);
+    // And it leaves nothing behind on the layer either.
+    expect(document.querySelectorAll('.flight-layer__card')).toHaveLength(0);
+  });
+
+  it('registers the anchors a flight travels between', () => {
+    enterGame({ myTurn: true });
+    renderApp();
+    // The pile anchors and the hand always exist; a seat exists per opponent, and
+    // never for the local player.
+    expect(document.querySelector('.pile__deck')).not.toBeNull();
+    expect(document.querySelector('.discard')).not.toBeNull();
+    expect(document.querySelector('.hand-area')).not.toBeNull();
+    expect(document.querySelectorAll('.hand__slot[data-card-id]').length).toBeGreaterThan(0);
+  });
+});
