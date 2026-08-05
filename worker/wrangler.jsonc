@@ -1,0 +1,15 @@
+{
+  // The relay that replaces both the PeerJS broker and WebRTC itself: game
+  // traffic flows through one Durable Object per room, over plain WebSockets.
+  // Free plan throughout — Durable Objects here are SQLite-backed, which is the
+  // variant the free tier includes.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "supertaki-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "RoomDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RoomDO"] }]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "super-taki-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket relay for Super Taki rooms - one Durable Object per room, zero cost",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "verify": "npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260804.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.119.0"
+  }
+}
