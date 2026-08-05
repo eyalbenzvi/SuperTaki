@@ -49,11 +49,6 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
         name: nameOf(event.playerId),
         target: nameOf(event.targetId),
       });
-    case 'takiColorChanged':
-      return t('event.takiColorChanged', {
-        name: nameOf(event.playerId),
-        color: colorName(t, event.color),
-      });
     case 'lastCardDeclared':
       return t('event.lastCardDeclared', { name: nameOf(event.playerId) });
     case 'lastCardCaught':

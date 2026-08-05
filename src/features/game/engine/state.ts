@@ -198,7 +198,6 @@ export type GameEvent =
     }
   | { readonly type: 'takiClosed'; readonly playerId: PlayerId; readonly cardsPlayed: number }
   /** A Taki played on a Taki carried the open sequence into a new colour. */
-  | { readonly type: 'takiColorChanged'; readonly playerId: PlayerId; readonly color: CardColor }
   | { readonly type: 'colorChosen'; readonly playerId: PlayerId; readonly color: CardColor }
   | { readonly type: 'playerSkipped'; readonly playerId: PlayerId }
   /** A +2 was added to the run; `total` is what the next player now owes. */

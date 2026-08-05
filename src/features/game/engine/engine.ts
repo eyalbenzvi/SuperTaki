@@ -465,9 +465,9 @@ function applyPlayCard(
       if (isWildCard(card)) {
         return reject('wildNotAllowedInTaki');
       }
-      // Taki on Taki carries the sequence on in the new colour, so it is the one
-      // card inside a sequence that does not have to match its colour.
-      if (card.color !== state.takiMode.color && card.kind !== 'taki') {
+      // Every coloured card inside a sequence matches its colour, Taki cards
+      // included: nothing inside a sequence repaints the table.
+      if (card.color !== state.takiMode.color) {
         return reject('wrongTakiColor');
       }
     } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
@@ -521,19 +521,10 @@ function applyPlayCard(
   if (answeringPlusThree) {
     resolvePlusThree(draft, playerId, events);
   } else if (draft.takiMode) {
-    /*
-     * Inside a sequence: accumulate; effects are resolved when the Taki closes.
-     * A Taki played on a Taki re-locks the sequence to its own colour, so the
-     * cards that follow have to match the new one.
-     */
-    draft.takiMode = {
-      ...draft.takiMode,
-      cardsPlayed: draft.takiMode.cardsPlayed + 1,
-      ...(card.kind === 'taki' ? { color: resultingColor } : {}),
-    };
-    if (card.kind === 'taki' && resultingColor !== state.takiMode?.color) {
-      events.push({ type: 'takiColorChanged', playerId, color: resultingColor });
-    }
+    // Inside a sequence: accumulate; effects are resolved when the Taki closes.
+    // The sequence keeps the colour it opened in — a further Taki is just another
+    // card of that colour.
+    draft.takiMode = { ...draft.takiMode, cardsPlayed: draft.takiMode.cardsPlayed + 1 };
   } else if (card.kind === 'taki' || card.kind === 'superTaki') {
     draft.takiMode = {
       color: resultingColor,

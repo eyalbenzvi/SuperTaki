@@ -29,9 +29,10 @@ export interface PlayContext {
  * Outside a Taki sequence a card is playable when it is colourless, matches the
  * active colour, or matches the top card's symbol (number value or action kind).
  * Inside a Taki sequence only cards of the sequence colour are playable, and
- * colourless cards are never allowed — with one exception: **a Taki card of any
- * colour may be played on a Taki**, which carries the sequence on in the new
- * colour. Taki on Taki is a colour change, not a colour mismatch.
+ * colourless cards are never allowed. That includes Taki cards: a sequence is
+ * defined by its colour, and nothing inside it may repaint the table. A Taki of
+ * any colour on a Taki is an ordinary symbol match — legal on your turn when no
+ * sequence is open, and it opens a sequence of your own.
  *
  * Two situations override all of that: a pending +2 run can only be met with
  * another +2 or with a King, and the free play a King grants accepts anything.
@@ -39,7 +40,7 @@ export interface PlayContext {
  */
 export function isCardPlayable(card: Card, context: PlayContext): boolean {
   if (context.openTakiColor !== null) {
-    return cardColor(card) === context.openTakiColor || card.kind === 'taki';
+    return cardColor(card) === context.openTakiColor;
   }
   if (context.pendingDraw > 0) {
     // Two cards meet a run, and they meet it differently: a +2 raises it and

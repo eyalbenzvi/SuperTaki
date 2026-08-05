@@ -295,7 +295,6 @@ export const en = {
   'event.drawRunCancelled.other': '{name} played a King — the {count}-card penalty is cancelled.',
   'event.plusThreePlayed': '{name} played a +3.',
   'event.plusThreeBroken': '{name} broke the +3 — {target} draws instead.',
-  'event.takiColorChanged': '{name} carried the sequence into {color}.',
   'event.lastCardDeclared': '{name} declared "last card".',
   'event.lastCardCaught.one': '{by} caught {name} without a declaration — 1 card drawn.',
   'event.lastCardCaught.other': '{by} caught {name} without a declaration — {count} cards drawn.',

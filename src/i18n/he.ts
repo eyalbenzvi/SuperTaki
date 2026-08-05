@@ -283,7 +283,6 @@ export const he: Translations = {
   'event.drawRunCancelled.other': '{name} הניח/ה מלך — הקנס של {count} קלפים בוטל.',
   'event.plusThreePlayed': '{name} הניח/ה פלוס 3.',
   'event.plusThreeBroken': '{name} שבר/ה את הפלוס 3 — {target} מושך/ת במקום.',
-  'event.takiColorChanged': '{name} העביר/ה את הרצף ל{color}.',
   'event.lastCardDeclared': '{name} הכריז/ה "אחרון בידי".',
   'event.lastCardCaught.one': '{by} תפס/ה את {name} בלי הכרזה — לוקח/ת קלף אחד.',
   'event.lastCardCaught.other': '{by} תפס/ה את {name} בלי הכרזה — לוקח/ת {count} קלפים.',
