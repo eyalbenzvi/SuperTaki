@@ -31,6 +31,26 @@ export interface FlightLayerProps {
   readonly registry: AnchorRegistry;
 }
 
+/**
+ * Makes a clone unreachable as well as invisible.
+ *
+ * `aria-hidden` on the layer keeps clones out of the accessibility tree, but a
+ * focusable element inside an `aria-hidden` subtree is worse than either: the draw
+ * pile's card is a real `<button>`, so cloning it put a phantom tab stop on screen
+ * for the length of a flight, announcing nothing. `inert` covers modern browsers
+ * wholesale; stripping focusability by hand covers the rest.
+ */
+function neutralise(clone: HTMLElement): void {
+  clone.inert = true;
+  for (const node of clone.querySelectorAll<HTMLElement>('button, [tabindex], a, input')) {
+    node.removeAttribute('tabindex');
+    node.setAttribute('aria-hidden', 'true');
+    if (node instanceof HTMLButtonElement) {
+      node.disabled = true;
+    }
+  }
+}
+
 /** The node a flight should copy: the card that arrived, or a face-down back. */
 function sourceNode(flight: Flight, registry: AnchorRegistry): Element | null {
   if (flight.card !== null) {
@@ -93,6 +113,7 @@ export function FlightLayer({ beat, localPlayerId, registry }: FlightLayerProps)
         }
         const mark = document.createElement('div');
         mark.className = `flight-layer__pulse flight-layer__pulse--${motion.tone}`;
+        mark.inert = true;
         mark.dataset['intensity'] = String(motion.intensity);
         mark.style.left = `${String(at.left)}px`;
         mark.style.top = `${String(at.top)}px`;
@@ -151,10 +172,12 @@ export function FlightLayer({ beat, localPlayerId, registry }: FlightLayerProps)
       const start = centreOn(from, { width: to.width, height: to.height });
       const clone = document.createElement('div');
       clone.className = 'flight-layer__card';
+      neutralise(clone);
       clone.style.left = `${String(landing.left)}px`;
       clone.style.top = `${String(landing.top)}px`;
       clone.style.width = `${String(to.width)}px`;
       clone.append(source.cloneNode(true));
+      neutralise(clone);
       overlay.append(clone);
 
       const key = motion.key;

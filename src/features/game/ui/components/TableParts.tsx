@@ -426,6 +426,18 @@ function useHandFlip(
       return;
     }
 
+    /*
+     * Let go of the promoted layers *before* cancelling.
+     *
+     * `cancelAnimations` detaches `oncancel` so that nothing observes the abort,
+     * which means the release handler below never runs for an animation that is
+     * cancelled — and a slot that is not replaced by a new animation would keep
+     * `will-change` set for the life of the hand. Fourteen permanently promoted
+     * layers is exactly what that flag is dangerous for.
+     */
+    for (const slot of list.querySelectorAll<HTMLElement>('.hand__slot')) {
+      slot.style.willChange = '';
+    }
     cancelAnimations(running.current);
     running.current = [];
 
@@ -463,6 +475,7 @@ function useHandFlip(
   useEffect(
     () => () => {
       cancelAnimations(running.current);
+      running.current = [];
     },
     [],
   );
