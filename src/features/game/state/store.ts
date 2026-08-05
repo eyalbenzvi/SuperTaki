@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_LANGUAGE, directionFor, type Language } from '../../../i18n/index.ts';
 import { record } from '../../../lib/diagnostics.ts';
 import { onSleep } from '../../../lib/lifecycle.ts';
+import { releaseSound, setSoundEnabled, unlockSound } from '../../../lib/audio.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import type { Card } from '../engine/cards.ts';
@@ -37,10 +38,12 @@ import {
   loadDisplayName,
   loadLanguage,
   loadResumableRoom,
+  loadSound,
   loadTheme,
   saveDisplayName,
   saveLanguage,
   saveResumableRoom,
+  saveSound,
   saveTheme,
   type ResumableRoom,
   type ThemeChoice,
@@ -84,6 +87,8 @@ const HOST_ID_ATTEMPTS = HOST_ID_RETRY_SCHEDULE_MS.length;
 export interface AppState {
   language: Language;
   theme: ThemeChoice;
+  /** Whether the table makes a sound. */
+  sound: boolean;
   displayName: string;
 
   screen: Screen;
@@ -150,6 +155,7 @@ export interface AppState {
 export interface AppActions {
   readonly setLanguage: (language: Language) => void;
   readonly setTheme: (theme: ThemeChoice) => void;
+  readonly setSound: (on: boolean) => void;
   readonly setDisplayName: (name: string) => void;
 
   readonly goTo: (screen: Screen) => void;
@@ -281,6 +287,7 @@ function initialState(): AppState {
   return {
     language,
     theme,
+    sound: loadSound(),
     displayName: loadDisplayName(),
     screen: 'home',
     role: null,
@@ -675,6 +682,7 @@ export const useAppStore = create<AppStore>((set, get) => {
          * interrupted.
          */
         clearHold();
+        releaseSound();
         session = null;
         detachSleepHook?.();
         detachSleepHook = null;
@@ -758,6 +766,12 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ theme });
     },
 
+    setSound: (on) => {
+      saveSound(on);
+      setSoundEnabled(on);
+      set({ sound: on });
+    },
+
     setDisplayName: (name) => {
       const cleaned = sanitizeDisplayName(name);
       set({ displayName: cleaned });
@@ -802,6 +816,12 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (get().busy) {
         return;
       }
+      /*
+       * Woken here, inside the gesture, and never on the first card tap: `resume()`
+       * is asynchronous, so a context woken by the tap that should have made a
+       * sound swallows or delays its own first cue.
+       */
+      unlockSound();
       const cleaned = sanitizeDisplayName(name);
       resetBeatTracking();
       set({ busy: true, error: null, closedReason: null, feed: [], beat: null });
@@ -972,6 +992,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     joinRoom: async ({ name, roomCode, hostPeerId, resume }) => {
+      // Same reason as `createRoom`: inside the gesture, before any cue is due.
+      unlockSound();
       if (get().busy) {
         return;
       }
@@ -1140,6 +1162,9 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     leaveRoom: () => {
       clearHold();
+      // The audio device goes back when the table does; holding one open for the
+      // life of the tab is a real cost on a phone and buys nothing.
+      releaseSound();
       session?.destroy('leftVoluntarily');
       session = null;
       detachSleepHook?.();

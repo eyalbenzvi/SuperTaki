@@ -29,6 +29,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): ReactNod
   const t = useT();
   const language = useAppStore((state) => state.language);
   const theme = useAppStore((state) => state.theme);
+  const sound = useAppStore((state) => state.sound);
+  const setSound = useAppStore((state) => state.setSound);
   const setLanguage = useAppStore((state) => state.setLanguage);
   const setTheme = useAppStore((state) => state.setTheme);
   const roomCode = useAppStore((state) => state.roomCode);
@@ -66,6 +68,26 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): ReactNod
             value={theme}
             onChange={setTheme}
             options={THEMES.map((choice) => ({ value: choice, label: t(`theme.${choice}`) }))}
+          />
+        </div>
+
+        {/*
+          A third preference beside the two that were already here, because that is
+          what it is: set once, and then never thought about again.
+         */}
+        <div className="field">
+          <span className="field__label">{t('sound.label')}</span>
+          <SegmentedControl<'on' | 'off'>
+            block
+            label={t('sound.label')}
+            value={sound ? 'on' : 'off'}
+            onChange={(value) => {
+              setSound(value === 'on');
+            }}
+            options={[
+              { value: 'on', label: t('sound.on') },
+              { value: 'off', label: t('sound.off') },
+            ]}
           />
         </div>
 

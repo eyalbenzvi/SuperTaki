@@ -11,6 +11,7 @@ import {
   PLAY_REVEAL_MS,
   REDUCED_MS,
   choreograph,
+  cueFor,
   type ChoreographOptions,
   type Motion,
 } from '../../../src/features/game/ui/choreograph.ts';
@@ -385,5 +386,91 @@ describe('purity', () => {
   it('returns the same plan for the same inputs', () => {
     const events: GameEvent[] = [{ type: 'cardDrawn', playerId: THEM, count: 3 }];
     expect(plan(events)).toEqual(plan(events));
+  });
+});
+
+describe('what each event is worth in sound', () => {
+  /*
+   * Sound answers a different question from motion: motion says where something
+   * happened, sound says that something happened *to me*. Seven of the twenty-three
+   * events make a noise; the sixteen silences below are decisions, not omissions.
+   */
+  function cue(events: readonly GameEvent[], me: string | null = ME): ReturnType<typeof cueFor> {
+    return cueFor(beatOf(events), me);
+  }
+
+  it('says nothing for the sixteen events that are deliberately silent', () => {
+    const silent: GameEvent[] = [
+      { type: 'gameStarted', firstPlayerId: THEM, activeColor: 'red' },
+      { type: 'takiOpened', playerId: THEM, color: 'red', superTaki: false },
+      { type: 'takiClosed', playerId: THEM, cardsPlayed: 3 },
+      { type: 'takiColorChanged', playerId: THEM, color: 'blue' },
+      { type: 'colorChosen', playerId: THEM, color: 'blue' },
+      { type: 'playerSkipped', playerId: THEM },
+      { type: 'plusThreePlayed', playerId: THEM },
+      { type: 'plusThreeBroken', playerId: THEM, targetId: THIRD },
+      { type: 'breakerSpent', playerId: THEM, penalty: 3 },
+      { type: 'directionChanged', direction: -1 },
+      { type: 'extraTurn', playerId: THEM },
+      { type: 'drawPileRecycled', count: 30 },
+      { type: 'drawPileExhausted' },
+      { type: 'turnSkipped', playerId: THEM, drew: 0 },
+      { type: 'playerLeft', playerId: THEM },
+      { type: 'roundAbandoned' },
+    ];
+    expect(silent).toHaveLength(16);
+    for (const event of silent) {
+      expect(cue([event]), event.type).toBeNull();
+    }
+  });
+
+  it('is silent when somebody else draws', () => {
+    // Several times a minute. A sound at that frequency stops being information.
+    expect(cue([{ type: 'cardDrawn', playerId: THEM, count: 1 }])).toBeNull();
+  });
+
+  it('speaks for the seven that matter', () => {
+    expect(cue([{ type: 'cardPlayed', playerId: THEM, card: CARD, resultingColor: 'red' }])).toBe('play');
+    expect(cue([{ type: 'cardDrawn', playerId: ME, count: 1 }])).toBe('draw');
+    expect(cue([{ type: 'turnChanged', playerId: ME }])).toBe('yourTurn');
+    expect(cue([{ type: 'drawStacked', playerId: THEM, total: 4 }])).toBe('penalty');
+    expect(cue([{ type: 'lastCardDeclared', playerId: THEM }])).toBe('lastCard');
+    expect(cue([{ type: 'lastCardCaught', playerId: ME, caughtById: THEM, penalty: 4 }])).toBe('caught');
+    expect(cue([{ type: 'playerWon', playerId: THEM }])).toBe('win');
+  });
+
+  it('tells a turn taken from a penalty paid', () => {
+    // One or two cards is a turn. Three or more is a penalty, and sounds like one.
+    expect(cue([{ type: 'cardDrawn', playerId: ME, count: 1 }])).toBe('draw');
+    expect(cue([{ type: 'cardDrawn', playerId: ME, count: 2 }])).toBe('draw');
+    expect(cue([{ type: 'cardDrawn', playerId: ME, count: 4 }])).toBe('penalty');
+  });
+
+  it('says nothing about somebody else becoming the current player', () => {
+    expect(cue([{ type: 'turnChanged', playerId: THEM }])).toBeNull();
+  });
+
+  it('makes one sound per beat, not one per event', () => {
+    /*
+     * A catch is immediately followed by the draw it caused, and a win by the turn
+     * that never happens. Two sounds at once is a mess rather than twice the
+     * information, so the most important one wins.
+     */
+    expect(
+      cue([
+        { type: 'lastCardCaught', playerId: ME, caughtById: THEM, penalty: 4 },
+        { type: 'cardDrawn', playerId: ME, count: 4 },
+      ]),
+    ).toBe('caught');
+    expect(
+      cue([
+        { type: 'cardPlayed', playerId: THEM, card: CARD, resultingColor: 'red' },
+        { type: 'playerWon', playerId: THEM },
+      ]),
+    ).toBe('win');
+  });
+
+  it('needs to know who I am before it can say a turn is mine', () => {
+    expect(cue([{ type: 'turnChanged', playerId: ME }], null)).toBeNull();
   });
 });

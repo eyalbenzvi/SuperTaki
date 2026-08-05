@@ -1,5 +1,6 @@
 import type { Card } from '../engine/cards.ts';
 import type { GameEvent, PlayerId, TurnDirection } from '../engine/state.ts';
+import type { Cue } from '../../../lib/audio.ts';
 import type { Beat } from '../state/beat.ts';
 
 /**
@@ -94,6 +95,69 @@ export const REDUCED_MS = 150;
  * skip the middle" amounts to in practice.
  */
 export const CATCH_UP_LAG = 2;
+
+/**
+ * Which sound one accepted command is worth, if any.
+ *
+ * Pure and separate from the motion plan, because sound answers a different
+ * question: motion says *where* something happened, sound says *that something
+ * happened to me*. Seven of the twenty-three events make a noise. The rest are
+ * silent on purpose — an opponent's draw happens several times a minute and would
+ * become wallpaper, and an illegal card says nothing at all, because a buzzer for a
+ * mistap is punishment for a UI we designed.
+ *
+ * At most one cue per beat, in priority order: a beat can contain a catch *and* the
+ * draw it caused, and two sounds at once is a mess rather than twice the
+ * information.
+ */
+export function cueFor(beat: Beat, localPlayerId: PlayerId | null): Cue | null {
+  const mine = (id: PlayerId): boolean => id === localPlayerId;
+  let sawDraw = false;
+  let sawPlay = false;
+
+  for (const event of beat.events) {
+    switch (event.type) {
+      case 'playerWon':
+        return 'win';
+      case 'lastCardCaught':
+        // Loudest thing at a real table, and it matters to everyone, not just the
+        // two people involved.
+        return 'caught';
+      case 'drawStacked':
+        return 'penalty';
+      case 'cardDrawn':
+        if (mine(event.playerId)) {
+          // Four or more cards is a penalty being paid, not a turn being taken.
+          return event.count >= 3 ? 'penalty' : 'draw';
+        }
+        sawDraw = true;
+        break;
+      case 'lastCardDeclared':
+        return 'lastCard';
+      case 'cardPlayed':
+        sawPlay = true;
+        break;
+      case 'turnChanged':
+        if (mine(event.playerId)) {
+          return 'yourTurn';
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (sawPlay) {
+    return 'play';
+  }
+  /*
+   * Somebody else drawing is deliberately silent. It happens several times a
+   * minute, it is already in the log and on their seat, and at that frequency a
+   * sound stops carrying information and becomes wallpaper.
+   */
+  void sawDraw;
+  return null;
+}
 
 /** Anything happening to me is anchored on my hand; there is no seat for me. */
 function seatAnchor(playerId: PlayerId, localPlayerId: PlayerId | null): AnchorId {

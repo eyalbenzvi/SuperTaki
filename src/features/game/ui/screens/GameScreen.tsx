@@ -23,7 +23,10 @@ import { useAppStore, type FeedEntry } from '../../state/store.ts';
 import { colorName } from '../cardText.ts';
 import { describeEvent } from '../eventText.ts';
 import { useCatchGrace } from '../useCatchGrace.ts';
+import { playCue } from '../../../../lib/audio.ts';
+import { penaltyBuzz, returnBuzz } from '../../../../lib/haptics.ts';
 import { AnchorRegistry } from '../anchors.ts';
+import { cueFor } from '../choreograph.ts';
 import { ColorPickerModal } from '../components/ColorPickerModal.tsx';
 import { FlightLayer } from '../components/FlightLayer.tsx';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
@@ -133,6 +136,33 @@ export function GameScreen(): ReactNode {
     },
     [],
   );
+
+  /*
+   * The table's voice, and a buzz on the two moments worth one.
+   *
+   * Cues are dropped while the page is hidden — a returning player would otherwise
+   * get every sound of the last two minutes at once, which is the commonest bug in
+   * browser audio. They are also skipped for a beat the announcer is about to read
+   * out, so a screen-reader user is not hearing speech and a card at the same time:
+   * the words carry more than the sound does, so the sound is the one that yields.
+   */
+  const beatSeq = beat?.seq ?? 0;
+  useEffect(() => {
+    if (!beat || typeof document === 'undefined' || document.visibilityState === 'hidden') {
+      return;
+    }
+    const cue = cueFor(beat, table.localPlayerId);
+    if (cue !== null) {
+      playCue(cue);
+    }
+    if (cue === 'penalty') {
+      penaltyBuzz();
+    } else if (cue === 'yourTurn' && document.visibilityState !== 'visible') {
+      returnBuzz();
+    }
+    // One beat is one accepted command; everything else here is read from it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [beatSeq]);
 
   /*
    * One announcement per change of state, carrying both halves of the answer to

@@ -87,8 +87,4 @@ export class AnchorRegistry {
   elementOf(id: AnchorId): Element | null {
     return this.elements.get(id) ?? null;
   }
-
-  clear(): void {
-    this.elements.clear();
-  }
 }
