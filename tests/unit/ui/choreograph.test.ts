@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../../../src/features/game/engine/cards.ts';
 import type { GameEvent, GameEventType } from '../../../src/features/game/engine/state.ts';
-import type { Beat, TableSignature } from '../../../src/features/game/state/beat.ts';
+import type { Beat } from '../../../src/features/game/state/beat.ts';
 import {
   CATCH_UP_LAG,
   DRAW_FLIGHT_CAP,
@@ -31,22 +31,8 @@ const THIRD = 'pl_third00000';
 
 const CARD: Card = { id: 'n-red-5-0', kind: 'number', color: 'red', value: 5 };
 
-function signature(overrides: Partial<TableSignature> = {}): TableSignature {
-  return {
-    version: 2,
-    discardTopId: CARD.id,
-    drawPileCount: 40,
-    activeColor: 'red',
-    direction: 1,
-    currentPlayerId: THEM,
-    handIds: [CARD.id],
-    counts: { [ME]: 8, [THEM]: 8 },
-    ...overrides,
-  };
-}
-
 function beatOf(events: readonly GameEvent[], seq = 5): Beat {
-  return { seq, events, from: signature({ version: 1 }), to: signature() };
+  return { seq, events };
 }
 
 function options(overrides: Partial<ChoreographOptions> = {}): ChoreographOptions {

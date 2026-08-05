@@ -62,11 +62,11 @@ animation library, no audio file, no font, no image.
 
 | Artefact   | Before    | After     | Delta                      |
 | ---------- | --------- | --------- | -------------------------- |
-| JS raw     | 551.05 kB | 564.67 kB | **+13.62 kB** (ceiling 12) |
-| JS gzip    | 160.63 kB | 165.17 kB | +4.54 kB                   |
+| JS raw     | 551.05 kB | 564.88 kB | **+13.83 kB** (ceiling 12) |
+| JS gzip    | 160.63 kB | 165.23 kB | +4.60 kB                   |
 | CSS raw    | 36.69 kB  | 39.95 kB  | +3.26 kB (ceiling 4)       |
 | CSS gzip   | 8.04 kB   | 8.78 kB   | +0.74 kB                   |
-| Total gzip | —         | —         | **+5.28 kB** (ceiling 5)   |
+| Total gzip | —         | —         | **+5.34 kB** (ceiling 5)   |
 
 **Over on two of the three numbers, and recorded rather than fixed by a cut.** The rule written
 here said a task that does not fit gets cut; this is a deliberate exception, and the reasoning is
@@ -75,10 +75,19 @@ JavaScript and 280 _bytes_ gzipped — and gzipped is what a player downloads: +
 bundle, for roughly 1,200 lines of new source across the beat, the planner, the flight layer, the
 hand's motion, the synth and the cue map. Nothing here is a library and nothing is an asset.
 
-Dead code was removed first rather than the ceiling simply being raised: three exports that only
-their own tests used, and one — `releaseSound` — that turned out not to be dead but _unwired_,
-which was an `AudioContext` held open for the life of the tab. That is now released when the table
-closes. It moved the number by 40 bytes, which is the honest answer to "was there fat".
+Dead code was removed rather than the ceiling simply being raised, and twice. First: three exports
+that only their own tests used, and one — `releaseSound` — that turned out not to be dead but
+_unwired_, which was an `AudioContext` held open for the life of the tab. Then, during review, the
+`Beat`'s whole table signature — `from`, `to`, `tableSignature`, and the `pendingFrom` capture in
+the hot path of every state update — none of which any consumer ever read. The design had called
+for motion to be derived from the difference between two table states; the implementation never
+needed it, because positions come from live DOM anchors, which are the truth rather than a
+reconstruction of it, and every cue is keyed on the events. That removal took about sixty lines and
+stopped a walk over every seat and every card in hand on every accepted command.
+
+The number still rose slightly across the same period, because review also added `inert` clones, an
+opacity-only reduced-motion branch, animation pruning and a third staleness guard. That is the
+honest accounting: the fat that existed was removed, and what replaced it was correctness.
 
 If the trade is judged wrong, the cheapest reversals are the recycle flight and the pile depth
 stack, in that order.

@@ -48,7 +48,7 @@ import {
   type ResumableRoom,
   type ThemeChoice,
 } from './persistence.ts';
-import { tableSignature, type Beat, type TableSignature } from './beat.ts';
+import type { Beat } from './beat.ts';
 
 const log = createLogger('store');
 
@@ -253,15 +253,6 @@ const WIN_HOLD_MS = 900;
  */
 let holdToken = 0;
 let holdTimer: ReturnType<typeof setTimeout> | null = null;
-/**
- * The table as it stood before the update now arriving.
- *
- * Captured when a new public state lands and spent when that command's events
- * do, because those are two separate writes and only the second knows what the
- * change was for. Module-level for the same reason the counters are: it belongs
- * to the store's lifetime, not to any one session.
- */
-let pendingFrom: TableSignature | null = null;
 /** Version of the last published beat, so a replayed batch does not mint another. */
 let lastBeatVersion = -1;
 let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -376,7 +367,6 @@ export const useAppStore = create<AppStore>((set, get) => {
   }
 
   function resetBeatTracking(): void {
-    pendingFrom = null;
     lastBeatVersion = -1;
   }
 
@@ -551,18 +541,9 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ lobby: update.lobby, screen: next });
         return;
       }
-      case 'publicState': {
-        /*
-         * The table as it stood a moment ago, taken before it is overwritten.
-         * This is the only instant at which it can be had: the hand arrives in
-         * the next write and the events in the one after, so by the time anything
-         * knows what the change was for, the "before" is already gone.
-         */
-        const previous = get().publicState;
-        pendingFrom = previous ? tableSignature(previous, get().hand) : null;
+      case 'publicState':
         set({ publicState: update.state });
         return;
-      }
       case 'hand':
         set({ hand: update.cards });
         return;
@@ -594,15 +575,9 @@ export const useAppStore = create<AppStore>((set, get) => {
             ? ((): Beat => {
                 lastBeatVersion = current.version;
                 beatCounter += 1;
-                return {
-                  seq: beatCounter,
-                  events: update.events,
-                  from: pendingFrom,
-                  to: tableSignature(current, get().hand),
-                };
+                return { seq: beatCounter, events: update.events };
               })()
             : null;
-        pendingFrom = null;
         set((state) => ({
           feed: [...state.feed, ...entries].slice(-FEED_LIMIT),
           ...(beat !== null ? { beat } : {}),

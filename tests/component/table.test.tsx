@@ -365,17 +365,6 @@ describe('the draw pile', () => {
 });
 
 describe('cues driven by the beat', () => {
-  const signature = {
-    version: 2,
-    discardTopId: 'c1',
-    drawPileCount: 40,
-    activeColor: 'red' as const,
-    direction: 1 as const,
-    currentPlayerId: HOST_ID,
-    handIds: ['c1'],
-    counts: { [HOST_ID]: 8, [GUEST_ID]: 8 },
-  };
-
   it('does not claim a card landed just because the table mounted', () => {
     /*
      * The regression this exists for: the landing animation used to ride on a
@@ -401,8 +390,6 @@ describe('cues driven by the beat', () => {
             resultingColor: 'red',
           },
         ],
-        from: null,
-        to: signature,
       },
     });
     renderApp();
@@ -415,7 +402,7 @@ describe('cues driven by the beat', () => {
     expect(document.querySelector('.seats__sweep')).toBeNull();
 
     setState({
-      beat: { seq: 8, events: [{ type: 'directionChanged', direction: -1 }], from: null, to: signature },
+      beat: { seq: 8, events: [{ type: 'directionChanged', direction: -1 }] },
     });
     renderApp();
     expect(document.querySelector('.seats__sweep')).not.toBeNull();
@@ -427,8 +414,6 @@ describe('cues driven by the beat', () => {
       beat: {
         seq: 9,
         events: [{ type: 'cardDrawn', playerId: GUEST_ID, count: 2 }],
-        from: null,
-        to: signature,
       },
     });
     renderApp();
@@ -438,8 +423,6 @@ describe('cues driven by the beat', () => {
       beat: {
         seq: 10,
         events: [{ type: 'cardDrawn', playerId: HOST_ID, count: 2 }],
-        from: null,
-        to: signature,
       },
     });
     renderApp();
@@ -488,17 +471,6 @@ describe('the flight layer', () => {
             resultingColor: 'red',
           },
         ],
-        from: null,
-        to: {
-          version: 3,
-          discardTopId: 'c1',
-          drawPileCount: 40,
-          activeColor: 'red',
-          direction: 1,
-          currentPlayerId: HOST_ID,
-          handIds: ['c1'],
-          counts: { [HOST_ID]: 8, [GUEST_ID]: 7 },
-        },
       },
     });
 

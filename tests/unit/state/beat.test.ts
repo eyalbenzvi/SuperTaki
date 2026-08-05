@@ -4,7 +4,6 @@ import { toPrivateHandView, toPublicGameState } from '../../../src/features/game
 import type { PublicGameState } from '../../../src/features/game/engine/views.ts';
 import { MemoryNetwork } from '../../../src/features/game/network/memoryTransport.ts';
 import { hostPeerIdForRoom } from '../../../src/features/game/network/roomCode.ts';
-import { tableSignature } from '../../../src/features/game/state/beat.ts';
 import { useAppStore } from '../../../src/features/game/state/store.ts';
 import { TEST_ROOM, createScriptedPeer, flush } from '../helpers/net.ts';
 
@@ -12,11 +11,11 @@ import { TEST_ROOM, createScriptedPeer, flush } from '../helpers/net.ts';
  * The beat is the presentation layer's only view of "what just happened".
  *
  * It is driven here through the real store over the in-memory transport, with a
- * hand-written peer standing in for the host, because the property that matters
- * is a property of the *arrival order*: the public state, the hand and the event
- * batch reach a client as three separate messages, and the beat has to be minted
- * exactly once, when the last of them lands, carrying the table from before the
- * first. Writing the field directly would prove none of that.
+ * hand-written peer standing in for the host, because the property that matters is
+ * a property of the *arrival order*: the public state, the hand and the event batch
+ * reach a client as three separate messages, and the beat has to be minted exactly
+ * once, when the last of them lands. Writing the field directly would prove none of
+ * that.
  */
 const holder = vi.hoisted(() => ({ create: null as ((id?: string) => unknown) | null }));
 
@@ -117,27 +116,6 @@ describe('the beat', () => {
     expect(PRISTINE.beat).toBeNull();
   });
 
-  it('reduces a public state and hand to a signature of what motion cares about', () => {
-    const { publicState, cards } = dealt();
-    const signature = tableSignature(publicState, cards);
-
-    expect(signature.version).toBe(publicState.version);
-    expect(signature.discardTopId).toBe(publicState.discardTop?.id ?? null);
-    expect(signature.drawPileCount).toBe(publicState.drawPileCount);
-    expect(signature.activeColor).toBe(publicState.activeColor);
-    expect(signature.direction).toBe(publicState.direction);
-    expect(signature.currentPlayerId).toBe(publicState.currentPlayerId);
-    expect(signature.handIds).toEqual(cards.map((card) => card.id));
-    // Every seat is counted, so a draw can be attributed to the seat that grew.
-    expect(signature.counts).toEqual({ [THEM]: 8, [ME]: 8 });
-  });
-
-  it('signs an empty discard pile without inventing a card', () => {
-    const { publicState, cards } = dealt();
-    const empty = tableSignature({ ...publicState, discardTop: null }, cards);
-    expect(empty.discardTopId).toBeNull();
-  });
-
   it('is minted when the events land, not when the state does', async () => {
     const host = await joinScriptedHost();
     const { publicState, cards } = dealt();
@@ -163,43 +141,28 @@ describe('the beat', () => {
     const beat = store().beat;
     expect(beat).not.toBeNull();
     expect(beat?.events).toHaveLength(1);
-    expect(beat?.to.version).toBe(publicState.version);
-    // No table existed before the deal, so there is nothing to have come from.
-    expect(beat?.from).toBeNull();
     host.close();
   });
 
-  it('carries the table from before the command and after it', async () => {
+  it('is one beat per accepted command, in order', async () => {
     const host = await joinScriptedHost();
     const { publicState, cards } = dealt();
     await sendMove(host, publicState, cards, [
       { type: 'gameStarted', firstPlayerId: THEM, activeColor: publicState.activeColor },
     ]);
     const first = store().beat;
-    expect(first?.from).toBeNull();
+    expect(first?.events).toHaveLength(1);
 
-    // A second command: one card leaves the opponent's hand for the pile.
     const next: PublicGameState = {
       ...publicState,
       version: publicState.version + 1,
       currentPlayerId: ME,
-      drawPileCount: publicState.drawPileCount - 1,
-      players: publicState.players.map((player) =>
-        player.id === THEM ? { ...player, cardCount: player.cardCount - 1 } : player,
-      ),
     };
     await sendMove(host, next, cards, [{ type: 'turnChanged', playerId: ME }]);
 
     const beat = store().beat;
     expect(beat?.seq).toBe((first?.seq ?? 0) + 1);
-    // `from` is the table as it stood a moment ago, which is the whole point:
-    // it is the only instant at which the previous state can still be had.
-    expect(beat?.from?.version).toBe(publicState.version);
-    expect(beat?.from?.currentPlayerId).toBe(THEM);
-    expect(beat?.from?.counts[THEM]).toBe(8);
-    expect(beat?.to.version).toBe(next.version);
-    expect(beat?.to.currentPlayerId).toBe(ME);
-    expect(beat?.to.counts[THEM]).toBe(7);
+    expect(beat?.events).toEqual([{ type: 'turnChanged', playerId: ME }]);
     host.close();
   });
 
@@ -264,7 +227,7 @@ describe('the beat', () => {
     await sendMove(host, publicState, cards, [
       { type: 'gameStarted', firstPlayerId: THEM, activeColor: publicState.activeColor },
     ]);
-    expect(store().beat?.to.version).toBe(publicState.version);
+    expect(store().beat?.events).toHaveLength(1);
     host.close();
 
     // A fresh room resets the tracking, so the first beat of the next round has
