@@ -411,7 +411,12 @@ Nothing visible ships in this wave. It exists so that the twenty-six tasks after
 
 - **Files:** `src/features/game/ui/choreograph.ts` — new
 - **Change:** the pure planner, `ChoreographOptions` and the `Motion` union above, covering every
-  event this plan animates. The single catch-up rule, keying against `inFlight`, reduced-motion
+  event this plan animates.
+- **Deviation, recorded:** v3 spread the per-event mappings across T13, T21, T24, T25 and T28,
+  each editing this file. They are all implemented here instead, in one pass, because the whole
+  value of the module is that it is one complete table that can be tested exhaustively — seven
+  separate edits to the same pure function would have produced the same code with none of that
+  guarantee. Those tasks keep their view-side work; only the mapping moved. The single catch-up rule, keying against `inFlight`, reduced-motion
   substitution.
 - **Acceptance:** pure — no import from `react`, no DOM reference, **no global read** (a
   `matchMedia` call here is a `react-hooks/purity` error). With
