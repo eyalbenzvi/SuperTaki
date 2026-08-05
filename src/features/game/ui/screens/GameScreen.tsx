@@ -66,6 +66,14 @@ export function GameScreen(): ReactNode {
       actionPending: state.actionPending,
     })),
   );
+  /*
+   * Its own selector, deliberately.
+   *
+   * Folding `beat` into the shallow object above would change `table`'s identity
+   * on every move, which would defeat the `useMemo` on `opponents(table)` below
+   * and re-render every seat — the exact cost that memo exists to avoid.
+   */
+  const beat = useAppStore((state) => state.beat);
   const playCard = useAppStore((state) => state.playCard);
   const drawCard = useAppStore((state) => state.drawCard);
   const closeTaki = useAppStore((state) => state.closeTaki);
@@ -88,6 +96,22 @@ export function GameScreen(): ReactNode {
     table.localPlayerId !== null &&
     hasDeclaredLastCard(table, table.localPlayerId);
   const cards = useMemo(() => sortHandForDisplay(table.hand), [table.hand]);
+  /*
+   * The cues this screen draws itself, read off the newest beat.
+   *
+   * Everything here is derived during render from state the store already holds,
+   * so there is no effect, no timer and no ref — which is both simpler and the
+   * only shape the compiler's lint rules allow.
+   */
+  const landed = beat?.events.some((event) => event.type === 'cardPlayed') ?? false;
+  const reversal = beat?.events.find((event) => event.type === 'directionChanged');
+  const sweep = beat && reversal ? { key: `${beat.seq}`, direction: reversal.direction } : undefined;
+  const struck =
+    beat?.events.some(
+      (event) =>
+        (event.type === 'cardDrawn' && event.playerId === table.localPlayerId) ||
+        (event.type === 'lastCardCaught' && event.playerId === table.localPlayerId),
+    ) ?? false;
   const seats = useCatchGrace(useMemo(() => opponents(table), [table]));
   const turnName = currentPlayerName(table);
 
@@ -192,7 +216,7 @@ export function GameScreen(): ReactNode {
        * stack of notices from pushing it off the bottom of the screen.
        */}
       <div className="game__info">
-        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} />
+        <OpponentList opponents={seats} t={t} onCatch={catchLastCard} sweep={sweep} />
 
         {/*
          * The nudge renders only while the table is genuinely waiting on a
@@ -209,7 +233,10 @@ export function GameScreen(): ReactNode {
         {/* Outside the scrollable region below: on a short screen, whose turn it is
             is the last thing that should ever scroll out of sight. */}
         <div className="turn-row">
-          <p className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
+          {/* Keyed on whose turn it is, so the banner re-enters when it changes.
+              On my own turn this is the whole cue: there is no seat of mine on
+              the table to ring. */}
+          <p key={currentId ?? 'none'} className={`turn-banner ${myTurn ? 'turn-banner--mine' : ''}`.trim()}>
             {myTurn ? t('game.yourTurn') : t('game.turnOf', { name: turnName ?? '—' })}
           </p>
           <DirectionIndicator direction={publicState.direction} t={t} />
@@ -222,11 +249,21 @@ export function GameScreen(): ReactNode {
         />
 
         <div className="game__action">
+          {/*
+           * Alongside the prompt, not instead of it.
+           *
+           * A refusal used to replace the whole prompt for 2.6 seconds. That was
+           * survivable while only a card could be refused, but the draw pile now
+           * explains itself too — and the commonest reason it is blocked is "not
+           * your turn", where the prompt it would have hidden is the only useful
+           * thing on the screen.
+           */}
           {refusal ? (
             <Callout tone="warning" role="alert">
               {refusal}
             </Callout>
-          ) : (
+          ) : null}
+          {
             <ActionPrompt
               t={t}
               myTurn={myTurn}
@@ -246,18 +283,20 @@ export function GameScreen(): ReactNode {
               onBreak={onBreakPlusThree}
               onPassBreak={passBreak}
             />
-          )}
+          }
         </div>
       </div>
 
       <div className="game__table">
         <Piles
           t={t}
+          landed={landed}
           discardTop={publicState.discardTop}
           drawPileCount={publicState.drawPileCount}
           activeColor={publicState.activeColor}
           canDraw={canDraw}
           onDraw={drawCard}
+          onDrawBlocked={onRefuse}
           drawBlockedReason={
             publicState.takiMode ? t('reject.cannotDrawDuringTaki') : t('game.drawPileBlocked')
           }
@@ -295,7 +334,11 @@ export function GameScreen(): ReactNode {
         </div>
       ) : null}
 
-      <div className="game__hand">
+      <div
+        // Keyed so a penalty that lands on me is said once, behind the hand.
+        key={struck ? `struck-${beat?.seq ?? 0}` : 'hand'}
+        className={`game__hand ${struck ? 'game__hand--struck' : ''}`.trim()}
+      >
         <Hand
           cards={cards}
           playableIds={playable}

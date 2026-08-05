@@ -165,25 +165,33 @@ test.describe('two-player game over the deterministic transport', () => {
     await expect(host.locator('.turn-banner--mine')).toBeVisible();
 
     const drawPile = host.getByRole('button', { name: /Draw pile, \d+ cards/ });
-    await expect(drawPile).toBeEnabled();
+    await expect(drawPile).toHaveAttribute('aria-disabled', 'false');
     await drawPile.click();
     await expect(guest.locator('.turn-banner--mine')).toBeVisible();
     await expectLogged(host, 'Dana drew a card');
   });
 
-  test('disables the draw pile and hand when it is not your turn', async ({ context }) => {
+  test('refuses the draw pile and the hand when it is not your turn', async ({ context }) => {
     const host = await context.newPage();
     const guest = await context.newPage();
     await seatTwoPlayers(host, guest);
     await host.getByRole('button', { name: 'Start game' }).click();
     await expect(guest.locator('.turn-banner')).toHaveText("Dana's turn");
 
-    await expect(guest.getByRole('button', { name: /Draw pile, \d+ cards/ })).toBeDisabled();
+    await expect(guest.getByRole('button', { name: /Draw pile, \d+ cards/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     await expect(guest.locator('.hand .card--playable')).toHaveCount(0);
     /*
      * The cards stay focusable — see `PlayableCard` — so that a keyboard or
      * screen-reader player can still read their own hand while they wait. Being
      * unplayable is carried by `aria-disabled`, and a press explains itself.
+     *
+     * The pile now works the same way, for the same reasons: a real `disabled`
+     * attribute gave it no press feedback and hid the reason it was blocked in a
+     * `title` most browsers never show. The cost is a tab stop while it is
+     * blocked, which is most of a game.
      */
     const firstCard = guest.locator('.hand .card').first();
     await expect(firstCard).toHaveAttribute('aria-disabled', 'true');

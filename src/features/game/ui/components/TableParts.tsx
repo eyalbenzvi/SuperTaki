@@ -21,28 +21,15 @@ import {
   solveHandLayout,
   type HandLayout,
 } from '../handLayout.ts';
+import { depthBucket } from '../pileDepth.ts';
+import { sweepStyle } from '../sweepDirection.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
+
+/** Where the blocked-pile reason lives, for `aria-describedby`. */
+const DRAW_BLOCKED_ID = 'draw-pile-blocked-reason';
 
 /** Per-card delay in the arming wave. Twenty-five milliseconds reads as one gesture. */
 const ARM_STAGGER_MS = 25;
-
-/**
- * How thick the draw pile looks, in four steps.
- *
- * Bucketed rather than continuous: a stack that thins by a fraction of a pixel per
- * card is a stack nobody can see thinning, and four steps is enough to read
- * "plenty / half / getting low / nearly out" without anybody parsing the count
- * printed underneath.
- */
-export function depthBucket(count: number): 0 | 1 | 2 | 3 {
-  if (count > 30) {
-    return 3;
-  }
-  if (count > 15) {
-    return 2;
-  }
-  return count > 5 ? 1 : 0;
-}
 
 /**
  * The colour that must currently be matched.
@@ -177,14 +164,29 @@ export function OpponentList({
   opponents,
   t,
   onCatch,
+  sweep,
 }: {
   readonly opponents: readonly OpponentView[];
   readonly t: Translator;
   readonly onCatch?: (playerId: string) => void;
+  readonly sweep?: { readonly key: string; readonly direction: 1 | -1 } | undefined;
 }): ReactNode {
   return (
     <section className="seats" aria-label={t('game.opponents')}>
       <ul className="seats__list">
+        {/*
+         * The direction change borrows this row, because it is the only state in
+         * the game with nowhere of its own to be shown. Keyed so a new sweep
+         * replaces the last one rather than queueing behind it.
+         */}
+        {sweep ? (
+          <span
+            key={sweep.key}
+            className="seats__sweep"
+            aria-hidden="true"
+            style={sweepStyle(sweep.direction)}
+          />
+        ) : null}
         {opponents.map((opponent) => (
           <OpponentSeat key={opponent.id} opponent={opponent} t={t} {...(onCatch ? { onCatch } : {})} />
         ))}
@@ -198,8 +200,12 @@ export interface PilesProps {
   readonly discardTop: Card | null;
   readonly drawPileCount: number;
   readonly activeColor: CardColor;
+  /** True when the newest beat actually put a card here. */
+  readonly landed: boolean;
   readonly canDraw: boolean;
   readonly onDraw: () => void;
+  /** Called when the pile is pressed while it cannot be used. */
+  readonly onDrawBlocked: () => void;
   readonly drawBlockedReason: string;
 }
 
@@ -217,8 +223,10 @@ export function Piles({
   discardTop,
   drawPileCount,
   activeColor,
+  landed,
   canDraw,
   onDraw,
+  onDrawBlocked,
   drawBlockedReason,
 }: PilesProps): ReactNode {
   return (
@@ -229,14 +237,32 @@ export function Piles({
             card's size is solved from the height left over after a hand-measured
             chrome constant. */}
         <div className="pile__deck" data-depth={depthBucket(drawPileCount)}>
+          {/*
+           * `aria-disabled` rather than `disabled`, the same trade `PlayableCard`
+           * made and for the same reasons: a disabled button gets no press
+           * feedback, sits outside the tab order, and hides its `title` from most
+           * browsers — so the one thing a blocked pile had to say was unreachable
+           * and a tap on it was silence. An illegal *card* has always explained
+           * itself; the pile now does too.
+           *
+           * The cost is real and worth naming: while the pile is blocked, which is
+           * most of a game, it is a tab stop.
+           */}
           <button
             type="button"
             className={`card card--back card--lg ${canDraw ? 'card--playable' : 'card--dimmed'}`}
-            onClick={onDraw}
-            disabled={!canDraw}
+            onClick={canDraw ? onDraw : onDrawBlocked}
+            aria-disabled={!canDraw}
             aria-label={countLabel(t, 'game.drawPileAria', drawPileCount)}
-            title={canDraw ? t('game.drawPile') : drawBlockedReason}
+            aria-describedby={canDraw ? undefined : DRAW_BLOCKED_ID}
           />
+          {/* The reason, where a screen reader can reach it. It used to live only
+              in a `title` on a disabled element, which is nowhere. */}
+          {canDraw ? null : (
+            <span id={DRAW_BLOCKED_ID} className="sr-only">
+              {drawBlockedReason}
+            </span>
+          )}
         </div>
         <span className="pile__label">{t('game.drawPile')}</span>
         <span className="pile__count">{countLabel(t, 'game.cardsLeft', drawPileCount)}</span>
@@ -245,7 +271,21 @@ export function Piles({
       <div className="pile pile--discard">
         <div className={`discard discard--${activeColor}`}>
           {discardTop ? (
-            <CardFace key={discardTop.id} card={discardTop} t={t} size="lg" extraClass="card--landing" />
+            /*
+             * `card--landing` only when a card was actually played.
+             *
+             * The class used to ride on a `key` of the card's id, which replays
+             * the animation on any remount — so a reconnecting client watched a
+             * card land that nobody had played, and so did anyone whose tab came
+             * back from the background.
+             */
+            <CardFace
+              key={discardTop.id}
+              card={discardTop}
+              t={t}
+              size="lg"
+              extraClass={landed ? 'card--landing' : ''}
+            />
           ) : (
             <p className="discard__empty text-small">{t('game.discardEmpty')}</p>
           )}

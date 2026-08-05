@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { GUEST_ID, HOST_ID, enterGame, lobbyFixture, renderApp, resetStore, setState } from './helpers.tsx';
 import type { Card } from '../../src/features/game/engine/cards.ts';
-import { depthBucket } from '../../src/features/game/ui/components/TableParts.tsx';
+import { depthBucket } from '../../src/features/game/ui/pileDepth.ts';
 import { useAppStore } from '../../src/features/game/state/store.ts';
 
 beforeEach(resetStore);
@@ -86,7 +86,7 @@ describe('a move in flight', () => {
     // and the player would be told a card they legitimately played is not theirs.
     await user.click(screen.getByRole('button', { name: 'הנחת אדום 5' }));
     expect(playCard).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /חבילת משיכה/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /חבילת משיכה/ })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('alert')).toHaveTextContent('שולח את המהלך…');
   });
 
@@ -361,5 +361,97 @@ describe('the draw pile', () => {
     expect(pile?.children).toHaveLength(3);
     expect(pile?.firstElementChild).toHaveClass('pile__deck');
     expect(pile?.querySelector('.pile__deck > button.card--back')).not.toBeNull();
+  });
+});
+
+describe('cues driven by the beat', () => {
+  const signature = {
+    version: 2,
+    discardTopId: 'c1',
+    drawPileCount: 40,
+    activeColor: 'red' as const,
+    direction: 1 as const,
+    currentPlayerId: HOST_ID,
+    handIds: ['c1'],
+    counts: { [HOST_ID]: 8, [GUEST_ID]: 8 },
+  };
+
+  it('does not claim a card landed just because the table mounted', () => {
+    /*
+     * The regression this exists for: the landing animation used to ride on a
+     * `key`, so it replayed on any remount — a reconnecting client watched a card
+     * land that nobody had played, and so did anyone returning from a background
+     * tab.
+     */
+    enterGame({ myTurn: true });
+    renderApp();
+    expect(document.querySelector('.discard .card--landing')).toBeNull();
+  });
+
+  it('says a card landed when one actually did', () => {
+    const fixture = enterGame({ myTurn: true });
+    setState({
+      beat: {
+        seq: 7,
+        events: [
+          {
+            type: 'cardPlayed',
+            playerId: GUEST_ID,
+            card: fixture.hand[0] as Card,
+            resultingColor: 'red',
+          },
+        ],
+        from: null,
+        to: signature,
+      },
+    });
+    renderApp();
+    expect(document.querySelector('.discard .card--landing')).not.toBeNull();
+  });
+
+  it('sweeps the seats only when the direction actually changed', () => {
+    enterGame({ myTurn: true });
+    renderApp();
+    expect(document.querySelector('.seats__sweep')).toBeNull();
+
+    setState({
+      beat: { seq: 8, events: [{ type: 'directionChanged', direction: -1 }], from: null, to: signature },
+    });
+    renderApp();
+    expect(document.querySelector('.seats__sweep')).not.toBeNull();
+  });
+
+  it('marks a penalty that landed on me, and not one aimed at somebody else', () => {
+    enterGame({ myTurn: true });
+    setState({
+      beat: {
+        seq: 9,
+        events: [{ type: 'cardDrawn', playerId: GUEST_ID, count: 2 }],
+        from: null,
+        to: signature,
+      },
+    });
+    renderApp();
+    expect(document.querySelector('.game__hand--struck')).toBeNull();
+
+    setState({
+      beat: {
+        seq: 10,
+        events: [{ type: 'cardDrawn', playerId: HOST_ID, count: 2 }],
+        from: null,
+        to: signature,
+      },
+    });
+    renderApp();
+    expect(document.querySelector('.game__hand--struck')).not.toBeNull();
+  });
+
+  it('flashes the ticker on a new line, keyed to the entry', () => {
+    enterGame({ myTurn: true });
+    renderApp();
+    const ticker = document.querySelector('.ticker');
+    // The flash is a class the pill always carries; it replays because the pill
+    // remounts on a new entry, which is what a `key` buys and a timer would not.
+    expect(ticker).toHaveClass('ticker__flash');
   });
 });

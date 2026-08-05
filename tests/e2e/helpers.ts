@@ -78,6 +78,23 @@ export async function onTurn(page: Page): Promise<boolean> {
 }
 
 /**
+ * Whether the draw pile will accept a tap.
+ *
+ * Read from `aria-disabled`, not from Playwright's `isEnabled()`. The pile refuses
+ * with `aria-disabled` so that a blocked tap can explain itself, and `isEnabled()`
+ * keys on the `disabled` *property* — so it would report a blocked pile as ready
+ * and a driver would click it, collect a refusal, and report that it had moved.
+ * The turn check in front of these callers does not cover it: the pile is also
+ * blocked while a Taki sequence is open, while a +3 waits, and while a submitted
+ * move is unanswered.
+ */
+export async function canDrawFrom(page: Page): Promise<boolean> {
+  const pile = page.locator('.pile button.card--back');
+  const state = await pile.getAttribute('aria-disabled').catch(() => 'true');
+  return state === 'false';
+}
+
+/**
  * Plays the first legal card if there is one, otherwise draws. Returns false
  * when it was not this page's turn, so a caller can drive both seats without
  * knowing whose move it is.

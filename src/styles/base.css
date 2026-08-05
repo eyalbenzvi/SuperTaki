@@ -302,6 +302,27 @@ main {
   .discard {
     transition-duration: var(--dur-fast) !important;
   }
+
+  /* Whose turn it is, and what just happened: colour only, once, no movement. */
+  .seat {
+    transition-duration: var(--dur-fast) !important;
+  }
+
+  .ticker__flash {
+    animation-name: ticker-flash !important;
+    animation-duration: var(--dur-fast) !important;
+  }
+
+  .game__hand--struck {
+    animation-name: struck !important;
+    animation-duration: var(--dur-fast) !important;
+  }
+
+  /*
+   * The banner and the sweep stay stopped. Both move: the banner scales in, and
+   * the sweep is a band travelling across the seats. What they were saying is said
+   * in words by the banner's own text and by the direction chip beside it.
+   */
 }
 
 @keyframes land-reduced {

@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { BROADCAST, awaitSettled, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 /**
  * Plays a complete round through the UI.
@@ -78,7 +78,7 @@ async function takeOneAction(page: Page): Promise<boolean> {
   }
 
   const drawPile = page.getByRole('button', { name: /Draw pile, \d+ cards/ });
-  if (await drawPile.isEnabled().catch(() => false)) {
+  if (await canDrawFrom(page)) {
     await clickInForeground(page, drawPile);
     return true;
   }

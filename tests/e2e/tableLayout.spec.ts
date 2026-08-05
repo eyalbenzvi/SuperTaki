@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BROADCAST, awaitSettled, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 /**
  * The table has to fit the screen it is on.
@@ -219,7 +219,7 @@ async function playOrDraw(page: Page): Promise<boolean> {
     return true;
   }
   const pile = page.locator('.pile button.card--back');
-  if (await pile.isEnabled().catch(() => false)) {
+  if (await canDrawFrom(page)) {
     await pile.click().catch(() => undefined);
     return true;
   }

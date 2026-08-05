@@ -22,12 +22,31 @@ async function seatAndDeal(host: Page, guest: Page): Promise<void> {
   await expect(guest.locator('.hand .card')).toHaveCount(8);
 }
 
+/**
+ * Plays one card, so that a beat containing `cardPlayed` exists.
+ *
+ * Needed because the landing cue is no longer applied on mount: it used to ride
+ * on a `key`, which replayed it on any remount, so a reconnecting client watched
+ * a card land that nobody had played. Asserting it now means causing it.
+ */
+async function playOneCard(host: Page): Promise<void> {
+  const playable = host.locator('.hand .card--playable').first();
+  await expect(playable).toBeVisible();
+  await playable.click();
+  const picker = host.getByRole('dialog');
+  if (await picker.isVisible().catch(() => false)) {
+    await picker.getByRole('button', { name: 'Green', exact: true }).click();
+  }
+  await expect(host.locator('.discard .card--landing')).toBeVisible();
+}
+
 test.describe('reduced motion', () => {
   test('still says that something changed, without moving anything', async ({ context }) => {
     const host = await context.newPage();
     const guest = await context.newPage();
     await host.emulateMedia({ reducedMotion: 'reduce' });
     await seatAndDeal(host, guest);
+    await playOneCard(host);
 
     const landing = host.locator('.discard .card--landing');
     await expect(landing).toBeVisible();
@@ -108,6 +127,7 @@ test.describe('reduced motion', () => {
     const host = await context.newPage();
     const guest = await context.newPage();
     await seatAndDeal(host, guest);
+    await playOneCard(host);
 
     const animation = await host
       .locator('.discard .card--landing')
