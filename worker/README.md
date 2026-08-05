@@ -10,3 +10,6 @@ npm run verify   # typecheck + unit tests
 npm run smoke    # real WebSocket clients against wrangler dev
 npm run deploy   # manual deploy (CI does this automatically)
 ```
+
+Deployed for this repository at `wss://supertaki-relay.ebenzvi.workers.dev`
+(the `RELAY_URL` repository variable points the Pages build at it).
