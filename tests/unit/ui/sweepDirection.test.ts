@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { sweepStyle } from '../../../src/features/game/ui/sweepDirection.ts';
+import { runsRightwards, sweepStyle } from '../../../src/features/game/ui/sweepDirection.ts';
 
 /**
  * The one place an RTL bug could hide without any test noticing.
@@ -19,6 +19,20 @@ function travel(direction: 1 | -1): 'rightwards' | 'leftwards' {
   const style = sweepStyle(direction) as Record<string, string>;
   return style['--sweep-from'] === '-12px' ? 'rightwards' : 'leftwards';
 }
+
+describe('the play order on screen', () => {
+  /*
+   * One rule, two things drawing it: the arrow in the chip and the sweep across the
+   * seats. They read this function so they cannot end up pointing opposite ways —
+   * which is exactly what the old circular glyph did in Hebrew.
+   */
+  it('follows the seating order, which is a different way round in each language', () => {
+    expect(runsRightwards(1, false)).toBe(true);
+    expect(runsRightwards(-1, false)).toBe(false);
+    expect(runsRightwards(1, true)).toBe(false);
+    expect(runsRightwards(-1, true)).toBe(true);
+  });
+});
 
 describe('sweep direction', () => {
   it('follows the seating order left-to-right in English', () => {

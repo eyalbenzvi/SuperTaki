@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from 'react';
 import { Icon } from '../../../../components/Icon.tsx';
-import { countLabel, type Translator } from '../../../../i18n/index.ts';
+import { countLabel, type TextDirection, type Translator } from '../../../../i18n/index.ts';
 import type { Card, CardColor } from '../../engine/cards.ts';
 import type { ConnectionHealth } from '../../network/protocol.ts';
 import type { OpponentView } from '../../state/selectors.ts';
@@ -33,7 +33,7 @@ import {
 } from '../handFlip.ts';
 import type { AnchorRegistry } from '../anchors.ts';
 import { depthBucket } from '../pileDepth.ts';
-import { sweepStyle } from '../sweepDirection.ts';
+import { runsRightwards, sweepStyle } from '../sweepDirection.ts';
 import { CardFace, FaceDownCard, PlayableCard } from './CardView.tsx';
 
 /** Where the blocked-pile reason lives, for `aria-describedby`. */
@@ -66,19 +66,46 @@ export function ColorIndicator({
   );
 }
 
-/** Which way round the table play is moving. */
+/**
+ * Which way play is moving through the seats.
+ *
+ * The arrow points where the turn actually travels *on this screen*, which is not
+ * the rule's sign: the seats are laid out in the document's direction, so `1` —
+ * "follows the seating order" — runs leftwards in Hebrew. The chip used to show a
+ * circular "clockwise" glyph, which had no ring of seats on screen to turn around
+ * and, in the app's default language, pointed against the very sweep that crosses
+ * those seats when the direction changes.
+ *
+ * The words are the noun and the arrow is the value, so the label stays short
+ * enough to survive a 320 px screen without being hidden. `role="img"` with the
+ * full sentence as its name is what a screen reader gets instead of a bare arrow.
+ */
 export function DirectionIndicator({
   direction,
+  textDirection,
   t,
 }: {
   readonly direction: 1 | -1;
+  readonly textDirection: TextDirection;
   readonly t: Translator;
 }): ReactNode {
+  const rightwards = runsRightwards(direction, textDirection === 'rtl');
   const label = direction === 1 ? t('game.directionCw') : t('game.directionCcw');
   return (
-    <span className="direction-chip">
-      <Icon name={direction === 1 ? 'clockwise' : 'anticlockwise'} size={1.15} />
-      <span className="direction-chip__label">{label}</span>
+    <span
+      className={`direction-chip${direction === -1 ? ' direction-chip--reversed' : ''}`}
+      role="img"
+      aria-label={label}
+    >
+      <span className="direction-chip__label" aria-hidden="true">
+        {t('game.direction')}
+      </span>
+      <span
+        className={`direction-chip__arrow${rightwards ? '' : ' direction-chip__arrow--mirrored'}`}
+        aria-hidden="true"
+      >
+        <Icon name="playOrder" size={1.05} />
+      </span>
     </span>
   );
 }

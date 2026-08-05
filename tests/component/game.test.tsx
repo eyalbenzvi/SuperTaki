@@ -99,8 +99,42 @@ describe('table layout', () => {
     enterGame();
     renderApp();
     expect(screen.getByText(/הצבע הנוכחי:/)).toBeInTheDocument();
-    expect(screen.getByText('כיוון המשחק: קדימה')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'כיוון המשחק: קדימה, לפי סדר המושבים' })).toBeInTheDocument();
     expect(screen.getByText('תור שלך')).toBeInTheDocument();
+  });
+
+  /*
+   * The arrow, not the words, is what a player reads at a glance — and it points at
+   * the row of seats, which is laid out in the document's direction. Hebrew is the
+   * default and runs right-to-left, so "follows the seating order" is a *left* arrow
+   * there and a right arrow in English. This is the assertion that would have caught
+   * the circular glyph that pointed the same way in both.
+   */
+  it('points the play-order arrow the way the seats actually run', () => {
+    enterGame();
+    renderApp();
+    const chip = screen.getByRole('img', { name: /כיוון המשחק/ });
+    const arrow = chip.querySelector('.direction-chip__arrow');
+    expect(arrow).toHaveClass('direction-chip__arrow--mirrored');
+    expect(chip).not.toHaveClass('direction-chip--reversed');
+  });
+
+  it('turns the arrow round, and marks the chip, when the order reverses', () => {
+    const fixture = enterGame();
+    setState({ publicState: { ...fixture.publicState, currentPlayerId: HOST_ID, direction: -1 } });
+    renderApp();
+    const chip = screen.getByRole('img', { name: 'כיוון המשחק: הפוך, נגד סדר המושבים' });
+    expect(chip.querySelector('.direction-chip__arrow')).not.toHaveClass('direction-chip__arrow--mirrored');
+    expect(chip).toHaveClass('direction-chip--reversed');
+  });
+
+  it('mirrors the same order for a player reading English', () => {
+    setState({ language: 'en' });
+    document.documentElement.dir = 'ltr';
+    enterGame();
+    renderApp();
+    const chip = screen.getByRole('img', { name: 'Play order: forwards, following the seats' });
+    expect(chip.querySelector('.direction-chip__arrow')).not.toHaveClass('direction-chip__arrow--mirrored');
   });
 
   it('names the opponent when it is their turn', () => {
