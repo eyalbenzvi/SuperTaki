@@ -37,6 +37,11 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
       return t('event.playerSkipped', { name: nameOf(event.playerId) });
     case 'drawStacked':
       return t('event.drawStacked', { name: nameOf(event.playerId), total: event.total });
+    case 'drawRunCancelled':
+      return t(event.cancelled === 1 ? 'event.drawRunCancelled.one' : 'event.drawRunCancelled.other', {
+        name: nameOf(event.playerId),
+        count: event.cancelled,
+      });
     case 'plusThreePlayed':
       return t('event.plusThreePlayed', { name: nameOf(event.playerId) });
     case 'plusThreeBroken':

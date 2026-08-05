@@ -115,7 +115,7 @@ describe('what to do now', () => {
     // A pending draw and a pending Plus at once: the debt is the thing to answer.
     table({ hand: [red5], patch: { pendingDraw: 2, pendingPlus: true } });
     renderApp();
-    expect(screen.getByText('מחכים לך 2 קלפים. אפשר לענות בקח 2, או לקחת אותם.')).toBeInTheDocument();
+    expect(screen.getByText('מחכים לך 2 קלפים. אפשר לענות בקח 2 או במלך, או לקחת אותם.')).toBeInTheDocument();
     expect(screen.queryByText('הונח פלוס — חייבים להניח עוד קלף.')).not.toBeInTheDocument();
   });
 

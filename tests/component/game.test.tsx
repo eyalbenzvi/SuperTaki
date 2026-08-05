@@ -478,17 +478,18 @@ describe('the +2 run, the King and the +3', () => {
     setState({ drawCard });
     const { user } = renderApp();
 
-    expect(screen.getByText('מחכים לך 4 קלפים. אפשר לענות בקח 2, או לקחת אותם.')).toBeInTheDocument();
+    expect(screen.getByText('מחכים לך 4 קלפים. אפשר לענות בקח 2 או במלך, או לקחת אותם.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'לקיחת 4 קלפים' }));
     expect(drawCard).toHaveBeenCalled();
   });
 
-  it('offers only the +2 against a pending run — not the King', () => {
+  it('offers the +2 and the King against a pending run, and nothing else', () => {
     situation({ hand: [redPlusTwo, king, blue5], discardTop: red9, activeColor: 'red', pendingDraw: 2 });
     renderApp();
 
+    // Two ways out of a run: raise it, or wipe it. A blue 5 is neither.
     expectPlayable('הנחת אדום קח 2');
-    expectRefused('הנחת מלך');
+    expectPlayable('הנחת מלך');
     expectRefused('הנחת כחול 5');
   });
 

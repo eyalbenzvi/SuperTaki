@@ -67,6 +67,15 @@ describe('client message validation', () => {
     expect(result).toMatchObject({ ok: false, error: 'protocolMismatch', received: PROTOCOL_VERSION + 1 });
   });
 
+  it('turns away the version before this one, because the rules changed under it', () => {
+    // 4 and 5 disagree about whether a King answers a +2 run. A peer on 4 is told
+    // to reload rather than seated at a table that would refuse its legal moves.
+    const result = parseClientMessage(
+      envelope('joinRequest', { displayName: 'Dana' }, { protocolVersion: PROTOCOL_VERSION - 1 }),
+    );
+    expect(result).toMatchObject({ ok: false, error: 'protocolMismatch', received: PROTOCOL_VERSION - 1 });
+  });
+
   it('rejects an unknown message type', () => {
     const result = parseClientMessage(envelope('takeOverHost', {}));
     expect(result).toMatchObject({ ok: false, error: 'unknownType', received: 'takeOverHost' });
@@ -159,6 +168,7 @@ describe('host message validation', () => {
       { type: 'colorChosen', playerId: 'p-alice', color: 'blue' },
       { type: 'playerSkipped', playerId: 'p-bob' },
       { type: 'drawStacked', playerId: 'p-alice', total: 4 },
+      { type: 'drawRunCancelled', playerId: 'p-bob', cancelled: 4 },
       { type: 'plusThreePlayed', playerId: 'p-alice' },
       { type: 'plusThreeBroken', playerId: 'p-bob', targetId: 'p-alice' },
       { type: 'directionChanged', direction: -1 },

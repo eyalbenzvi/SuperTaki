@@ -28,8 +28,13 @@ import { REJECTION_CODES } from '../engine/state.ts';
  *
  * 4 — resilience: acknowledged actions, seats that can be absent or gone, host
  * restarts and handover, table pauses.
+ *
+ * 5 — a King answers an open +2 run and cancels it, with a `drawRunCancelled`
+ * event to say so. A rule, not a field: two peers on different sides of this
+ * disagree about which cards are legal, which is exactly what the version gate
+ * exists to catch.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /**
  * Versions this build will *accept*, as opposed to the one it sends.
@@ -41,11 +46,14 @@ export const PROTOCOL_VERSION = 4;
  * to the whole table and end the game outright: a release that defeats its own
  * purpose on the way in.
  *
- * So every field added in 4 is optional, Zod strips the ones a version-3 reader
- * does not know about, and both versions are honoured on the wire. Mixed tables
- * lose the new behaviour, not the game.
+ * Every field added in 4 is optional, Zod strips the ones a version-3 reader does
+ * not know about, and a mixed 3/4 table loses the new behaviour rather than the
+ * game. Version 5 is the first bump that cannot be carried that way: it changes
+ * which cards are legal, so a table split across it would have two peers refusing
+ * each other's moves and blaming the game. A stale tab is told to reload instead,
+ * which is the outcome the gate is for.
  */
-export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [3, 4];
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [5];
 
 /** Hard cap on a single decoded message, to bound memory from a hostile peer. */
 export const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -176,6 +184,11 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     type: z.literal('drawStacked'),
     playerId: playerIdSchema,
     total: z.number().int().min(2).max(200),
+  }),
+  z.object({
+    type: z.literal('drawRunCancelled'),
+    playerId: playerIdSchema,
+    cancelled: z.number().int().min(2).max(200),
   }),
   z.object({ type: z.literal('plusThreePlayed'), playerId: playerIdSchema }),
   z.object({
