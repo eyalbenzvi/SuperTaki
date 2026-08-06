@@ -243,6 +243,23 @@ export const lobbyPlayerSchema = z.object({
   absentSince: z.number().int().min(0).optional(),
   /** True once this seat has left the round for good. */
   left: z.boolean().optional(),
+  /** A robot seat: there is no device behind it, and never will be. */
+  bot: z.boolean().optional(),
+  /**
+   * A robot is playing this human's seat while nobody is answering for it.
+   *
+   * Optional, like everything added after protocol 5: a reader that does not know
+   * the field drops it and loses the badge, not the game.
+   */
+  standIn: z.boolean().optional(),
+  /**
+   * A robot played this seat at some point in the round that just ended.
+   *
+   * Kept separate from `standIn`, which is about right now: a round decided partly by
+   * a robot reads differently from one that was not, and by the time the standings are
+   * up the player is usually back — so the live flag would have cleared.
+   */
+  robotPlayed: z.boolean().optional(),
 });
 
 export const lobbySnapshotSchema = z.object({
@@ -276,6 +293,13 @@ export const lobbySnapshotSchema = z.object({
   abandonVotes: z.array(playerIdSchema).max(6).readonly().optional(),
   /** Host generation, so a client can follow a handover. */
   generation: z.number().int().min(0).max(16).optional(),
+  /**
+   * Whether this table lets a robot play a seat nobody is answering for.
+   *
+   * On the wire because it is a fact about the room every player is entitled to
+   * know, not only the host who set it.
+   */
+  standInEnabled: z.boolean().optional(),
 });
 
 export type LobbySnapshot = z.infer<typeof lobbySnapshotSchema>;

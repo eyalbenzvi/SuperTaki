@@ -29,7 +29,8 @@ export type IconName =
   | 'remove'
   | 'hourglass'
   | 'trophy'
-  | 'link';
+  | 'link'
+  | 'robot';
 
 /** Paths are stroked, not filled, so one weight reads at every size. */
 const PATHS: Record<IconName, ReactNode> = {
@@ -144,6 +145,14 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1" />
       <path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1" />
+    </>
+  ),
+  // A head with an aerial: the one glyph nobody mistakes for a person.
+  robot: (
+    <>
+      <rect x="4" y="8" width="16" height="12" rx="3" />
+      <path d="M12 3v5M9 20v1M15 20v1" />
+      <path d="M9 13h.01M15 13h.01" />
     </>
   ),
 };

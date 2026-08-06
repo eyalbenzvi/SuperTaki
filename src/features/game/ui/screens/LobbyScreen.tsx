@@ -8,7 +8,7 @@ import { useT } from '../../../../app/useT.ts';
 import { canShare, copyText, shareLink } from '../../../../lib/share.ts';
 import { MAX_PLAYERS, MIN_PLAYERS } from '../../engine/state.ts';
 import type { LobbyPlayer } from '../../network/protocol.ts';
-import { everyoneConnected, isHost, seatedPlayers } from '../../state/selectors.ts';
+import { everyoneConnected, isHost, seatedPlayers, standInEnabled } from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 import { HealthBadge } from '../components/TableParts.tsx';
@@ -44,7 +44,9 @@ export function LobbyScreen(): ReactNode {
 
   const inviteUrl = state.inviteUrl;
   const roomCode = state.roomCode;
+  const roomLimit = state.lobby?.maxPlayers ?? MAX_PLAYERS;
   const canStart = host && players.length >= MIN_PLAYERS;
+  const standIn = standInEnabled(state);
 
   useEffect(() => {
     if (!copied) {
@@ -180,7 +182,13 @@ export function LobbyScreen(): ReactNode {
                   {t('common.host')}
                 </Badge>
               ) : null}
-              <HealthBadge health={player.health} t={t} />
+              {/* A robot is always here, so a connection badge beside it would be
+                  reporting on a connection that does not exist. */}
+              {player.bot ? (
+                <Badge icon="robot">{t('robot.badge')}</Badge>
+              ) : (
+                <HealthBadge health={player.health} t={t} />
+              )}
               {host && !player.isHost ? (
                 <Button
                   iconOnly
@@ -196,6 +204,17 @@ export function LobbyScreen(): ReactNode {
             </li>
           ))}
         </ul>
+
+        {host ? (
+          <div className="stack stack--tight">
+            <Button icon="robot" onClick={state.addBot} disabled={players.length >= roomLimit}>
+              {t('robot.add')}
+            </Button>
+            <span className="field__hint">
+              {players.length >= roomLimit ? t('robot.roomFull') : t('robot.addHint')}
+            </span>
+          </div>
+        ) : null}
 
         {players.length < MIN_PLAYERS ? (
           <p className="text-small muted">{t('lobby.alone')}</p>
@@ -220,6 +239,26 @@ export function LobbyScreen(): ReactNode {
               }))}
             />
             <span className="field__hint">{t('lobby.maxPlayersLocked')}</span>
+
+            {/*
+              Playing somebody's hand for them is the table's decision, so it is
+              made here, in the open, where every player can see the answer in the
+              lobby snapshot rather than discovering it mid-round.
+            */}
+            <span className="field__label">{t('robot.standInLabel')}</span>
+            <SegmentedControl<'on' | 'off'>
+              block
+              label={t('robot.standInLabel')}
+              value={standIn ? 'on' : 'off'}
+              onChange={(value) => {
+                state.setStandInEnabled(value === 'on');
+              }}
+              options={[
+                { value: 'on', label: t('common.on') },
+                { value: 'off', label: t('common.off') },
+              ]}
+            />
+            <span className="field__hint">{standIn ? t('robot.standInHint') : t('robot.standInOff')}</span>
           </div>
         </details>
       ) : null}

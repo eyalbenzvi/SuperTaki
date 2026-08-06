@@ -36,6 +36,9 @@ export const en = {
   'common.host': 'Host',
   'common.leave': 'Leave',
 
+  'common.on': 'On',
+  'common.off': 'Off',
+
   'home.create': 'Create game',
   'home.join': 'Join game',
   'home.howTitle': 'How it works',
@@ -316,6 +319,20 @@ export const en = {
   'reject.nothingToSkip': 'That player is not the one the table is waiting for.',
   'reject.tablePaused': 'The table is paused. Nothing moves until it carries on.',
   'reject.alreadyLeft': 'That player has already left the round.',
+
+  'robot.badge': 'Robot',
+  'robot.add': 'Add a robot',
+  'robot.addHint': 'A robot takes a seat and plays like anybody else. Two seats is a game.',
+  'robot.roomFull': 'The table is full. Raise the limit to add a robot.',
+  'robot.standInLabel': 'Let a robot play for a missing player',
+  'robot.standInHint':
+    'When somebody stops answering, a robot plays their hand so the round keeps moving. They get their seat back the moment they come back.',
+  'robot.standInOff': 'A missing player is skipped and nobody plays their hand.',
+  'robot.playingFor': 'A robot is playing for {name}',
+  'robot.playingForBody':
+    'Their hand is being played until they come back. It is their seat, not the robot\u2019s.',
+  'robot.standInNow': 'Let a robot play',
+  'robot.standInStop': 'Stop the robot',
 
   'absent.title': 'Waiting for {name}',
   'absent.holdingSeat': 'Their seat is being held: {time} left.',

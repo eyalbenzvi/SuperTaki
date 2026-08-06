@@ -29,6 +29,29 @@ export default defineConfig({
           functions: 95,
           lines: 95,
         },
+        /*
+         * The robot's brain is pure logic with no excuse for gaps, and it is held to
+         * the engine's own bar. Its driver owns timers and is held slightly lower:
+         * the parts a test cannot reach are the platform's, not the decision's.
+         */
+        'src/features/game/bot/policy.ts': {
+          statements: 95,
+          branches: 90,
+          functions: 95,
+          lines: 95,
+        },
+        'src/features/game/bot/view.ts': {
+          statements: 95,
+          branches: 90,
+          functions: 95,
+          lines: 95,
+        },
+        'src/features/game/bot/runner.ts': {
+          statements: 90,
+          branches: 80,
+          functions: 90,
+          lines: 90,
+        },
         'src/features/game/network/protocol.ts': {
           statements: 90,
           branches: 85,

@@ -3,8 +3,12 @@ import { createPlayerId, createResumeToken, randomHex, randomInt } from '../../.
 import { onSleep, onWake } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName, uniquifyDisplayName } from '../../../lib/sanitize.ts';
+import { robotName } from '../bot/names.ts';
+import { BotRunner, type CancelPause } from '../bot/runner.ts';
+import type { BotMove, BotMoveKind } from '../bot/policy.ts';
+import { botViewFor } from '../bot/view.ts';
 import { applyCommand, createGame, currentPlayer } from '../engine/engine.ts';
-import { seedFromString } from '../engine/prng.ts';
+import { createRng, nextFloat, seedFromString, type RngState } from '../engine/prng.ts';
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -30,6 +34,7 @@ import { sessionError, type Session, type SessionClosedReason, type SessionObser
 import {
   ABSENT_TURN_GRACE_CLOSED_MS,
   ABSENT_TURN_GRACE_UNSTABLE_MS,
+  BOT_STALL_MS,
   CHANNEL_DEAD_MS,
   HANDOFF_TIMEOUT_MS,
   HOST_SELF_DEMOTE_MS,
@@ -38,6 +43,8 @@ import {
   LOBBY_GRACE_MS,
   RESUME_ATTEMPT_SUPPRESSES_SKIP_MS,
   SEAT_GRACE_MS,
+  STAND_IN_ABSENT_MS,
+  STAND_IN_IDLE_MS,
   UNSTABLE_AFTER_MISSES,
   probeInterval,
   silentAfterMs,
@@ -62,8 +69,56 @@ interface Seat {
   left: boolean;
   /** When this seat last *tried* to come back — far better evidence than silence. */
   lastResumeAttemptAt: number | null;
+  /**
+   * A seat with no device behind it: a robot the table added on purpose.
+   *
+   * It is always present, is never probed, and none of the machinery that holds,
+   * skips or vacates an absent seat applies to it — there is nobody to wait for.
+   */
+  bot: boolean;
+  /**
+   * Set while a robot is playing a *human's* seat, and why.
+   *
+   * Nothing else about the seat changes: the credential, the resume token and the
+   * name stay exactly as they were, and the moment its owner speaks they have it
+   * back. A stand-in is a favour the table does somebody, not a removal.
+   */
+  standIn: 'absent' | 'idle' | null;
+  /**
+   * When this seat last asked for something a human has to ask for.
+   *
+   * Deliberately *not* `lastSeenAt`. A phone in a pocket answers every heartbeat
+   * perfectly, so silence on the wire proves nothing about whether anybody is
+   * looking — and keying "they are not answering" on a clock that a `pong` resets
+   * would have made the idle stand-in release itself every five seconds.
+   */
+  lastIntentAt: number | null;
   /** Whether this seat has already been skipped once without returning. */
   skippedWhileAway: boolean;
+  /**
+   * The kind of stand-in the table has stopped on this seat, or `null`.
+   *
+   * Without it, "stop the robot" was undone by the very next heartbeat: the sweeps
+   * that start a stand-in key on how long the seat has been away or quiet, and
+   * neither changes when somebody says no.
+   *
+   * It records *which* kind was refused, because the two are different decisions. A
+   * table that stops a robot covering somebody's silence has said nothing about what
+   * should happen when that person's phone actually dies — and an untyped flag
+   * silently disabled absence cover for the rest of the round.
+   */
+  standInDeclined: 'absent' | 'idle' | null;
+  /** Whether a robot played this seat at any point in the current round. */
+  robotPlayedThisRound: boolean;
+  /**
+   * When the current stand-in began.
+   *
+   * The stall deadline is measured from this rather than from the table's own
+   * `waitingSince`, which during a +3 belongs to the seat that played the card and is
+   * by then already older than the deadline — so a robot that had just been given the
+   * seat was given no time at all to answer.
+   */
+  standInSince: number | null;
   /**
    * Set when the player said goodbye rather than merely going quiet.
    *
@@ -152,9 +207,13 @@ export interface HostRestoreState {
     readonly isHost: boolean;
     readonly resumeToken: string;
     readonly left?: boolean;
+    /** A robot seat. Travels with the room, or the seat comes back unfillable. */
+    readonly bot?: boolean;
     readonly lastRequestId?: string | null;
     readonly lastRequestVersion?: number | null;
   }[];
+  /** Whether the table lets a robot play for somebody who is not answering. */
+  readonly standInEnabled?: boolean;
   readonly game: GameState | null;
 }
 
@@ -165,6 +224,12 @@ export interface HostSessionOptions {
   readonly maxPlayers: number;
   readonly tableLanguage: 'he' | 'en';
   readonly observer: SessionObserver;
+  /**
+   * Whether a robot may play a seat nobody is answering for. Defaults to on: a
+   * table that has been skipping the same seat for three orbits has stopped being
+   * a game, and the seat's owner gets it back the instant they speak.
+   */
+  readonly standInEnabled?: boolean;
   readonly now?: () => number;
   readonly seedFactory?: () => number;
   readonly heartbeatIntervalMs?: number;
@@ -173,6 +238,17 @@ export interface HostSessionOptions {
   /** Called whenever the room state changes, so it can be persisted. */
   readonly onSnapshot?: (state: HostRestoreState) => void;
   readonly generation?: number;
+  /**
+   * Test seams for the robots: their timer and their pace.
+   *
+   * Every robot move goes through a pause, which is what makes a table readable —
+   * and what would make a test of a whole round hundreds of macrotasks long. With
+   * these a test pumps the pauses by hand and gets the same round every time.
+   */
+  readonly bot?: {
+    readonly schedule?: (run: () => void, ms: number) => CancelPause;
+    readonly pauseMs?: (kind: BotMoveKind, inSequence: boolean) => number;
+  };
 }
 
 /**
@@ -234,6 +310,19 @@ export class HostSession implements Session {
    */
   private readonly lastCardSince = new Map<string, number>();
 
+  /** Whether the table lets a robot play a seat nobody is answering for. */
+  private standInEnabled: boolean;
+  private readonly bots: BotRunner;
+  /**
+   * One random stream per robot seat, reseeded when a round is dealt.
+   *
+   * Separate from the game's own `RngState` on purpose: sharing it would make the
+   * *presence* of a robot change the deal. Per seat rather than one shared stream,
+   * so a robot's choices do not depend on how many decisions the others happened to
+   * take first — which is what makes a robot-only round replay exactly.
+   */
+  private readonly botRng = new Map<string, RngState>();
+
   constructor(
     readonly roomCode: string,
     options: HostSessionOptions,
@@ -252,6 +341,7 @@ export class HostSession implements Session {
     this.onSnapshot = options.onSnapshot ?? null;
     this.fixedIntervalMs = options.heartbeatIntervalMs ?? null;
     this.generation = options.generation ?? 0;
+    this.standInEnabled = options.restore?.standInEnabled ?? options.standInEnabled ?? true;
 
     const restore = options.restore;
     if (restore) {
@@ -275,6 +365,9 @@ export class HostSession implements Session {
       this.versionFloor = restore.versionFloor;
       this.round = restore.round;
       for (const seat of restore.seats) {
+        // A robot has nothing to reconnect: it is here because the room is here.
+        const bot = seat.bot === true;
+        const present = seat.isHost || bot;
         this.seats.push({
           playerId: seat.playerId,
           name: seat.name,
@@ -283,11 +376,24 @@ export class HostSession implements Session {
           resumeToken: seat.resumeToken,
           peerId: null,
           lastSeenAt: this.now(),
-          // Everyone is away until they come back, including nobody's fault.
-          health: seat.isHost ? 'connected' : 'disconnected',
-          absentSince: seat.isHost ? null : this.now(),
+          // Everyone else is away until they come back, including nobody's fault.
+          health: present ? 'connected' : 'disconnected',
+          absentSince: present ? null : this.now(),
           left: seat.left === true,
           lastResumeAttemptAt: null,
+          standInDeclined: null,
+          standInSince: null,
+          robotPlayedThisRound: bot,
+          bot,
+          /*
+           * A stand-in is deliberately not restored. This host has just lost every
+           * connection it had, so it knows nothing about who is still there; the
+           * ordinary thresholds work that out again from scratch. Carrying a stale
+           * `'idle'` across a restart would be a claim about a device the new host
+           * has never spoken to.
+           */
+          standIn: null,
+          lastIntentAt: null,
           skippedWhileAway: false,
           saidGoodbye: false,
           lastRequestId: seat.lastRequestId ?? null,
@@ -311,6 +417,12 @@ export class HostSession implements Session {
         absentSince: null,
         left: false,
         lastResumeAttemptAt: null,
+        standInDeclined: null,
+        standInSince: null,
+        robotPlayedThisRound: false,
+        bot: false,
+        standIn: null,
+        lastIntentAt: null,
         skippedWhileAway: false,
         saidGoodbye: false,
         lastRequestId: null,
@@ -318,6 +430,25 @@ export class HostSession implements Session {
         probes: new ProbeTracker(),
       });
     }
+
+    this.bots = new BotRunner({
+      view: (playerId) => {
+        const seat = this.seatFor(playerId);
+        if (!this.game || this.phase !== 'inGame' || !seat || seat.left) {
+          return null;
+        }
+        // The same two projections a remote client is sent, and nothing else.
+        return botViewFor(this.game, playerId, (id) => this.seatCanAnswer(id));
+      },
+      controlled: () =>
+        this.robotSeats().map((seat) => ({ playerId: seat.playerId, standIn: seat.standIn !== null })),
+      blocked: () =>
+        this.destroyed || this.pausedBy !== null || this.phase !== 'inGame' || this.game === null,
+      submit: (playerId, move) => this.submitBotMove(playerId, move),
+      random: (playerId) => this.botRandom(playerId),
+      ...(options.bot?.schedule ? { schedule: options.bot.schedule } : {}),
+      ...(options.bot?.pauseMs ? { pauseMs: options.bot.pauseMs } : {}),
+    });
 
     this.unsubscribes.push(
       this.transport.onIncoming((connection) => {
@@ -359,6 +490,7 @@ export class HostSession implements Session {
     }
     this.startWatchdog();
     this.persist();
+    this.bots.schedule();
   }
 
   // ---------------------------------------------------------------- messaging
@@ -425,7 +557,12 @@ export class HostSession implements Session {
     const seat = this.seatFor(onTurn.id);
     return {
       playerId: onTurn.id,
-      reason: seat && seat.health !== 'connected' ? 'absent' : 'turn',
+      /*
+       * A seat a robot is playing is never reported as absent, however gone its
+       * owner is. Nothing is being waited for: the table is moving, and telling
+       * every screen it is holding a seat would contradict what they can see.
+       */
+      reason: seat && seat.health !== 'connected' && !this.robotControls(seat) ? 'absent' : 'turn',
     };
   }
 
@@ -441,6 +578,9 @@ export class HostSession implements Session {
         seat: seat.seat,
         ...(seat.absentSince !== null ? { absentSince: seat.absentSince } : {}),
         ...(seat.left ? { left: true } : {}),
+        ...(seat.bot ? { bot: true } : {}),
+        ...(seat.standIn !== null ? { standIn: true } : {}),
+        ...(seat.robotPlayedThisRound && !seat.bot ? { robotPlayed: true } : {}),
       }));
     const waiting = this.waiting();
     return {
@@ -459,6 +599,7 @@ export class HostSession implements Session {
       waitingSince: this.waitingSince,
       abandonVotes: [...this.abandonVotes],
       generation: this.generation,
+      standInEnabled: this.standInEnabled,
     };
   }
 
@@ -503,9 +644,11 @@ export class HostSession implements Session {
     if (index >= 0) {
       this.seats.splice(index, 1);
       this.resequenceSeats();
+      this.botRng.delete(playerId);
     }
     this.emitLobby();
     this.persist();
+    this.bots.schedule();
   }
 
   private resequenceSeats(): void {
@@ -608,6 +751,11 @@ export class HostSession implements Session {
     seat.health = 'connected';
     seat.absentSince = null;
     seat.skippedWhileAway = false;
+    // A refusal belongs to the absence it was made about, and that absence is over.
+    seat.standInDeclined = null;
+    // They are back, so the robot that was holding the fort stands down. The
+    // stand-in exists for an empty chair, not for a slow one.
+    this.endStandIn(seat);
     record('seatReturned', seat.name, { seat: seat.seat });
   }
 
@@ -666,22 +814,27 @@ export class HostSession implements Session {
         return;
       case 'action':
         this.touch(entry);
+        this.stampIntent(entry.playerId);
         this.handleAction(entry, message.payload);
         return;
       case 'playAgainVote':
         this.touch(entry);
+        this.stampIntent(entry.playerId);
         this.handlePlayAgainVote(entry, message.payload.agree);
         return;
       case 'pauseRequest':
         this.touch(entry);
+        this.stampIntent(entry.playerId);
         this.setPaused(message.payload.paused ? (entry.playerId ?? null) : null);
         return;
       case 'abandonVote':
         this.touch(entry);
+        this.stampIntent(entry.playerId);
         this.handleAbandonVote(entry, message.payload.agree);
         return;
       case 'nudge':
         this.touch(entry);
+        this.stampIntent(entry.playerId);
         this.handleNudge(entry, message.payload.targetPlayerId);
         return;
       case 'handoffAccepted':
@@ -706,6 +859,36 @@ export class HostSession implements Session {
     this.markPresent(seat, true);
     if (wasAway) {
       this.emitLobby();
+      this.persist();
+      this.bots.schedule();
+    }
+  }
+
+  /**
+   * Records that somebody actually asked for something.
+   *
+   * The distinction from {@link touch} is the whole of the idle stand-in: a
+   * heartbeat says a device is powered on, an intent says a person is holding it.
+   * A robot that stepped in for a silent seat stands down here, at once — before
+   * whatever the player asked for is even applied, so their own move is the first
+   * thing that happens when they come back.
+   */
+  private stampIntent(playerId: string | null): void {
+    if (playerId === null) {
+      return;
+    }
+    const seat = this.seatFor(playerId);
+    if (!seat) {
+      return;
+    }
+    seat.lastIntentAt = this.now();
+    // A refusal belongs to the silence it was made about, and this ends that silence.
+    seat.standInDeclined = null;
+    if (seat.standIn !== null) {
+      this.endStandIn(seat);
+      this.emitLobby();
+      this.persist();
+      this.bots.schedule();
     }
   }
 
@@ -753,6 +936,12 @@ export class HostSession implements Session {
       absentSince: null,
       left: false,
       lastResumeAttemptAt: null,
+      standInDeclined: null,
+      standInSince: null,
+      robotPlayedThisRound: false,
+      bot: false,
+      standIn: null,
+      lastIntentAt: this.now(),
       skippedWhileAway: false,
       saidGoodbye: false,
       lastRequestId: null,
@@ -779,7 +968,8 @@ export class HostSession implements Session {
 
   private handleResumeRequest(entry: ConnectionRecord, playerId: string, resumeToken: string): void {
     const seat = this.seatFor(playerId);
-    if (!seat || seat.isHost) {
+    // A robot's seat is not a seat anybody can come back to, and nor is the host's.
+    if (!seat || seat.isHost || seat.bot) {
       this.rejectJoin(entry.connection, 'unknownSeat');
       return;
     }
@@ -815,7 +1005,12 @@ export class HostSession implements Session {
     seat.absentSince = null;
     seat.skippedWhileAway = false;
     seat.saidGoodbye = false;
+    seat.standInDeclined = null;
     seat.lastSeenAt = this.now();
+    // Coming back is the strongest intent there is, and it takes the seat back off
+    // whichever robot was keeping it warm.
+    seat.lastIntentAt = this.now();
+    this.endStandIn(seat);
     seat.probes.reset();
     record('seatReturned', seat.name, { seat: seat.seat, resumed: true });
 
@@ -829,6 +1024,7 @@ export class HostSession implements Session {
       });
     }
     this.persist();
+    this.bots.schedule();
     log.debug('resumed player', seat.name);
   }
 
@@ -842,6 +1038,12 @@ export class HostSession implements Session {
         this.resequenceSeats();
       } else if (index >= 0) {
         const seat = this.seats[index] as Seat;
+        // Saying goodbye is an intent like any other, so a robot that was standing
+        // in for their silence stops — and `saidGoodbye` keeps another one from
+        // starting, because playing the hand of somebody who said they were done is
+        // not a favour.
+        seat.lastIntentAt = this.now();
+        this.endStandIn(seat);
         this.markAbsent(seat);
         /*
          * A goodbye is a strong hint, not a removal. It shortens the wait before
@@ -859,6 +1061,7 @@ export class HostSession implements Session {
     entry.connection.close();
     this.emitLobby();
     this.persist();
+    this.bots.schedule();
   }
 
   // -------------------------------------------------------------------- game
@@ -896,11 +1099,20 @@ export class HostSession implements Session {
       // A mis-tapped "leave" in one round must not cost this player their grace for
       // the rest of the evening.
       seat.saidGoodbye = false;
+      // Every seat starts the round its own. A stand-in from the last one would
+      // hand a robot a hand nobody had asked it to play.
+      seat.standIn = null;
+      seat.standInSince = null;
+      seat.standInDeclined = null;
+      // A fresh round is nobody's to be judged by the last one.
+      seat.robotPlayedThisRound = seat.bot;
     }
+    this.reseedBots();
     this.emitLobby();
     this.broadcastGameState();
     this.emitEvents(result.events);
     this.persist();
+    this.bots.schedule();
   }
 
   /**
@@ -972,6 +1184,9 @@ export class HostSession implements Session {
 
   /** Applies a local (host player) action through the same authoritative path. */
   submitLocalAction(action: GameAction): void {
+    // The host is a player too, and their own tap is the intent that takes their
+    // seat back from a robot that had stepped in for them.
+    this.stampIntent(this.localPlayerId);
     this.applyAction(this.localPlayerId, action, null);
   }
 
@@ -1048,21 +1263,34 @@ export class HostSession implements Session {
     this.applyAction(entry.playerId, payload.action, entry, payload.requestId);
   }
 
+  /**
+   * The one authoritative path, for a remote player, the host, and a robot alike.
+   *
+   * `origin` changes nothing about what is legal — a robot is refused exactly what
+   * a player would be refused. It changes only who is *told*: a robot's rejection
+   * goes to the diagnostics log, because routing it to the observer would raise a
+   * toast on the host's own screen for somebody else's move and release the lock on
+   * whatever the host had in flight.
+   *
+   * Returns whether the command was accepted, which is what lets the driver drop a
+   * duty the table will not take instead of asking again on a loop.
+   */
   private applyAction(
     playerId: string,
     action: GameAction,
     entry: ConnectionRecord | null,
     requestId?: string,
-  ): void {
+    origin: 'player' | 'bot' = 'player',
+  ): boolean {
     if (!this.game || this.phase !== 'inGame') {
-      return;
+      return false;
     }
     if (this.pausedBy !== null) {
       // A pause everybody can see is worth honouring, or it is decoration — and it
       // needs its own code, because telling a player the round is over when the
       // table is merely waiting is worse than saying nothing.
-      this.rejectAction(entry, 'tablePaused', requestId);
-      return;
+      this.rejectAction(entry, 'tablePaused', requestId, origin);
+      return false;
     }
     /*
      * Two reasons a catch is refused before the engine ever sees it, both of them
@@ -1079,13 +1307,15 @@ export class HostSession implements Session {
      */
     if (action.type === 'catchLastCard') {
       const target = this.seatFor(action.targetId);
-      if (target && target.health !== 'connected') {
-        this.rejectAction(entry, 'nothingToCatch', requestId);
-        return;
+      // A seat a robot is playing *can* shout, so it is catchable like anybody
+      // else. The exemption is for a chair nobody is sitting in.
+      if (target && target.health !== 'connected' && !this.robotControls(target)) {
+        this.rejectAction(entry, 'nothingToCatch', requestId, origin);
+        return false;
       }
       if (this.withinLastCardGrace(action.targetId)) {
-        this.rejectAction(entry, 'nothingToCatch', requestId);
-        return;
+        this.rejectAction(entry, 'nothingToCatch', requestId, origin);
+        return false;
       }
     }
     const command: GameCommand = buildCommand(playerId, action);
@@ -1093,8 +1323,8 @@ export class HostSession implements Session {
     const result = applyCommand(this.game, command);
     if (!result.ok) {
       log.debug('rejected action', playerId, action.type, result.rejection.code);
-      this.rejectAction(entry, result.rejection.code, requestId);
-      return;
+      this.rejectAction(entry, result.rejection.code, requestId, origin);
+      return false;
     }
 
     this.game = result.state;
@@ -1123,10 +1353,22 @@ export class HostSession implements Session {
       this.observer({ type: 'actionAccepted', requestId, version: result.state.version });
     }
     this.afterCommit();
+    return true;
   }
 
   /** Answers one player, never the table: a rejection is nobody else's business. */
-  private rejectAction(entry: ConnectionRecord | null, code: RejectionCode, requestId?: string): void {
+  private rejectAction(
+    entry: ConnectionRecord | null,
+    code: RejectionCode,
+    requestId?: string,
+    origin: 'player' | 'bot' = 'player',
+  ): void {
+    if (origin === 'bot') {
+      // Nobody to tell. A robot's refused move is a fact about this build, so it
+      // goes where facts about this build go.
+      record('suspicion', `robot move refused: ${code}`);
+      return;
+    }
     if (entry) {
       const spoken = entry.protocolVersion < 4 ? (CODES_ADDED_IN_V4[code] ?? code) : code;
       this.send(entry.connection, 'actionRejected', {
@@ -1149,12 +1391,14 @@ export class HostSession implements Session {
       this.playAgainVotes.clear();
       this.abandonVotes.clear();
       this.pausedBy = null;
+      this.autoVotePlayAgain();
       this.emitLobby();
       this.emitPlayAgain();
     } else {
       this.emitLobby();
     }
     this.persist();
+    this.bots.schedule();
   }
 
   /** Runs a host-only engine command (skip, or a departure). */
@@ -1205,8 +1449,12 @@ export class HostSession implements Session {
       // Marked only once the engine has agreed, or the lobby would say a seat had
       // left while the engine kept dealing it turns.
       seat.left = true;
+      // A seat that has left the round is not a seat to play: the engine refuses
+      // every command from it, so a robot left pointing at it would ask for ever.
+      this.endStandIn(seat);
       this.emitLobby();
       this.persist();
+      this.bots.schedule();
     }
     return applied;
   }
@@ -1222,6 +1470,8 @@ export class HostSession implements Session {
     this.broadcast('paused', { pausedBy: by });
     this.observer({ type: 'paused', pausedBy: by });
     this.emitLobby();
+    // A hold stops the robots with everybody else, and letting go starts them again.
+    this.bots.schedule();
   }
 
   private handleAbandonVote(entry: ConnectionRecord, agree: boolean): void {
@@ -1232,6 +1482,7 @@ export class HostSession implements Session {
   }
 
   voteAbandon(agree: boolean): void {
+    this.stampIntent(this.localPlayerId);
     this.setAbandonVote(this.localPlayerId, agree);
   }
 
@@ -1244,7 +1495,16 @@ export class HostSession implements Session {
     } else {
       this.abandonVotes.delete(playerId);
     }
-    const present = this.seats.filter((seat) => seat.health === 'connected' && !seat.left);
+    /*
+     * Only the people. Stopping a round is a decision, and a robot has no view
+     * about it — while a seat a robot is *standing in for* is by definition one
+     * nobody is answering for, which is very often the reason the vote was called.
+     * Counting either of them would let a robot veto the one escape hatch the table
+     * has.
+     */
+    const present = this.seats.filter(
+      (seat) => seat.health === 'connected' && !seat.left && !this.robotControls(seat),
+    );
     const everyone = present.length > 0 && present.every((seat) => this.abandonVotes.has(seat.playerId));
     this.emitLobby();
     if (!everyone || !this.game) {
@@ -1273,6 +1533,7 @@ export class HostSession implements Session {
   }
 
   nudge(targetPlayerId: string): void {
+    this.stampIntent(this.localPlayerId);
     const target = this.connectionForPlayer(targetPlayerId);
     if (target?.connection.open) {
       this.send(target.connection, 'nudged', { fromPlayerId: this.localPlayerId });
@@ -1294,6 +1555,7 @@ export class HostSession implements Session {
   }
 
   votePlayAgain(agree: boolean): void {
+    this.stampIntent(this.localPlayerId);
     if (this.phase !== 'finished') {
       return;
     }
@@ -1305,12 +1567,43 @@ export class HostSession implements Session {
     this.maybeStartNextRound();
   }
 
+  /**
+   * How many people the next round is waiting on.
+   *
+   * People, not seats. A robot's agreement is recorded so it can never block a round,
+   * but publishing it made the standings say "2 of 2 agreed" while nothing happened —
+   * telling the one person still there that everybody was ready and then waiting for
+   * them. What they need to know is that the table is waiting for *them*.
+   */
   private requiredVotes(): number {
-    return this.seats.filter((seat) => seat.health !== 'disconnected').length;
+    return this.seats.filter((seat) => seat.health !== 'disconnected' && !this.robotControls(seat)).length;
+  }
+
+  /**
+   * A robot always wants to play again.
+   *
+   * It has to: a robot is counted among the seats a new round needs the agreement
+   * of, and a table with one would otherwise never get a second deal. The same goes
+   * for a seat a robot is standing in for — that seat is not answering, which is
+   * precisely why the robot is there.
+   */
+  private autoVotePlayAgain(): void {
+    for (const seat of this.seats) {
+      // Only seats whose agreement is counted. A stand-in for a seat that is *away*
+      // is not in `requiredVotes`, and voting for it anyway put "2 of 1 ready" on the
+      // standings screen.
+      if (this.robotControls(seat) && seat.health !== 'disconnected') {
+        this.playAgainVotes.add(seat.playerId);
+      }
+    }
   }
 
   private emitPlayAgain(): void {
-    const agreed = [...this.playAgainVotes];
+    // Robot agreements are the host's bookkeeping, not a line on anybody's screen.
+    const agreed = [...this.playAgainVotes].filter((playerId) => {
+      const seat = this.seatFor(playerId);
+      return seat !== undefined && !this.robotControls(seat);
+    });
     const required = this.requiredVotes();
     this.observer({ type: 'playAgain', agreed, required });
     this.broadcast('playAgainState', { agreed, required });
@@ -1453,6 +1746,20 @@ export class HostSession implements Session {
         }
         continue;
       }
+      if (seat.bot) {
+        /*
+         * There is nothing to probe and nobody to convict. A robot seat was being
+         * marked absent by the very next tick — it has no connection — and the table
+         * would then hold, skip and eventually vacate a seat that was playing
+         * perfectly well.
+         */
+        if (seat.health !== 'connected' || seat.absentSince !== null) {
+          seat.health = 'connected';
+          seat.absentSince = null;
+          changed = true;
+        }
+        continue;
+      }
       const entry = this.connectionForPlayer(seat.playerId);
       if (!entry || !entry.connection.open) {
         if (seat.health !== 'disconnected') {
@@ -1525,7 +1832,12 @@ export class HostSession implements Session {
     } else if (this.idleWaitBecameNudgeable(now)) {
       this.emitLobby();
     }
+    this.sweepStandIns(now);
     this.tickAbsence(now);
+    this.tickRobotStall(now);
+    // The safety net for the robots: every path that changes the table calls this
+    // too, and this is the one that runs even when nothing changed at all.
+    this.bots.schedule();
   }
 
   /**
@@ -1554,6 +1866,14 @@ export class HostSession implements Session {
     // holding.
     if (this.waiting().reason !== 'turn') {
       return false;
+    }
+    // And a robot cannot be nudged into paying attention.
+    const waitingOn = this.waiting().playerId;
+    if (waitingOn !== null) {
+      const seat = this.seatFor(waitingOn);
+      if (seat && this.robotControls(seat)) {
+        return false;
+      }
     }
     this.idleWaitBroadcastFor = since;
     return true;
@@ -1599,10 +1919,47 @@ export class HostSession implements Session {
     if (pending) {
       for (const awaited of pending.awaiting) {
         const seat = this.seatFor(awaited);
-        if (seat && seat.health === 'disconnected') {
+        if (!seat) {
+          continue;
+        }
+        if (this.robotControls(seat)) {
+          /*
+           * A robot answers a +3 itself, and answering is better for the seat than
+           * declining — so it is given a moment to. The deadline stays, because this
+           * branch is the only thing that unfreezes the worst stall in the game and
+           * "a robot will handle it" is not a guarantee a stalled timer keeps.
+           */
+          const since = Math.max(this.waitingSince ?? 0, seat.standInSince ?? 0);
+          if (since > 0 && now - since > BOT_STALL_MS) {
+            record('suspicion', 'robot did not answer a +3; declining for it');
+            this.applyHostCommand({ type: 'passBreak', playerId: awaited });
+            return;
+          }
+          continue;
+        }
+        if (seat.health === 'disconnected') {
           // Declining for them produces exactly what a present player's decline
           // produces, and — deliberately — no event naming who held a breaker.
           this.applyHostCommand({ type: 'passBreak', playerId: awaited });
+          return;
+        }
+        /*
+         * And the case that froze a table indefinitely: a seat that is *here*,
+         * answering every heartbeat, and tapping nothing. The turn-based silence
+         * check cannot see it, because while a +3 is open the seat on turn is the
+         * player who played it — so this window needs its own deadline. A robot takes
+         * the seat if the table allows one (it will break the +3, which is what its
+         * owner would want); otherwise the host declines for them, which is what
+         * every other seat is already waiting for.
+         */
+        const silentSince = Math.max(this.waitingSince ?? 0, seat.lastIntentAt ?? 0);
+        if (silentSince > 0 && now - silentSince >= STAND_IN_IDLE_MS) {
+          if (this.standInEnabled && seat.standInDeclined !== 'idle') {
+            this.beginStandIn(seat, 'idle');
+          } else {
+            record('suspicion', 'a +3 window went unanswered; declining for the seat');
+            this.applyHostCommand({ type: 'passBreak', playerId: awaited });
+          }
           return;
         }
       }
@@ -1614,7 +1971,17 @@ export class HostSession implements Session {
       return;
     }
     const seat = this.seatFor(onTurn.id);
-    if (!seat || seat.health === 'connected' || seat.left) {
+    if (!seat || seat.left) {
+      return;
+    }
+    if (this.robotControls(seat)) {
+      // A robot is playing this seat. Its own backstop is the stall watchdog; the
+      // absence machinery has nothing to add and must not skip a seat that is
+      // being played.
+      return;
+    }
+    if (seat.health === 'connected') {
+      this.maybeStandInForSilence(seat, now);
       return;
     }
     if (
@@ -1643,6 +2010,363 @@ export class HostSession implements Session {
       return;
     }
     this.skipAbsentTurn(onTurn.id);
+  }
+
+  /**
+   * Hands a long-absent seat to a robot, if the table has asked for that.
+   *
+   * Swept across every seat rather than checked when its turn comes round, which was
+   * the first version and was wrong: a seat that has been skipped once is skipped
+   * again the instant its turn arrives, so the only moment the check could fire was
+   * the one moment it was always too early for. A seat is also more than its turn —
+   * a +3 to answer, a last card to declare — and a robot that only woke up on turn
+   * would sit through all of it.
+   *
+   * Deliberately layered *on top of* the free skip rather than replacing it: a blip
+   * is still answered by the skip that costs its owner nothing, and only a real
+   * absence — well past three orbits of skipping — brings a robot in.
+   */
+  private sweepStandIns(now: number): void {
+    if (!this.standInEnabled || this.phase !== 'inGame' || this.pausedBy !== null) {
+      return;
+    }
+    for (const seat of this.seats) {
+      if (
+        seat.bot ||
+        seat.left ||
+        seat.standIn !== null ||
+        // The table already said no to a robot covering this absence.
+        seat.standInDeclined === 'absent' ||
+        // A goodbye is a decision. Playing the hand of somebody who said they were
+        // done is not a favour, and their seat is still theirs to come back to.
+        seat.saidGoodbye ||
+        seat.health !== 'disconnected' ||
+        seat.absentSince === null ||
+        now - seat.absentSince < STAND_IN_ABSENT_MS
+      ) {
+        continue;
+      }
+      if (
+        seat.lastResumeAttemptAt !== null &&
+        now - seat.lastResumeAttemptAt < RESUME_ATTEMPT_SUPPRESSES_SKIP_MS
+      ) {
+        // Visibly on their way back. Taking the seat over now would hand them a
+        // hand that had been played for them in the seconds before they arrived.
+        continue;
+      }
+      this.beginStandIn(seat, 'absent');
+    }
+  }
+
+  /**
+   * The seat on turn is here, and is not answering.
+   *
+   * Both clocks have to be old: the table has been waiting this long *and* nothing
+   * has been asked for from that seat in that time. A heartbeat is not an answer —
+   * a phone in a pocket sends those perfectly — which is why this reads
+   * `lastIntentAt` and never `lastSeenAt`.
+   */
+  private maybeStandInForSilence(seat: Seat, now: number): void {
+    if (
+      !this.standInEnabled ||
+      seat.bot ||
+      seat.left ||
+      seat.standIn !== null ||
+      seat.standInDeclined === 'idle'
+    ) {
+      return;
+    }
+    const silentSince = Math.max(this.waitingSince ?? 0, seat.lastIntentAt ?? 0);
+    if (silentSince === 0 || now - silentSince < STAND_IN_IDLE_MS) {
+      return;
+    }
+    this.beginStandIn(seat, 'idle');
+  }
+
+  /**
+   * The backstop for a robot that did not move.
+   *
+   * Nothing else would ever rescue this. A robot cannot be absent, so no grace, no
+   * hold and no vacate applies to it — and a suspended tab, a throttled timer or a
+   * bug in the driver would leave the round stopped with nothing on any screen to
+   * explain why. The seat is passed exactly as an absent player's is, and the fact
+   * is recorded, because a table that needs this has found a bug.
+   */
+  private tickRobotStall(now: number): void {
+    if (!this.game || this.phase !== 'inGame' || this.pausedBy !== null) {
+      return;
+    }
+    if (this.game.plusThree !== null) {
+      // The breaker window has its own deadline, above.
+      return;
+    }
+    const onTurn = currentPlayer(this.game);
+    if (!onTurn) {
+      return;
+    }
+    const seat = this.seatFor(onTurn.id);
+    if (!seat || !this.robotControls(seat)) {
+      return;
+    }
+    const waitingFrom = Math.max(this.waitingSince ?? 0, seat.standInSince ?? 0);
+    if (waitingFrom === 0 || now - waitingFrom < BOT_STALL_MS) {
+      return;
+    }
+    record('suspicion', 'robot did not move; passing the seat', { seat: seat.seat });
+    this.applyHostCommand({ type: 'skipTurn', playerId: onTurn.id });
+  }
+
+  // ------------------------------------------------------------------ robots
+
+  /** Whether a robot is playing this seat, for any reason. */
+  private robotControls(seat: Seat): boolean {
+    return (seat.bot || seat.standIn !== null) && !seat.left;
+  }
+
+  /** Seats a robot is playing, in seat order. */
+  private robotSeats(): Seat[] {
+    return this.seats
+      .slice()
+      .sort((a, b) => a.seat - b.seat)
+      .filter((seat) => this.robotControls(seat));
+  }
+
+  /**
+   * Whether this seat could answer for itself.
+   *
+   * The one thing it decides is whether the seat can be called out for sitting on a
+   * silent last card: somebody who is not there cannot shout. A seat a robot is
+   * playing counts, because the robot can.
+   */
+  private seatCanAnswer(playerId: string): boolean {
+    const seat = this.seatFor(playerId);
+    if (!seat) {
+      return false;
+    }
+    return seat.health === 'connected' || this.robotControls(seat);
+  }
+
+  /** Advances one robot's own random stream. */
+  private botRandom(playerId: string): number {
+    const state = this.botRng.get(playerId) ?? createRng(seedFromString(`${this.roomCode}:${playerId}`));
+    const next = nextFloat(state);
+    this.botRng.set(playerId, next.state);
+    return next.value;
+  }
+
+  /** Starts every robot's stream again, so a round is reproducible from its deal. */
+  private reseedBots(): void {
+    this.botRng.clear();
+    for (const seat of this.seats) {
+      this.botRng.set(
+        seat.playerId,
+        createRng(seedFromString(`${this.roomCode}:${String(this.round)}:${seat.playerId}`)),
+      );
+    }
+  }
+
+  /**
+   * Seats a robot. Lobby only, and never mid-round.
+   *
+   * A round is dealt to the seats it starts with: adding a player of any kind to a
+   * table in play would mean dealing a hand out of a pile that is already in use,
+   * and the engine has no such transition.
+   */
+  addBot(): boolean {
+    if (this.phase !== 'lobby' || this.seats.length >= this.maxPlayers || this.destroyed) {
+      return false;
+    }
+    const name = robotName(
+      this.tableLanguage,
+      this.seats.map((seat) => seat.name),
+    );
+    this.seats.push({
+      playerId: createPlayerId(),
+      name,
+      seat: this.seats.length,
+      isHost: false,
+      // Minted like anybody else's, and never used: there is nothing to come back.
+      resumeToken: createResumeToken(),
+      peerId: null,
+      lastSeenAt: this.now(),
+      health: 'connected',
+      absentSince: null,
+      left: false,
+      lastResumeAttemptAt: null,
+      standInDeclined: null,
+      standInSince: null,
+      robotPlayedThisRound: true,
+      bot: true,
+      standIn: null,
+      lastIntentAt: null,
+      skippedWhileAway: false,
+      saidGoodbye: false,
+      lastRequestId: null,
+      lastRequestVersion: null,
+      probes: new ProbeTracker(),
+    });
+    record('note', 'robot seated', { name, seats: this.seats.length });
+    this.emitLobby();
+    this.persist();
+    return true;
+  }
+
+  /** Whether the table lets a robot cover a seat nobody is answering for. */
+  setStandInEnabled(enabled: boolean): void {
+    if (this.standInEnabled === enabled) {
+      return;
+    }
+    this.standInEnabled = enabled;
+    if (!enabled) {
+      // Switching it off hands every seat straight back; leaving robots playing
+      // after the table said no would make the setting a suggestion.
+      for (const seat of this.seats) {
+        this.endStandIn(seat);
+      }
+    }
+    this.emitLobby();
+    this.persist();
+    this.bots.schedule();
+  }
+
+  /**
+   * Puts a robot on somebody's seat now, on the host's say-so.
+   *
+   * Its own consent: an explicit choice by the person running the table does not
+   * need the table-wide setting as well, and it is the answer to "we are not
+   * waiting another thirty seconds for this".
+   */
+  standInNow(playerId: string): boolean {
+    const seat = this.seatFor(playerId);
+    if (!seat || seat.bot || seat.left || seat.standIn !== null || this.phase !== 'inGame') {
+      return false;
+    }
+    if (seat.health === 'connected') {
+      /*
+       * A seat that is here and answering is not the host's to give away. The control
+       * exists for somebody who has stopped responding, so it needs the table to have
+       * actually been waiting on them — otherwise one mis-tap takes a playing
+       * player's hand off them mid-turn.
+       */
+      /*
+       * This seat's own clock. `waitingSince` is the table's and is reset by anybody's
+       * move, so a seat that had been silent for ten minutes while the others played
+       * around it could not be covered — which is exactly the seat this is for.
+       */
+      const silentSince = seat.lastIntentAt ?? this.waitingSince ?? 0;
+      if (silentSince === 0 || this.now() - silentSince < IDLE_TURN_NUDGE_MS) {
+        return false;
+      }
+    }
+    this.beginStandIn(seat, seat.health === 'connected' ? 'idle' : 'absent');
+    return true;
+  }
+
+  /**
+   * Hands a seat back to its owner, whether or not they have said anything.
+   *
+   * And remembers that it was asked for. A stand-in that restarted on the next
+   * heartbeat made the control a lie, and — because a covered seat is not offered
+   * the absent-seat controls — left the table with no way to stop a robot at all.
+   */
+  stopStandIn(playerId: string): boolean {
+    const seat = this.seatFor(playerId);
+    if (!seat || seat.standIn === null) {
+      return false;
+    }
+    // About the kind that was actually running, and nothing else.
+    seat.standInDeclined = seat.standIn;
+    this.endStandIn(seat);
+    this.emitLobby();
+    this.persist();
+    this.bots.schedule();
+    return true;
+  }
+
+  private beginStandIn(seat: Seat, why: 'absent' | 'idle'): void {
+    if (seat.bot || seat.left || seat.standIn !== null) {
+      return;
+    }
+    seat.standIn = why;
+    /*
+     * The table starts waiting for the *robot* now, and its patience has to start now
+     * too: the stall watchdog would otherwise inherit however long the seat had
+     * already been silent — by definition longer than the deadline — and pass the
+     * turn on the very next tick, before the robot had a moment.
+     *
+     * Only for the seat actually on turn, though. `waitingSince` is the table's
+     * clock, not this seat's: resetting it while covering somebody else pushed out
+     * another seat's skip grace, another seat's silence threshold, the nudge, and the
+     * countdown every client is shown.
+     */
+    seat.standInSince = this.now();
+    seat.robotPlayedThisRound = true;
+    if (this.game && currentPlayer(this.game)?.id === seat.playerId) {
+      this.waitingSince = this.now();
+    }
+    record('note', `a robot is playing for ${seat.name}`, { why, seat: seat.seat });
+    if (!this.botRng.has(seat.playerId)) {
+      this.botRng.set(
+        seat.playerId,
+        createRng(seedFromString(`${this.roomCode}:${String(this.round)}:${seat.playerId}`)),
+      );
+    }
+    this.emitLobby();
+    this.persist();
+    this.bots.schedule();
+  }
+
+  /** Ends a stand-in. The caller owns telling the table; several callers batch it. */
+  private endStandIn(seat: Seat): boolean {
+    if (seat.standIn === null) {
+      return false;
+    }
+    seat.standIn = null;
+    seat.standInSince = null;
+    /*
+     * And takes the robot's answer back with it. A stand-in agrees to play again on
+     * the seat's behalf, because a table with one could never deal a second round
+     * otherwise — but the moment its owner is back, that agreement is theirs to give.
+     * Leaving it behind dealt people into rounds they were never asked about.
+     */
+    if (this.phase === 'finished' && this.playAgainVotes.delete(seat.playerId)) {
+      this.emitPlayAgain();
+    }
+    record('note', `${seat.name} has their seat back`, { seat: seat.seat });
+    return true;
+  }
+
+  /**
+   * Records that the local player asked for something.
+   *
+   * The host is a player too, and every remote intent stamps its seat — so the
+   * table's own controls have to as well, or a host being stood in for taps Pause
+   * and watches a robot carry on playing their hand.
+   */
+  noteLocalIntent(): void {
+    this.stampIntent(this.localPlayerId);
+  }
+
+  /**
+   * A robot's move, through the one authoritative path every move goes through.
+   *
+   * A refused move is *not* retried and buys no privilege. The most a robot gets is
+   * what any player in that position has: if its own idea of the turn was refused,
+   * it pays a card from the pile, which ends the turn. Nothing here can free-skip —
+   * that is the host's own backstop, on a timer, and it is a bug when it fires.
+   */
+  private submitBotMove(playerId: string, move: BotMove): boolean {
+    const seat = this.seatFor(playerId);
+    if (!seat || !this.robotControls(seat)) {
+      return false;
+    }
+    if (this.applyAction(playerId, move.action, null, undefined, 'bot')) {
+      return true;
+    }
+    if (move.kind !== 'turn' || move.action.type === 'drawCard') {
+      return false;
+    }
+    return this.applyAction(playerId, { type: 'drawCard' }, null, undefined, 'bot');
   }
 
   // ---------------------------------------------------------------- snapshot
@@ -1708,6 +2432,9 @@ export class HostSession implements Session {
     this.trackLastCard();
     this.versionFloor = this.game.version;
     this.broadcastGameState();
+    // A forced situation is meant to be indistinguishable from a played one, and a
+    // played one wakes the robots.
+    this.bots.schedule();
   }
 
   /** The room in a form that can be written down and read back. */
@@ -1726,9 +2453,11 @@ export class HostSession implements Session {
         isHost: seat.isHost,
         resumeToken: seat.resumeToken,
         ...(seat.left ? { left: true } : {}),
+        ...(seat.bot ? { bot: true } : {}),
         lastRequestId: seat.lastRequestId,
         lastRequestVersion: seat.lastRequestVersion,
       })),
+      standInEnabled: this.standInEnabled,
       game: this.game,
     };
   }
@@ -1748,10 +2477,20 @@ export class HostSession implements Session {
 
   // ---------------------------------------------------------------- handover
 
-  /** The seat that would take the room over: the lowest-seated player who is here. */
+  /**
+   * The seat that would take the room over: the lowest-seated player who is here.
+   *
+   * A robot is never a candidate, and neither is a seat a robot is playing. There is
+   * no device behind the first and nobody looking at the second, so the room would
+   * be handed to something that cannot serve it — and the offer would expire while
+   * the old host had already gone.
+   */
   get successor(): { playerId: string; name: string } | null {
     const candidate = this.seats
-      .filter((seat) => !seat.isHost && seat.health === 'connected' && !seat.left)
+      .filter(
+        (seat) =>
+          !seat.isHost && seat.health === 'connected' && !seat.left && !seat.bot && seat.standIn === null,
+      )
       .sort((a, b) => a.seat - b.seat)[0];
     return candidate ? { playerId: candidate.playerId, name: candidate.name } : null;
   }
@@ -1821,6 +2560,10 @@ export class HostSession implements Session {
       return;
     }
     this.destroyed = true;
+    // First, before anything else can be torn down: a robot pause that fired after
+    // this point would mutate state nobody owns any more and speak to closed
+    // channels — including, during a handover, on behalf of a room that has moved.
+    this.bots.destroy();
     this.watchdog?.stop();
     this.watchdog = null;
     if (this.handoffTimer !== null) {

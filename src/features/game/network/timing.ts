@@ -217,6 +217,85 @@ export const CAUGHT_NOTICE_MS = 8_000;
  */
 export const LAST_CARD_GRACE_MS = 30;
 
+/**
+ * How long a robot appears to think before it plays.
+ *
+ * Not decoration. A robot that answered in the same tick as the snapshot that
+ * gave it the turn would make the table unreadable — cards would appear to play
+ * themselves — and it would take every contested moment (a catch, a breaker)
+ * before a human could reach for it. The range is jittered from the room's own
+ * seeded stream, so a replay is exact while no two robots move in lockstep.
+ */
+export const BOT_THINK_MIN_MS = 700;
+export const BOT_THINK_MAX_MS = 1_700;
+
+/**
+ * The pause between cards *inside* an open Taki sequence.
+ *
+ * A six-card sequence at full thinking pace is ten seconds of watching somebody
+ * else's hand empty. At a real table those cards go down in a rattle, and the
+ * decision has already been made.
+ */
+export const BOT_SEQUENCE_MIN_MS = 260;
+export const BOT_SEQUENCE_MAX_MS = 520;
+
+/**
+ * Before a robot declares its own last card.
+ *
+ * Deliberately far above {@link LAST_CARD_GRACE_MS}: this is the window in which a
+ * human can call the robot out, and it is the whole reason robots are catchable at
+ * all. A robot that declared in the same tick would be immune to the one rule the
+ * other players enforce themselves.
+ */
+export const BOT_DECLARE_MIN_MS = 900;
+export const BOT_DECLARE_MAX_MS = 2_000;
+
+/**
+ * Before a robot calls somebody else out.
+ *
+ * The slowest of its moves, so the humans at the table normally get the call. A
+ * robot that caught instantly would turn a social rule into a tax.
+ */
+export const BOT_CATCH_MIN_MS = 2_200;
+export const BOT_CATCH_MAX_MS = 4_000;
+
+/** Before a robot answers an open +3, which freezes every other seat. */
+export const BOT_ANSWER_MIN_MS = 500;
+export const BOT_ANSWER_MAX_MS = 1_200;
+
+/**
+ * How long the table waits for a robot before the host passes the seat itself.
+ *
+ * A robot cannot be absent, so none of the seat machinery would ever rescue a
+ * table stuck on one — and a suspended tab, a throttled timer or a bug in the
+ * driver would stall the round with nothing to explain it. This is the backstop:
+ * comfortably longer than any robot pause, short enough to be survivable.
+ */
+export const BOT_STALL_MS = 15_000;
+
+/**
+ * How long a seat has to be away before a robot may play it, when the table has
+ * asked for that.
+ *
+ * Longer than both absent-turn graces on purpose: a blip is still answered by the
+ * free skip that costs the absent player nothing, and only a real absence — three
+ * orbits of skipping, by which point the round has stopped being a game — brings a
+ * robot in. Far shorter than {@link SEAT_GRACE_MS}, because playing the seat is
+ * what makes holding it worth anything.
+ */
+export const STAND_IN_ABSENT_MS = 45_000;
+
+/**
+ * How long a seat that is *present* but silent is waited on before a robot plays it.
+ *
+ * Longer than {@link IDLE_TURN_NUDGE_MS}, so the table gets to nudge a distracted
+ * player before anything is done for them, and long enough that thinking hard
+ * about a hand is never mistaken for having walked away. Measured from the last
+ * thing that seat actually asked for — never from a heartbeat, which a phone in a
+ * pocket answers perfectly.
+ */
+export const STAND_IN_IDLE_MS = 90_000;
+
 /** Entries kept in the local diagnostics ring. */
 export const DIAGNOSTICS_CAPACITY = 500;
 

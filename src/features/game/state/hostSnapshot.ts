@@ -83,6 +83,14 @@ const seatSchema = z.object({
   isHost: z.boolean(),
   resumeToken: z.string().min(8).max(64),
   left: z.boolean().optional(),
+  /**
+   * A robot seat.
+   *
+   * It has to travel with the room, or a reload — or a handover — turns every robot
+   * into a human seat with no device behind it: skipped every orbit, impossible to
+   * resume, and holding a hand nobody can play.
+   */
+  bot: z.boolean().optional(),
   lastRequestId: z.string().min(1).max(64).nullable().optional(),
   lastRequestVersion: z.number().int().nonnegative().nullable().optional(),
 });
@@ -104,6 +112,8 @@ const snapshotSchema = z.object({
   versionFloor: z.number().int().nonnegative(),
   round: z.number().int().nonnegative(),
   seats: z.array(seatSchema).min(1).max(6).readonly(),
+  /** Whether the table lets a robot play a seat nobody is answering for. */
+  standInEnabled: z.boolean().optional(),
   game: gameStateSchema.nullable(),
 });
 
@@ -142,6 +152,7 @@ function validate(value: unknown, now: number): HostedRoom | null {
       versionFloor: data.versionFloor,
       round: data.round,
       seats: data.seats,
+      ...(data.standInEnabled !== undefined ? { standInEnabled: data.standInEnabled } : {}),
       game: data.game,
     },
   };
@@ -172,6 +183,7 @@ export function validateHandoffSnapshot(value: unknown): HostRestoreState | null
     versionFloor: data.versionFloor,
     round: data.round,
     seats: data.seats,
+    ...(data.standInEnabled !== undefined ? { standInEnabled: data.standInEnabled } : {}),
     game: data.game,
   };
 }
@@ -209,8 +221,15 @@ function shapeOf(args: WriteArgs): string {
     args.restore.versionFloor,
     args.restore.round,
     args.restore.maxPlayers,
+    // A table setting, exactly like `maxPlayers`: a toggle that waited for the deck's
+    // throttle could be dropped altogether by a write already in flight.
+    args.restore.standInEnabled === false ? 'stand-in:off' : 'stand-in:on',
     args.restore.seats.length,
-    args.restore.seats.map((seat) => `${seat.playerId}:${seat.left === true ? '1' : '0'}`).join(','),
+    // Bot-ness is structural: seating a robot must be written through at once, not
+    // wait for the throttle that exists for the deck.
+    args.restore.seats
+      .map((seat) => `${seat.playerId}:${seat.left === true ? '1' : '0'}:${seat.bot === true ? 'b' : '-'}`)
+      .join(','),
   ].join('|');
 }
 
@@ -237,6 +256,7 @@ function write(args: WriteArgs, now: number): void {
     versionFloor: args.restore.versionFloor,
     round: args.restore.round,
     seats: args.restore.seats,
+    standInEnabled: args.restore.standInEnabled,
     game: args.restore.game,
   });
 }

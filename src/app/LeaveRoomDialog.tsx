@@ -32,9 +32,23 @@ export function LeaveRoomDialog(): ReactNode {
 
   const inGame = screen === 'game';
 
-  /** The lowest-seated player who is actually here. */
+  /**
+   * The lowest-seated player who is actually here.
+   *
+   * Never a robot, and never a seat a robot is playing: there is no device behind
+   * the first, and nobody looking at the second — so the room would be offered to
+   * something that cannot serve it, and the offer would expire with the old host
+   * already gone.
+   */
   const successor = seatedPlayers({ lobby })
-    .filter((player) => player.id !== localPlayerId && player.health === 'connected' && !player.left)
+    .filter(
+      (player) =>
+        player.id !== localPlayerId &&
+        player.health === 'connected' &&
+        !player.left &&
+        player.bot !== true &&
+        player.standIn !== true,
+    )
     .sort((a, b) => a.seat - b.seat)[0];
 
   if (host && successor) {
@@ -57,8 +71,12 @@ export function LeaveRoomDialog(): ReactNode {
             <Button
               variant="primary"
               onClick={() => {
-                handOver(successor.id);
-                cancelLeave();
+                // Only dismiss when the offer actually went out. Closing regardless
+                // made a refused handover look like a completed one: the room had not
+                // moved, the host had not left, and nothing said so.
+                if (handOver(successor.id)) {
+                  cancelLeave();
+                }
               }}
             >
               {t('host.handoffAction')}

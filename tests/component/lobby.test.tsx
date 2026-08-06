@@ -309,7 +309,7 @@ describe('connection notices', () => {
     });
     const { user } = renderApp();
 
-    expect(screen.getByText(/לא הצלחנו להגיע לשירות החיבור החינמי/)).toBeInTheDocument();
+    expect(screen.getByText(/לא הצלחנו להגיע לממסר המשחק/)).toBeInTheDocument();
     expect(screen.getByText('למה זה קורה?')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'נסה שוב' }));
     expect(retryConnection).toHaveBeenCalled();
@@ -341,5 +341,80 @@ describe('connection notices', () => {
     setState({ screen: 'home', closedReason: 'leftVoluntarily' });
     renderApp();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('robots in the lobby', () => {
+  it('offers the host a robot, and says what one is for', () => {
+    enterLobby();
+    renderApp();
+    expect(screen.getByRole('button', { name: 'הוספת רובוט' })).toBeEnabled();
+    expect(screen.getByText(/הרובוט מקבל מושב/)).toBeInTheDocument();
+  });
+
+  it('offers nothing of the sort to a guest', () => {
+    enterLobby();
+    setState({ role: 'client', localPlayerId: GUEST_ID });
+    renderApp();
+    // A robot is the host's to seat: it lives in the host's tab and plays from there.
+    expect(screen.queryByRole('button', { name: 'הוספת רובוט' })).not.toBeInTheDocument();
+  });
+
+  it('asks the host to make room rather than failing silently when the table is full', () => {
+    enterLobby({
+      lobby: lobbyFixture({
+        maxPlayers: 2,
+        players: [
+          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'אלי', isHost: false, health: 'connected', seat: 1 },
+        ],
+      }),
+    });
+    renderApp();
+    expect(screen.getByRole('button', { name: 'הוספת רובוט' })).toBeDisabled();
+    expect(screen.getByText(/השולחן מלא/)).toBeInTheDocument();
+  });
+
+  it('marks a robot seat as one, and shows no connection badge for it', () => {
+    enterLobby({
+      lobby: lobbyFixture({
+        players: [
+          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+          { id: 'p-robot', name: 'רובוט תמר', isHost: false, health: 'connected', seat: 1, bot: true },
+        ],
+      }),
+    });
+    renderApp();
+    const items = screen.getAllByRole('listitem');
+    const robotRow = items.find((item) => item.textContent?.includes('רובוט תמר'));
+    expect(robotRow).toBeDefined();
+    expect(within(robotRow as HTMLElement).getByText('רובוט')).toBeInTheDocument();
+    // There is no connection behind a robot, so a connection badge would be a claim
+    // about something that does not exist.
+    expect(within(robotRow as HTMLElement).queryByText('לא מחובר')).not.toBeInTheDocument();
+  });
+
+  it('lets the host say whether a robot may cover a missing player', async () => {
+    const setStandInEnabled = vi.fn();
+    enterLobby();
+    setState({ setStandInEnabled });
+    const { user } = renderApp();
+    await user.click(screen.getByText('הגדרות החדר'));
+    const group = screen.getByRole('radiogroup', { name: 'רובוט ימשיך במקום מי שנעלם' });
+    expect(within(group).getByRole('radio', { name: 'מופעל' })).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(within(group).getByRole('radio', { name: 'כבוי' }));
+    // The answer has to reach the host, which is the only place it means anything:
+    // asserting the control is still on screen would pass with the wire cut.
+    expect(setStandInEnabled).toHaveBeenCalledWith(false);
+  });
+
+  it('reads the answer off the table, not off a local guess', async () => {
+    enterLobby({ lobby: lobbyFixture({ standInEnabled: false }) });
+    const { user } = renderApp();
+    await user.click(screen.getByText('הגדרות החדר'));
+    const group = screen.getByRole('radiogroup', { name: 'רובוט ימשיך במקום מי שנעלם' });
+    expect(within(group).getByRole('radio', { name: 'כבוי' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText(/מי שנעלם מדולג/)).toBeInTheDocument();
   });
 });

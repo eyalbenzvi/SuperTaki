@@ -218,6 +218,34 @@ The token is a local reconnection secret, not an authentication credential again
 server: the only thing it protects is one seat in one private room, and the only party
 checking it is the host's own tab.
 
+## Robot players
+
+A robot is a **host-side policy**, not a peer and not part of the engine. It exists in three
+files under `src/features/game/bot/`, and it is wired to the host in one place: a driver that
+watches for a seat a robot is playing, waits a human-shaped moment, and submits an ordinary
+`GameAction` through `applyAction` — the same function a remote intent arrives at.
+
+Two properties are load-bearing, and both are structural rather than promised:
+
+- **A robot knows only what a client knows.** `botViewFor()` builds its input out of
+  `toPublicGameState()` plus that seat's own hand — the same two projections the host
+  broadcasts. It cannot read the draw pile, another hand, or the private list of who holds a +3
+  Breaker; it infers whether it may answer a +3 from its own cards, exactly as the UI does.
+- **A robot can express nothing a player cannot.** Its decisions are typed as the wire's
+  `GameAction`, so the host-only commands (`skipTurn`, `leaveGame`, `abandonRound`) are
+  unreachable from it. A refused robot move buys no privilege either: at most it pays a card
+  from the pile, as any player in that position would.
+
+The one place the host acts _for_ a robot is a deadline. A robot cannot be absent, so none of
+the seat machinery would ever rescue a table stuck on one; past `BOT_STALL_MS` the host passes
+the seat itself and records that it had to.
+
+Robots may also cover a **human** seat — after 45 s of absence, or 90 s of silence from a seat
+that is present — when the table has that turned on. The seat stays entirely its owner's, and
+comes back to them on their next intent, which is measured from what they _ask for_ and never
+from a heartbeat: a phone in a pocket answers probes perfectly. The full behaviour, the
+thresholds and the fairness argument are in [robots.md](robots.md).
+
 ## Known limitations
 
 1. **The relay is a single point of failure.** If Cloudflare's edge (or the worker's free
@@ -245,7 +273,11 @@ checking it is the host's own tab.
    six-hour TTL, because the game surviving a host crash is a requirement; the entry
    contains every hand, so it is validated on read, expired aggressively and erased on an
    intentional leave. See [threat-model.md](threat-model.md).
-7. **Mobile background tabs still drop connections.** Nothing in a web page can prevent it.
+7. **Robots live in the host's tab.** They are a host-side policy over the authoritative
+   state, so a host that leaves takes its robots with it, exactly as it takes the room. A
+   handover carries them — the seat's `bot` flag travels in the snapshot — but a successor
+   running an older build would strip that flag and inherit seats with nobody behind them.
+8. **Mobile background tabs still drop connections.** Nothing in a web page can prevent it.
    What has changed is the response: the page notices it woke, probes the socket at once,
    and reopening a WebSocket is cheap and reliable in a way ICE restarts never were. A
    screen wake lock keeps the game from sleeping while it is in front of the player.
