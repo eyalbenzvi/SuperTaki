@@ -101,3 +101,16 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # Twenty minutes rather than the action's default ten.
+          #
+          # This step does not do the deploying — it asks GitHub to, and then polls.
+          # All the waiting is time spent in Pages' own queue, which on a bad afternoon
+          # runs right at the edge of the default: two deployments of the same commit
+          # aborted at exactly 10m00s with the status still `deployment_queued`, and the
+          # third finished at 9m01s. Nothing was wrong with either build.
+          #
+          # A ceiling that a healthy deploy clears in under a minute, and a congested one
+          # misses by seconds, is a coin toss rather than a timeout. Doubling it costs
+          # nothing when the queue is quick — the step returns as soon as GitHub is done.
+          timeout: 1200000
