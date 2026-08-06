@@ -63,7 +63,16 @@ test.describe('a table with a robot in it', () => {
      * not "a human plays a round with a robot". It is also self-reinforcing, because a
      * covered seat cannot act, so the test can never get its seat back.
      */
-    await page.getByRole('radio', { name: 'Off' }).click();
+    await page.locator('summary', { hasText: 'Room settings' }).click();
+    const standInChoice = page.getByRole('radiogroup', {
+      name: 'Let a robot play for a missing player',
+    });
+    const off = standInChoice.getByRole('radio', { name: 'Off' });
+    // Visible first, then clicked: the control lives inside a collapsed disclosure, and
+    // an unbounded click on a hidden element is the ten-minute hang this test just had.
+    await expect(off).toBeVisible();
+    await off.click();
+    await expect(off).toHaveAttribute('aria-checked', 'true');
 
     await expect(page.getByRole('button', { name: 'Start game' })).toBeEnabled();
     await page.getByRole('button', { name: 'Start game' }).click();
