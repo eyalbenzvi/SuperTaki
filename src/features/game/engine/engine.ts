@@ -144,6 +144,7 @@ export function playContextFromState(state: GameState): PlayContext {
     activeColor: state.activeColor,
     topCard: topCard(state),
     openTakiColor: state.takiMode?.color ?? null,
+    takiSwitchOpen: state.takiMode?.takisOnly ?? false,
     pendingDraw: state.pendingDraw,
     freePlay: state.freePlay,
   };
@@ -465,9 +466,13 @@ function applyPlayCard(
       if (isWildCard(card)) {
         return reject('wildNotAllowedInTaki');
       }
-      // Every coloured card inside a sequence matches its colour, Taki cards
-      // included: nothing inside a sequence repaints the table.
-      if (card.color !== state.takiMode.color) {
+      /*
+       * Colour is the rule inside a sequence, with one opening: a Taki laid
+       * straight onto another Taki takes the run into its own colour, and may
+       * do so only while nothing but Takis have been played. After an ordinary
+       * card the colour is settled, and no later Taki reopens it.
+       */
+      if (card.color !== state.takiMode.color && !(state.takiMode.takisOnly && card.kind === 'taki')) {
         return reject('wrongTakiColor');
       }
     } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
@@ -521,16 +526,32 @@ function applyPlayCard(
   if (answeringPlusThree) {
     resolvePlusThree(draft, playerId, events);
   } else if (draft.takiMode) {
-    // Inside a sequence: accumulate; effects are resolved when the Taki closes.
-    // The sequence keeps the colour it opened in — a further Taki is just another
-    // card of that colour.
-    draft.takiMode = { ...draft.takiMode, cardsPlayed: draft.takiMode.cardsPlayed + 1 };
+    /*
+     * Inside a sequence: accumulate; effects are resolved when the Taki closes.
+     *
+     * The colour follows the run rather than the opening card, because a Taki
+     * played onto a Taki carries it over — `resultingColor` is that card's own
+     * colour, and the validation above has already refused the move unless the
+     * run was still nothing but Takis. Everything else leaves the colour alone,
+     * since it had to match it to be here at all.
+     */
+    const takisOnly = draft.takiMode.takisOnly && card.kind === 'taki';
+    draft.takiMode = {
+      ...draft.takiMode,
+      color: resultingColor,
+      cardsPlayed: draft.takiMode.cardsPlayed + 1,
+      takisOnly,
+      // A sequence that has been carried into a coloured Taki's colour is no
+      // longer the Super Taki's, whatever opened it.
+      openedWithSuperTaki: draft.takiMode.openedWithSuperTaki && card.kind !== 'taki',
+    };
   } else if (card.kind === 'taki' || card.kind === 'superTaki') {
     draft.takiMode = {
       color: resultingColor,
       playerId,
       cardsPlayed: 1,
       openedWithSuperTaki: card.kind === 'superTaki',
+      takisOnly: true,
     };
     events.push({
       type: 'takiOpened',

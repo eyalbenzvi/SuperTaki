@@ -157,7 +157,7 @@ describe('turn selectors', () => {
   });
 
   it('knows whether the open sequence is mine', () => {
-    const taki = { color: 'red' as const, playerId: 'b', cardsPlayed: 1, openedWithSuperTaki: false };
+    const taki = { color: 'red' as const, playerId: 'b', cardsPlayed: 1, openedWithSuperTaki: false, takisOnly: false };
     expect(isTakiOpenForMe(state({ publicState: { ...publicState, takiMode: taki } }))).toBe(true);
     expect(
       isTakiOpenForMe(state({ publicState: { ...publicState, takiMode: { ...taki, playerId: 'a' } } })),

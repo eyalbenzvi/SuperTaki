@@ -23,7 +23,11 @@ function situation(options: {
   discardTop: Card;
   activeColor: 'red' | 'blue' | 'green' | 'yellow';
   myTurn?: boolean;
-  takiMode?: { color: 'red' | 'blue' | 'green' | 'yellow'; openedWithSuperTaki?: boolean } | null;
+  takiMode?: {
+    color: 'red' | 'blue' | 'green' | 'yellow';
+    openedWithSuperTaki?: boolean;
+    takisOnly?: boolean;
+  } | null;
   pendingPlus?: boolean;
   pendingDraw?: number;
   freePlay?: boolean;
@@ -47,6 +51,7 @@ function situation(options: {
             playerId: HOST_ID,
             cardsPlayed: 1,
             openedWithSuperTaki: options.takiMode.openedWithSuperTaki ?? false,
+            takisOnly: options.takiMode.takisOnly ?? false,
           }
         : null,
       players: [

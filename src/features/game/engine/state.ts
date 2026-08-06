@@ -40,6 +40,17 @@ export interface TakiModeState {
   readonly cardsPlayed: number;
   /** Whether the sequence was opened by a Super Taki (wild) card. */
   readonly openedWithSuperTaki: boolean;
+  /**
+   * Whether every card in the sequence so far is a Taki.
+   *
+   * This is what makes a change of colour legal: a Taki laid straight onto
+   * another Taki carries the sequence into its own colour, and it may do that
+   * only while nothing else has been played. The moment an ordinary card joins
+   * the run this goes false and the colour is settled for good — a further Taki
+   * of the sequence colour is then just another card in it, and cannot reopen
+   * the choice. See `docs/rules.md`.
+   */
+  readonly takisOnly: boolean;
 }
 
 /**

@@ -13,6 +13,7 @@ function context(overrides: Partial<PlayContext> = {}): PlayContext {
     activeColor: 'red',
     topCard: card('red:5'),
     openTakiColor: null,
+    takiSwitchOpen: false,
     pendingDraw: 0,
     freePlay: false,
     ...overrides,

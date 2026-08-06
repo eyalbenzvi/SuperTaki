@@ -15,6 +15,13 @@ export interface PlayContext {
   /** Colour an open Taki sequence is locked to, or `null` when none is open. */
   readonly openTakiColor: CardColor | null;
   /**
+   * Whether a Taki of another colour may still take the sequence over.
+   *
+   * True while the run is nothing but Taki cards. Meaningless when
+   * `openTakiColor` is `null`.
+   */
+  readonly takiSwitchOpen: boolean;
+  /**
    * Cards the player to move owes from a run of +2 cards; `0` when none. While
    * this is above zero the only legal cards are another +2 and a King.
    */
@@ -29,10 +36,13 @@ export interface PlayContext {
  * Outside a Taki sequence a card is playable when it is colourless, matches the
  * active colour, or matches the top card's symbol (number value or action kind).
  * Inside a Taki sequence only cards of the sequence colour are playable, and
- * colourless cards are never allowed. That includes Taki cards: a sequence is
- * defined by its colour, and nothing inside it may repaint the table. A Taki of
- * any colour on a Taki is an ordinary symbol match — legal on your turn when no
- * sequence is open, and it opens a sequence of your own.
+ * colourless cards are never allowed.
+ *
+ * The one exception is a Taki laid straight onto another Taki: while the run is
+ * still nothing but Taki cards, a Taki of any colour may be played and carries
+ * the sequence into its own colour. As soon as an ordinary card joins the run
+ * the colour is settled, and a Taki of a different colour is refused however
+ * many same-colour Takis follow it.
  *
  * Two situations override all of that: a pending +2 run can only be met with
  * another +2 or with a King, and the free play a King grants accepts anything.
@@ -40,7 +50,12 @@ export interface PlayContext {
  */
 export function isCardPlayable(card: Card, context: PlayContext): boolean {
   if (context.openTakiColor !== null) {
-    return cardColor(card) === context.openTakiColor;
+    if (cardColor(card) === context.openTakiColor) {
+      return true;
+    }
+    // A colourless card has no colour to carry the sequence into, so a Super
+    // Taki cannot take one over however early it is played.
+    return context.takiSwitchOpen && card.kind === 'taki';
   }
   if (context.pendingDraw > 0) {
     // Two cards meet a run, and they meet it differently: a +2 raises it and

@@ -191,6 +191,9 @@ export const gameStateSchema = z.object({
       playerId,
       cardsPlayed: z.number().int().min(1).max(200),
       openedWithSuperTaki: z.boolean(),
+      // Defaulted for the same reason as on the wire: a round persisted before
+      // this field existed must reload rather than be thrown away.
+      takisOnly: z.boolean().default(false),
     })
     .nullable(),
   pendingPlus: z.boolean(),

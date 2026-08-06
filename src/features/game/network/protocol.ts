@@ -107,6 +107,13 @@ export const takiModeSchema = z.object({
   playerId: playerIdSchema,
   cardsPlayed: z.number().int().min(1).max(200),
   openedWithSuperTaki: z.boolean(),
+  /*
+   * Defaulted rather than required, because a table can be mid-sequence when a
+   * new room ships. `false` is the safe reading of a snapshot that predates the
+   * field: it refuses a colour change the sequence might have allowed, where
+   * `true` would offer one it might not.
+   */
+  takisOnly: z.boolean().default(false),
 });
 
 export const publicGameStateSchema = z.object({

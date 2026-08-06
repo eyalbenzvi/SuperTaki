@@ -155,6 +155,7 @@ describe('helpers', () => {
       activeColor: 'blue',
       topCard: state.discardPile[0],
       openTakiColor: null,
+      takiSwitchOpen: false,
       pendingDraw: 0,
       freePlay: false,
     });

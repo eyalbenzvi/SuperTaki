@@ -61,6 +61,7 @@ describe('public game state', () => {
       activeColor: 'red',
       topCard: view.discardTop,
       openTakiColor: null,
+      takiSwitchOpen: false,
       pendingDraw: 0,
       freePlay: false,
     });
@@ -69,7 +70,7 @@ describe('public game state', () => {
   it('reflects an open taki sequence', () => {
     const view = toPublicGameState(
       makeState({
-        takiMode: { color: 'blue', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: true },
+        takiMode: { color: 'blue', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: true, takisOnly: false },
       }),
     );
     expect(playContextFromPublic(view).openTakiColor).toBe('blue');

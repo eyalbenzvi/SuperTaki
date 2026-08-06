@@ -155,7 +155,7 @@ describe('inside its own Taki sequence', () => {
       currentPlayerIndex: 0,
       discardPile: cards('red:taki'),
       activeColor: 'red',
-      takiMode: { color: 'red', playerId: ANN, cardsPlayed: 1, openedWithSuperTaki: false },
+      takiMode: { color: 'red', playerId: ANN, cardsPlayed: 1, openedWithSuperTaki: false, takisOnly: false },
     });
 
   it('spends the numbers first and keeps the punishing card for the close', () => {

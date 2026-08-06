@@ -97,6 +97,7 @@ export function playContextFromPublic(state: PublicGameState): PlayContext {
     activeColor: state.activeColor,
     topCard: state.discardTop,
     openTakiColor: state.takiMode?.color ?? null,
+    takiSwitchOpen: state.takiMode?.takisOnly ?? false,
     pendingDraw: state.pendingDraw,
     freePlay: state.freePlay,
   };

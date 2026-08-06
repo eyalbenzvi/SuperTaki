@@ -136,7 +136,7 @@ describe('skipping the turn of a player who is away', () => {
       players: players('Alice', 'Bob', 'Carol'),
       hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:5'), 'p-carol': cards('green:5') },
       discardPile: cards('red:taki', 'red:4'),
-      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: false },
+      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: false, takisOnly: false },
     });
     const { state: next, events } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
 
@@ -151,7 +151,7 @@ describe('skipping the turn of a player who is away', () => {
       players: players('Alice', 'Bob', 'Carol'),
       hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:5'), 'p-carol': cards('green:5') },
       discardPile: cards('red:taki', 'red:stop'),
-      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: false },
+      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: false, takisOnly: false },
     });
     const { state: next } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
 
@@ -167,7 +167,7 @@ describe('skipping the turn of a player who is away', () => {
       players: players('Alice', 'Bob'),
       hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:5') },
       discardPile: cards('red:taki', 'red:plus'),
-      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: false },
+      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 2, openedWithSuperTaki: false, takisOnly: false },
     });
     const { state: next, events } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
 
@@ -305,7 +305,7 @@ describe('a player who leaves the round', () => {
       players: players('Alice', 'Bob', 'Carol'),
       hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:5'), 'p-carol': cards('green:5') },
       discardPile: cards('red:taki'),
-      takiMode: { color: 'red', playerId: 'p-bob', cardsPlayed: 1, openedWithSuperTaki: false },
+      takiMode: { color: 'red', playerId: 'p-bob', cardsPlayed: 1, openedWithSuperTaki: false, takisOnly: false },
       currentPlayerIndex: 1,
     });
     const { state: next } = expectOk(applyCommand(state, { type: 'leaveGame', playerId: 'p-bob' }));
