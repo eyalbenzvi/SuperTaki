@@ -55,6 +55,16 @@ test.describe('a table with a robot in it', () => {
     await expect(page.getByText('1 of 2 players')).toBeVisible();
 
     await page.getByRole('button', { name: 'Add a robot' }).click();
+
+    /*
+     * Stand-ins off, and this is the test's own subject rather than tidiness: with them
+     * on, any ninety seconds in which this test does not tap hands *its* seat to a robot
+     * as well — and then the round plays itself out and what finished it was two robots,
+     * not "a human plays a round with a robot". It is also self-reinforcing, because a
+     * covered seat cannot act, so the test can never get its seat back.
+     */
+    await page.getByRole('radio', { name: 'Off' }).click();
+
     await expect(page.getByRole('button', { name: 'Start game' })).toBeEnabled();
     await page.getByRole('button', { name: 'Start game' }).click();
 

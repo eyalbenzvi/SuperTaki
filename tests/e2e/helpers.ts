@@ -112,7 +112,30 @@ export async function takeAnyTurn(page: Page): Promise<boolean> {
     await playAnyLegalCard(page);
     return true;
   }
-  await page.getByRole('button', { name: /Draw pile, \d+ cards/ }).click();
+
+  /*
+   * Bounded, and allowed to fail.
+   *
+   * The pile can stop being clickable between the turn check above and this line: the
+   * turn can move, or — when this test has been slow — a robot can take the seat over,
+   * which disables every control on it. An unbounded `click()` on a disabled control
+   * does not fail, it *waits*, and it waits until the whole test times out. Ten minutes
+   * of a stuck click is also far longer than the ninety seconds after which the room
+   * covers a silent seat, so the block feeds itself: the seat goes quiet because the
+   * click is stuck, a robot takes it, and the click can then never succeed.
+   *
+   * Returning false tells the caller to look at the table again, which is what it does
+   * when it is not our turn anyway. `canDrawFrom` is the check for it — it already knows
+   * why `aria-disabled` rather than `isEnabled()` is the question to ask.
+   */
+  if (!(await canDrawFrom(page))) {
+    return false;
+  }
+  try {
+    await page.getByRole('button', { name: /Draw pile, \d+ cards/ }).click({ timeout: 5_000 });
+  } catch {
+    return false;
+  }
   return true;
 }
 
