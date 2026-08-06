@@ -24,7 +24,15 @@ export interface Env {
   readonly ALLOWED_ORIGINS?: string;
 }
 
-const ROOM_PATH = /^\/v1\/room\/(\d{6})$/;
+/**
+ * The one path this worker serves, built from the room-code pattern rather than
+ * repeating it.
+ *
+ * Two independent copies of "six digits" is exactly how the `400 bad room code` that
+ * used to sit below became unreachable: the path had already guaranteed what the check
+ * re-tested. One definition, and the check that cannot fire is gone with it.
+ */
+const ROOM_PATH = new RegExp(`^/v1/room/(${ROOM_CODE_PATTERN.source.replace(/[$^]/g, '')})$`);
 
 function originAllowed(request: Request, env: Env): boolean {
   if (env.ALLOWED_ORIGINS === undefined || env.ALLOWED_ORIGINS.length === 0) {
@@ -50,9 +58,6 @@ export default {
       return new Response('not found', { status: 404 });
     }
     const code = match[1] as string;
-    if (!ROOM_CODE_PATTERN.test(code)) {
-      return new Response('bad room code', { status: 400 });
-    }
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('expected a WebSocket upgrade', { status: 426 });
     }

@@ -209,7 +209,7 @@ server, which was worth having when the alternative was a public broker. It is g
 suite now runs against the real worker under `wrangler dev`, so there is no longer a reason
 to maintain a second transport with different semantics that no user path takes.
 
-Coverage of the room comes from three directions:
+Coverage of the room comes from four directions:
 
 | Where                      | What it drives                                                 |
 | -------------------------- | -------------------------------------------------------------- |
@@ -432,5 +432,6 @@ a handler that changes nothing plus a deadline recomputed from an unmoving clock
 wakes every second until the TTL kills it — 86,400 requests a day from a single table, which is
 most of the allowance above. That is not hypothetical: the `idleNudge` and mid-round `seatGrace`
 deadlines both did it, on the commonest paths in the game, and an audit found them rather than a
-bill. Two tests now assert an exact bound on the number of wakes, because "it looks like it
-settles" is not something a reader of `reschedule` can check by eye.
+bill. Three tests now bound the number of wakes — exactly one for a table waiting on a present
+player, exactly none for a paused one, and a ceiling for a dropped seat — because "it looks like
+it settles" is not something a reader of `reschedule` can check by eye.

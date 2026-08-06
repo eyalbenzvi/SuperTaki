@@ -137,9 +137,13 @@ there is no way to prevent that entirely. What is bounded:
 - The seat holding the lobby buttons can remove any player before the game starts; leaving is
   just leaving, and the room stays open for everybody else.
 
-- A socket that opens and never sends a `joinRequest` is closed on the room's next wake,
-  once past the join timeout. It is not free to leave one open: the room never learns a
-  silent socket exists, so no deadline it keeps would ever have noticed.
+- A socket that opens and never sends a `joinRequest` is closed once past the join timeout,
+  swept on any wake the object takes — a frame from anybody, a socket closing, or an alarm.
+  The sweep is necessary because the room never learns a silent socket exists: it hears about
+  a socket only when a frame arrives on it, so no deadline the room keeps would ever notice
+  one. It is a sweep rather than its own deadline because an alarm to police an idle socket
+  would cost more wakes than the sockets do — which does mean a room nobody touches at all
+  reaps nothing, and is bounded instead by the room's own six-hour deletion.
 
 **Not mitigated, honestly:** there is no rate limiter anywhere. A player in the room can flood
 valid-but-useless messages and consume the object's CPU, and anything can open sockets to a
@@ -247,6 +251,12 @@ the transport is TLS and the object is not addressable from outside the worker.
 **How long.** Until six hours after the last player leaves, when the TTL alarm fires and calls
 `storage.deleteAll()`. A finished round is not special — the room holds its state until the
 TTL, because players commonly deal again.
+
+Precisely: six hours after the last _socket closes_, not six hours after the last person stops
+playing. The clock is `emptySince`, and it is null while any socket is open — so a forgotten
+tab on a dead table holds the hands open for as long as it stays open. That is a real limit of
+this design, it is what "idle" means here, and the honest summary is that the deletion bounds
+an _unattended_ room rather than retention in general.
 
 **What was considered and rejected.** Encrypting hands under a key the server does not hold is
 incompatible with the server being the rules authority: it has to know what is in a hand to

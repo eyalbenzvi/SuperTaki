@@ -1075,9 +1075,19 @@ describe('the lobby powers', () => {
   });
 
   it('refuses to pass the turn of a player who is here', () => {
+    /*
+     * The seat *on turn*, which is the only seat this can be asked about meaningfully.
+     * Naming the other one made the test unfalsifiable: the engine refuses `skipTurn`
+     * for a seat that is not on turn anyway, so the assertion held whether or not the
+     * room's own presence check existed. The twin test below it had the same shape and
+     * did test something, which is how this one hid.
+     */
     const { table, creator, guest } = dealtTable();
+    const onTurn = [creator, guest].find((seat) => seat.playerId === creator.client.state?.currentPlayerId);
+    expect(onTurn, 'somebody recognisable is on turn').toBeDefined();
+
     const versionBefore = table.room.snapshotForTests().game?.version;
-    creator.client.say('roomCommand', { command: { type: 'skipAbsentTurn', playerId: guest.playerId } });
+    creator.client.say('roomCommand', { command: { type: 'skipAbsentTurn', playerId: onTurn!.playerId } });
     expect(table.room.snapshotForTests().game?.version).toBe(versionBefore);
   });
 
@@ -1261,5 +1271,172 @@ describe('standing in for a human', () => {
     table.advance(BOT_STALL_MS + 5_000);
     expect(creator.client.state?.turnSeq).not.toBe(seqBefore);
     expect(table.logs.some((line) => line.includes('robot'))).toBe(true);
+  });
+});
+
+describe('what a refactor must not quietly undo', () => {
+  it('keeps the deletion deadline across a hibernation, having written it', () => {
+    /*
+     * `flush()` settles the alarm queue *before* the writes, which reads backwards and
+     * is therefore a prime refactor casualty. It is load-bearing: `reschedule` is the
+     * only place that knows the room has emptied, so moving it back to the end means
+     * `emptySince` is computed and never stored. The object is evicted between
+     * messages on the real platform, so every wake would then re-derive the deadline
+     * from `now` — which is the bug, silently restored.
+     *
+     * A test that never hibernates cannot see that, which is why this one does.
+     */
+    const { table, creator, guest } = dealtTable();
+    table.room.handleClose(creator.client);
+    table.room.handleClose(guest.client);
+
+    const emptiedAt = table.now();
+    const stored = readRoom(table.store);
+    expect(stored.ok).toBe(true);
+    expect(stored.ok ? stored.value.emptySince : null).toBe(emptiedAt);
+
+    table.advance(5 * 60 * 60 * 1000);
+    table.hibernate();
+    // One refused frame, to force the rebuilt room to flush at all.
+    const stranger = table.client('Lost');
+    stranger.say('joinRequest', { displayName: 'Lost' });
+
+    // Still the original deadline, not five hours past the wake.
+    expect(table.room.alarmAtForTests('ttl')).toBe(emptiedAt + 6 * 60 * 60 * 1000);
+    table.advance(80 * 60 * 1000);
+    expect(table.forgotten).toBe(true);
+  });
+
+  it('does not wake at all while the table is paused', () => {
+    /*
+     * Two layers enforce this — `reschedule`'s `live` check and `sweepStandIns`'s own
+     * guard — so a test that only asserts "no robot took the seat" passes when either
+     * one rots. Measured with the guard removed from `reschedule` alone: 512 wakes per
+     * ten minutes, on the default table setting.
+     */
+    const { table, creator, guest } = dealtTable();
+    creator.client.say('pauseRequest', { paused: true });
+    table.room.handleClose(guest.client);
+
+    table.wakes = 0;
+    table.advance(10 * 60 * 1000);
+
+    expect(table.wakes).toBe(0);
+    expect(table.pendingAlarms()).toEqual([]);
+  });
+
+  it('never sends a covered seat’s hand to the rest of the table', () => {
+    /*
+     * The privacy sweep plays two humans, so nothing in it covers the robot path — and
+     * "show the table what the robot is playing" is a natural thing for somebody to add.
+     * A `broadcast` of a stood-in seat's hand in `beginStandIn` passed every other test
+     * in this file.
+     */
+    const table = new Harness();
+    const creator = table.join('Dana', CREATE);
+    const guest = table.join('Yoni');
+    const third = table.join('Noa');
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+    table.room.handleClose(third.client);
+    creator.client.forget();
+    guest.client.forget();
+
+    table.advance(STAND_IN_ABSENT_MS + 5_000);
+    const covered = table.room.snapshotForTests().room?.seats.find((s) => s.name === 'Noa');
+    expect(covered?.standIn).toBe('absent');
+
+    const game = table.room.snapshotForTests().game;
+    const hidden = [
+      ...(game?.hands[third.playerId] ?? []).map((card) => card.id),
+      ...(game?.drawPile ?? []).map((card) => card.id),
+    ];
+    expect(hidden.length).toBeGreaterThan(0);
+    for (const seat of [creator, guest]) {
+      const mine = new Set((game?.hands[seat.playerId] ?? []).map((card) => card.id));
+      for (const frame of seat.client.rawFrames) {
+        for (const id of hidden) {
+          if (mine.has(id)) {
+            continue;
+          }
+          expect(frame.includes(id), `${seat.client.label} was sent ${id}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('takes back a play-again vote when a robot stops covering a seat', () => {
+    /*
+     * A robot agrees to a new round so a table with one can never be blocked. When the
+     * seat comes back to its owner that agreement is not theirs, and leaving it behind
+     * dealt people into rounds they were never asked about.
+     *
+     * The seat has to be one whose agreement is *counted*, which means present and
+     * covered — a robot standing in for somebody who is away is deliberately not voted
+     * for, because nobody is answering for that seat and "2 of 1 ready" is worse than
+     * waiting. So: here, silent long enough to be covered, then speaking.
+     */
+    const { table, creator, guest } = dealtTable();
+    // The idle stand-in covers whichever seat the table is *waiting on*, so find it
+    // rather than assuming which.
+    table.advance(STAND_IN_IDLE_MS + 5_000);
+    const seats = table.room.snapshotForTests().room?.seats ?? [];
+    const coveredId = seats.find((seat) => seat.standIn === 'idle')?.playerId;
+    expect(coveredId, 'a seat is being covered').toBeDefined();
+    const owner = [creator, guest].find((seat) => seat.playerId === coveredId);
+    expect(owner, 'the covered seat belongs to one of these clients').toBeDefined();
+
+    // The other player calls it: with the covered seat not counted, one vote ends it.
+    const other = [creator, guest].find((seat) => seat.playerId !== coveredId);
+    other!.client.say('abandonVote', { agree: true });
+    expect(table.room.snapshotForTests().room?.phase).toBe('finished');
+    expect(table.room.snapshotForTests().room?.playAgainVotes).toContain(coveredId);
+
+    /*
+     * Their own tap takes the seat straight back, and the agreement with it. Anything
+     * they ask for will do, and deliberately *not* a `playAgainVote` — that removes the
+     * vote by itself, so it cannot tell whether the release retracted anything.
+     */
+    owner!.client.say('abandonVote', { agree: false });
+
+    const after = table.room.snapshotForTests().room;
+    expect(after?.seats.find((seat) => seat.playerId === coveredId)?.standIn).toBeNull();
+    expect(after?.playAgainVotes).not.toContain(coveredId);
+    expect(after?.phase).toBe('finished');
+  });
+
+  it('marks a seat away when a bad resume closes its socket', () => {
+    // The third path `dropSocket` was introduced for, and the only one without a test:
+    // a seated socket whose next frame is a rejected resume.
+    const { table, creator, guest } = dealtTable();
+    creator.client.forget();
+
+    guest.client.say('resumeRequest', { playerId: 'pl_nobody', resumeToken: 'a'.repeat(32) });
+
+    expect(guest.client.expect('joinRejected').payload.reason).toBe('unknownSeat');
+    expect(
+      table.room.snapshotForTests().room?.seats.find((s) => s.name === 'Yoni')?.absentSince,
+    ).not.toBeNull();
+  });
+
+  it('carries the table language, and remembers a robot played a seat', () => {
+    const table = new Harness();
+    const creator = table.join('Dana', CREATE);
+    const guest = table.join('Yoni');
+
+    creator.client.say('roomCommand', { command: { type: 'setTableLanguage', language: 'en' } });
+    expect(creator.client.expect('lobbyState').payload.lobby.tableLanguage).toBe('en');
+
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+    table.room.handleClose(guest.client);
+    table.advance(STAND_IN_ABSENT_MS + 5_000);
+
+    // Recorded on the seat, and published, so the standings can say a robot was here.
+    expect(
+      table.room.snapshotForTests().room?.seats.find((s) => s.name === 'Yoni')?.robotPlayedThisRound,
+    ).toBe(true);
+    const seat = creator.client
+      .expect('lobbyState')
+      .payload.lobby.players.find((p) => p.id === guest.playerId);
+    expect(seat?.robotPlayed).toBe(true);
   });
 });

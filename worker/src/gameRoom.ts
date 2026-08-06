@@ -166,9 +166,17 @@ const TURN_SCOPED: ReadonlySet<GameAction['type']> = new Set<GameAction['type']>
  *
  * The guards in `passAbsentTurn` mean the engine should never refuse, so this should
  * never be load-bearing. It exists because "should never" is a claim about today's
- * code, and the cost of being wrong without it is unbounded. With it, a stuck table
- * wakes once a second: still visible in the logs, still a bug, but 1,000 times
- * cheaper and comfortably inside the free plan's daily budget.
+ * code, and the cost of being wrong *without* it is unbounded.
+ *
+ * It is not, however, an affordable failure. This paragraph used to say that a floored
+ * loop was "1,000 times cheaper and comfortably inside the free plan's daily budget",
+ * and that was wrong by the same arithmetic used to condemn the loops an audit found
+ * here: one wake a second is 86,400 a day, which is the *whole* daily request
+ * allowance from a single table. The floor turns an unbounded bill into the largest
+ * bill the plan permits. It buys a room that is still there to be debugged; it does
+ * not buy the right to leave one running. What actually keeps this cheap is that no
+ * deadline is ever booked into the past — see `reschedule`, and the two tests that
+ * bound the wake count.
  *
  * One second is far below every deadline it clamps — the shortest is the twelve-second
  * absent-turn grace — so it is invisible to players.
@@ -256,14 +264,35 @@ export class GameRoom {
     if (stored !== null && !stored.ok && stored.reason === 'corrupt') {
       this.log('discarding an unreadable game state');
       clearGame(this.store);
-      if (this.record !== null) {
-        // A room whose round cannot be read is back in its lobby. The seats and
-        // their credentials are intact, so the table can simply deal again.
-        this.record = { ...this.record, phase: 'lobby' };
-        this.roomDirty = true;
-      }
     }
     this.game = stored?.ok === true ? stored.value : null;
+
+    /*
+     * A round the room says it is playing, and no round to play.
+     *
+     * Repaired here rather than where the game is discarded, because the two ways to
+     * reach it are different and only one of them was being handled: a game blob that
+     * failed to parse (just above), and a `game` row that is simply absent while the
+     * record still says `inGame` — which the eager `clearGame` above produces if the
+     * matching record write is ever lost.
+     *
+     * And it is *written*, not merely marked dirty. That was the actual defect: the
+     * repair set `roomDirty` and the constructor never flushes, so it survived only if
+     * something else happened to flush later — and several paths in `handleMessage`
+     * return without flushing. The unrepaired state is a table nobody can leave: no
+     * sweep touches `inGame`, `startGame` wants a lobby, `playAgainVote` wants a
+     * finished round, every action is refused for want of a game, every join is
+     * answered `gameInProgress`, and the open sockets keep the TTL from ever arming.
+     *
+     * The seats and their credentials are intact, so the honest state is the lobby they
+     * can deal from. The realistic trigger is a deployment that changes `GameState`'s
+     * shape, which is exactly what the schema's drift guard exists to force.
+     */
+    if (this.record !== null && this.record.phase === 'inGame' && this.game === null) {
+      this.log('a round that cannot be read; the table is back in its lobby');
+      this.record = { ...this.record, phase: 'lobby', playAgainVotes: [], abandonVotes: [] };
+      writeRoom(this.store, this.record);
+    }
 
     for (const entry of options.restore ?? []) {
       this.connections.set(entry.socket, {
@@ -2001,7 +2030,16 @@ export class GameRoom {
     if (pending !== null) {
       for (const awaited of pending.awaiting) {
         const seat = this.seatFor(awaited);
-        if (seat === undefined) {
+        /*
+         * `left` is checked here for the same reason the turn branch below checks it,
+         * and its absence was a 1 Hz loop waiting to happen: the engine refuses every
+         * command from a seat that has left, so a deadline booked for one is a wake
+         * that fires, is refused, and re-books the same past moment for ever. The
+         * engine keeps such a seat out of `awaiting` today — `openPlusThree` filters
+         * them and `applyLeaveGame` prunes them — so this guards an invariant the room
+         * does not own rather than a state it can currently reach.
+         */
+        if (seat === undefined || seat.left) {
           continue;
         }
         if (this.robotControls(seat)) {
@@ -2249,7 +2287,7 @@ export class GameRoom {
     if (pending !== null) {
       for (const awaited of pending.awaiting) {
         const seat = this.seatFor(awaited);
-        if (seat === undefined || this.robotControls(seat)) {
+        if (seat === undefined || seat.left || this.robotControls(seat)) {
           continue;
         }
         if (!this.present(seat)) {
@@ -2417,6 +2455,9 @@ export class GameRoom {
     record.abandonVotes = [];
     this.game = null;
     this.gameDirty = true;
+    // Same housekeeping the other route back to a lobby does: without it the
+    // last-card clocks of a finished round outlive the round they belong to.
+    this.trackLastCard();
     this.roomDirty = true;
     this.log('not enough players left to deal again; back to the lobby');
     this.emitLobby();

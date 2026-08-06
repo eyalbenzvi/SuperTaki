@@ -117,8 +117,16 @@ export const roomRecordSchema = z.object({
    * refused. A mistyped room code, or anything walking the six-digit space, would keep
    * every hand in storage indefinitely, and a mechanical six-hour deletion is the one
    * thing the threat model offers in exchange for the room holding the cards at all.
+   *
+   * Defaulted rather than required, which is not laziness about this field but a rule
+   * about this schema: a required addition rejects every record an older build wrote,
+   * and `readRoom` treats a rejection as no room at all — so the whole table, every
+   * seat and every credential would go on the first wake after a deploy. `worker/`
+   * auto-deploys from the default branch, so that is one merge away from being real.
+   * A field added here must be `.default()`ed or `.optional()`, and a default must be
+   * the value that makes an old record behave as it did before the field existed.
    */
-  emptySince: z.number().int().min(0).nullable(),
+  emptySince: z.number().int().min(0).nullable().default(null),
   playAgainVotes: z.array(playerId).max(6),
   abandonVotes: z.array(playerId).max(6),
   /**

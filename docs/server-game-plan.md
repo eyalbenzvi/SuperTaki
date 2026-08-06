@@ -98,7 +98,8 @@ Removed, because the concept is gone:
 - `LobbySnapshot.generation` — host generations existed only for handover.
 - `handoffOffer`, `handoffAccepted` — the room does not move.
 - `hostClosed` reasons `restarting` and `handoff`; the message shrinks to
-  `roomClosed { reason: 'roomClosed' | 'roomReset' }`.
+  `roomClosed { reason: 'roomClosed' }`. (`roomReset` was in this plan and was built,
+  and then deleted — nothing ever produced it.)
 - `ConnectionHealth`'s `'unstable'` (see §5) — a socket is open or it is not.
 
 Kept, with its meaning narrowed:

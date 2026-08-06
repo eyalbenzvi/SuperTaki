@@ -181,6 +181,7 @@ export class RoomDO implements DurableObject {
       return;
     }
     const room = this.ensureRoom();
+    this.reapUnjoined();
     const wrapper = this.wrap(ws);
     const before = room.identityOf(wrapper);
     room.handleMessage(wrapper, message);
@@ -193,6 +194,7 @@ export class RoomDO implements DurableObject {
   }
 
   webSocketClose(ws: WebSocket): void {
+    this.reapUnjoined();
     this.ensureRoom().handleClose(this.wrap(ws));
   }
 
@@ -210,7 +212,10 @@ export class RoomDO implements DurableObject {
    * invisible to every deadline the room keeps.
    *
    * Done on wakes the object already takes rather than on an alarm of its own, because
-   * an alarm to police an idle socket would cost more wakes than the sockets do.
+   * an alarm to police an idle socket would cost more wakes than the sockets do. That
+   * means every wake, not only alarms: a quiet lobby with everybody present holds no
+   * deadline at all, and a socket opened against a room code that was never created
+   * arms nothing either — so riding alarms alone left the commonest case unreaped.
    */
   private reapUnjoined(): void {
     const cutoff = Date.now() - JOIN_TIMEOUT_MS;

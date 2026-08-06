@@ -61,7 +61,7 @@ if a card's behaviour is not what you expected.
 | Persistence on device | `localStorage` for preferences and a rejoin token                       | Free                        |
 | Analytics / telemetry | None at all                                                             | Free                        |
 
-The server is yours: a few hundred lines of TypeScript in `worker/`, deployed to a free
+The server is yours: about 3,400 lines of TypeScript in `worker/`, deployed to a free
 Cloudflare account with no credit card. A full game evening uses well under one percent of the
 free plan's daily allowance — a room wakes only when somebody moves or a deadline comes due,
 and an empty one costs nothing at all until it deletes itself.

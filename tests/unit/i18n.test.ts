@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LANGUAGE,
@@ -17,6 +20,21 @@ import { ROOM_ERROR_CODES } from '../../src/features/game/network/roomTransport.
 import { joinRejectionReasonSchema } from '../../src/features/game/network/protocol.ts';
 
 const keys = Object.keys(en) as TranslationKey[];
+// `import.meta.url` is not a file URL under the jsdom environment these tests run in.
+const rootDir = process.cwd();
+
+/** Every source file that could read a translation key, dictionaries excluded. */
+function sourceFiles(dir: string, found: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      sourceFiles(path, found);
+    } else if (/\.tsx?$/.test(entry.name) && !/i18n[/\\](en|he)\.ts$/.test(path)) {
+      found.push(path);
+    }
+  }
+  return found;
+}
 
 function placeholders(value: string): string[] {
   return [...value.matchAll(/\{(\w+)\}/g)].map((match) => match[1] as string).sort();
@@ -45,6 +63,54 @@ describe('dictionaries', () => {
     for (const key of keys) {
       expect(placeholders(he[key]), `key:${key}`).toEqual(placeholders(en[key]));
     }
+  });
+
+  /*
+   * The other direction, which nothing checked.
+   *
+   * Deriving the lists above stops a key going *missing*. It says nothing about a key
+   * whose reader has been deleted — and that is the failure that actually happened
+   * twice: `status.initializing` and `status.ready` outlived the session that emitted
+   * them, and a whole pass-and-play mode left eleven `local.*` strings behind when it
+   * went. Fifteen orphans were found by hand; this is so the sixteenth is not.
+   *
+   * A key counts as read if its literal appears anywhere outside the dictionaries, or
+   * if it is half of a plural pair whose sibling is read, or if it is reached through
+   * one of the interpolating helpers that build a key from a value at runtime.
+   */
+  it('has no string that nothing reads', () => {
+    const sources = [...sourceFiles(join(rootDir, 'src')), ...sourceFiles(join(rootDir, 'tests'))];
+    expect(sources.length, 'found some sources to search').toBeGreaterThan(50);
+    const haystack = sources.map((file) => readFileSync(file, 'utf8')).join('\n');
+
+    /* Keys assembled at runtime from a value: `reject.${code}`, `status.${phase}`, and
+       the counted-phrase helper's `${key}.one` / `.other`. Matched by prefix. */
+    const dynamicPrefixes = [
+      'reject.',
+      'status.',
+      'error.',
+      'closed.',
+      'event.',
+      'card.',
+      'color.',
+      // `t(\`language.${code}\`)` and `t(\`theme.${choice}\`)` in the settings controls.
+      'language.',
+      'theme.',
+    ];
+
+    const orphans = keys.filter((key) => {
+      if (haystack.includes(`'${key}'`) || haystack.includes(`"${key}"`) || haystack.includes(`\`${key}\``)) {
+        return false;
+      }
+      if (dynamicPrefixes.some((prefix) => key.startsWith(prefix))) {
+        return false;
+      }
+      // A plural pair is read through `countLabel(t, base, n)`, which never names either half.
+      const base = key.replace(/\.(one|other)$/, '');
+      return base === key ? true : !haystack.includes(`'${base}'`);
+    });
+
+    expect(orphans, `unread translation keys: ${orphans.join(', ')}`).toEqual([]);
   });
 
   it('has a localised message for every engine rejection code', () => {

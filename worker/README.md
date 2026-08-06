@@ -30,7 +30,7 @@ play a full round in a millisecond and assert on every frame that crossed the wi
 
 ```bash
 npm run dev      # local room on ws://127.0.0.1:8787
-npm run verify   # typecheck + unit tests
+npm run verify   # typecheck + unit tests + the coverage floor under src/
 npm run smoke    # a whole round over real sockets against wrangler dev
 npm run deploy   # manual deploy (CI does this automatically)
 ```

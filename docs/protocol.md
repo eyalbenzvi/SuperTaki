@@ -27,7 +27,8 @@ Cloudflare runtime answers without waking the room.
 4. **Unknown fields are dropped, not trusted.** Zod objects strip anything not in the schema,
    so an extra `{isCreator: true}` cannot smuggle privilege.
 5. **Bounded everything.** Strings, arrays and numbers have maxima; a whole message is capped
-   at 64 KiB.
+   at 64 Ki UTF-16 code units — the check counts units rather than bytes, so the true byte
+   ceiling is up to three times that. It is a memory bound, not a budget.
 
 ## Envelope
 
@@ -428,7 +429,7 @@ answer and the one the gate exists to give.
 | ----------------------- | -------------------------- | ----------------------------------------------------------------------------- |
 | `hostPlayerId`          | `creatorPlayerId`          | Names the seat with the lobby buttons, not the device running the game.       |
 | `player.isHost`         | `player.isCreator`         | The same narrowing, per seat.                                                 |
-| `hostClosed`            | `roomClosed`               | `roomClosed \| roomReset`, both terminal.                                     |
+| `hostClosed`            | `roomClosed`               | One reason, `roomClosed`, and terminal.                                       |
 | `kicked(removedByHost)` | `kicked(removedByCreator)` | Whoever holds the lobby buttons, not an authority.                            |
 | `parseHostMessage`      | `parseRoomMessage`         | And `hostMessageSchema` → `roomMessageSchema`, `HostMessage` → `RoomMessage`. |
 
