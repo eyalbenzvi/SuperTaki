@@ -67,9 +67,7 @@ describe('dictionaries', () => {
 
   it('has a localised message for every session error and close reason', () => {
     for (const code of [
-      'idUnavailable',
-      'peerUnavailable',
-      'signalingUnavailable',
+      'notConfigured',
       'browserUnsupported',
       'network',
       'timeout',
@@ -82,23 +80,17 @@ describe('dictionaries', () => {
       'unknownSeat',
       'invalidResumeToken',
       'roomClosed',
-      'transportUnavailable',
+      'roomTaken',
     ]) {
       expect(keys).toContain(`error.${code}`);
     }
     for (const reason of [
-      'hostLeft',
+      'roomClosed',
       'roomReset',
-      'removedByHost',
+      'removedByCreator',
       'duplicateConnection',
       'leftVoluntarily',
-      'transportFailed',
-      // The two reasons that are not the end of anything, plus the one that ends a
-      // round without ending the room. A player who is told "the host is coming
-      // back" and a player who is told "the host left" need different words, and
-      // the whole point of the distinction is lost if they share a string.
-      'restarting',
-      'handoff',
+      // The one that ends a round without ending the room.
       'abandoned',
     ]) {
       expect(keys).toContain(`closed.${reason}`);

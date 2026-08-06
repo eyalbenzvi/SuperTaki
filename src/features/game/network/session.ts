@@ -2,18 +2,13 @@ import type { Card } from '../engine/cards.ts';
 import type { GameEvent, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import type { JoinRejectionReason, LobbySnapshot } from './protocol.ts';
-import {
-  PROBE_INTERVAL_BUSY_MS,
-  silentAfterMs as baseSilentAfterMs,
-  unstableAfterMs as baseUnstableAfterMs,
-} from './timing.ts';
-import type { TransportErrorCode } from './transport.ts';
+import type { RoomErrorCode } from './roomTransport.ts';
 
 /** Connection lifecycle, surfaced verbatim in the UI. */
 export type ConnectionPhase =
   'idle' | 'initializing' | 'ready' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed';
 
-export type SessionErrorCode = TransportErrorCode | JoinRejectionReason | 'transportUnavailable';
+export type SessionErrorCode = RoomErrorCode | JoinRejectionReason | 'protocolMismatch';
 
 export interface SessionError {
   readonly code: SessionErrorCode;
@@ -23,37 +18,28 @@ export interface SessionError {
   readonly retryable: boolean;
 }
 
+/**
+ * Why a session ended.
+ *
+ * Every one of these is terminal, which is new. There used to be reasons that were
+ * not — a host reloading, a host handing the room to somebody else — and a great
+ * deal of machinery existed so a client could tell those from a goodbye and hold its
+ * seat through them. A room does not reload and does not move, so if the session is
+ * over it is over, and what a client does about it is always the same.
+ */
 export type SessionClosedReason =
-  | 'hostLeft'
+  | 'roomClosed'
   | 'roomReset'
-  | 'removedByHost'
+  | 'removedByCreator'
   | 'duplicateConnection'
   | 'leftVoluntarily'
-  | 'transportFailed'
   /** The round ran out of players. */
   | 'abandoned';
-
-/**
- * Close reasons that end the room, as opposed to interrupting it.
- *
- * The distinction is load-bearing. A client that is told the host has gone used
- * to destroy its transport and latch `destroyed`, after which no amount of
- * preserved credentials or patient backoff could bring it back — so "the host
- * reloads and everyone reconnects" was impossible to build. A host that is merely
- * restarting, or handing over, now says so and the client stays alive.
- */
-export const TERMINAL_CLOSE_REASONS: ReadonlySet<SessionClosedReason> = new Set<SessionClosedReason>([
-  'hostLeft',
-  'roomReset',
-  'removedByHost',
-  'leftVoluntarily',
-  'abandoned',
-]);
 
 /** Close reasons after which the seat is genuinely gone, so its credential is worthless. */
 export const CREDENTIAL_ENDING_REASONS: ReadonlySet<SessionClosedReason> = new Set<SessionClosedReason>([
   'leftVoluntarily',
-  'removedByHost',
+  'removedByCreator',
 ]);
 
 /** Everything a session tells the outside world. */
@@ -71,21 +57,6 @@ export type SessionUpdate =
   | { readonly type: 'paused'; readonly pausedBy: string | null }
   /** It is this player's turn and another player is waiting on them. */
   | { readonly type: 'nudged'; readonly fromPlayerId: string }
-  /** The room is moving to another device; the client should follow. */
-  | { readonly type: 'handover'; readonly generation: number }
-  /**
-   * This device has been offered the room.
-   *
-   * The snapshot travels with the offer, and `accept` is called once the successor
-   * is actually serving — so the old host only steps down when there is somewhere
-   * for the table to go.
-   */
-  | {
-      readonly type: 'handoffOffer';
-      readonly generation: number;
-      readonly snapshot: unknown;
-      readonly accept: () => void;
-    }
   | { readonly type: 'playAgain'; readonly agreed: readonly string[]; readonly required: number }
   | {
       readonly type: 'identity';
@@ -97,10 +68,8 @@ export type SessionUpdate =
 
 export type SessionObserver = (update: SessionUpdate) => void;
 
-/** Transport error codes the user can meaningfully retry. */
+/** Error codes the user can meaningfully retry. */
 const RETRYABLE: ReadonlySet<SessionErrorCode> = new Set<SessionErrorCode>([
-  'peerUnavailable',
-  'signalingUnavailable',
   'network',
   'timeout',
   'unknown',
@@ -112,33 +81,18 @@ export function sessionError(code: SessionErrorCode, detail?: string): SessionEr
   return { code, retryable: RETRYABLE.has(code), ...(detail ? { detail } : {}) };
 }
 
-export {
-  RECONNECT_BACKOFF_MS,
-  backoffDelay,
-  probeInterval,
-  reconnectDeadlineMs,
-  silentAfterMs,
-  unstableAfterMs,
-} from './timing.ts';
+export { RECONNECT_BACKOFF_MS, backoffDelay, reconnectDeadlineMs } from './timing.ts';
 
 /**
- * Health thresholds, kept as a compatibility shim over `timing.ts`.
+ * What the app holds while a player is in a room.
  *
- * The numbers themselves now live in one file with the rest of the hierarchy,
- * because these three were being compared against constants declared elsewhere
- * and drifting from them.
+ * There is one implementation now. `role` survives as a literal because a great deal
+ * of code reads it, and because 'client' is the honest answer for everybody at the
+ * table — including whoever opened it.
  */
-export const HEARTBEAT = {
-  intervalMs: PROBE_INTERVAL_BUSY_MS,
-  unstableAfterMs: baseUnstableAfterMs(PROBE_INTERVAL_BUSY_MS),
-  disconnectedAfterMs: baseSilentAfterMs(PROBE_INTERVAL_BUSY_MS),
-} as const;
-
-/** Common shape of the host- and client-side session objects. */
 export interface Session {
-  readonly role: 'host' | 'client';
+  readonly role: 'client';
   readonly roomCode: string;
-  readonly hostPeerId: string;
   readonly localPlayerId: string;
   destroy(reason: SessionClosedReason): void;
 }

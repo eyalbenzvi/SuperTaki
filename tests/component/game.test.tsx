@@ -582,12 +582,12 @@ describe('leaving a game', () => {
     const dialog = screen.getByRole('dialog');
     // A host with another player present is offered the handover; closing the room
     // for everybody is still available, and still the destructive option.
-    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
+    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
     expect(leaveRoom).toHaveBeenCalled();
   });
 
   it('waits politely before the first snapshot arrives', () => {
-    setState({ screen: 'game', role: 'client', phase: 'connected', publicState: null });
+    setState({ screen: 'game', inRoom: true, phase: 'connected', publicState: null });
     renderApp();
     expect(statusRegions()[0]).toHaveTextContent('ממתינים לשולחן…');
   });
@@ -679,11 +679,11 @@ describe('the last card declaration', () => {
           waitingFor: GUEST_ID,
           waitingReason: 'absent',
           players: [
-            { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+            { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
             {
               id: GUEST_ID,
               name: 'אלי',
-              isHost: false,
+              isCreator: false,
               health: 'disconnected',
               seat: 1,
               // Away for a minute already, by the host's own reckoning.
@@ -730,11 +730,11 @@ describe('waiting on somebody at the table', () => {
           waitingFor: GUEST_ID,
           waitingReason: 'absent',
           players: [
-            { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+            { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
             {
               id: GUEST_ID,
               name: 'אלי',
-              isHost: false,
+              isCreator: false,
               health: 'disconnected',
               seat: 1,
               absentSince: sentAt - 60_000,

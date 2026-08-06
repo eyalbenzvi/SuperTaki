@@ -89,7 +89,6 @@ describe('landing screen', () => {
     setState({
       resumable: {
         roomCode: '482913',
-        hostPeerId: 'crush-482913',
         playerId: 'pl_abc',
         resumeToken: 'a'.repeat(32),
         displayName: 'דנה',

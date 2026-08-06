@@ -212,9 +212,9 @@ describe('a "last card" catch, said to the whole table', () => {
       lobby: lobbyFixture({
         phase: 'inGame',
         players: [
-          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
-          { id: GUEST_ID, name: 'אלי', isHost: false, health: 'connected', seat: 1 },
-          { id: CAROL_ID, name: 'נועה', isHost: false, health: 'connected', seat: 2 },
+          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'אלי', isCreator: false, health: 'connected', seat: 1 },
+          { id: CAROL_ID, name: 'נועה', isCreator: false, health: 'connected', seat: 2 },
         ],
       }),
     });
@@ -282,10 +282,10 @@ describe('leaving', () => {
     // screen all go through the same warning with the same wording.
     await user.click(screen.getByRole('button', { name: 'יציאה' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveAccessibleName('להעביר את ניהול החדר?');
+    expect(dialog).toHaveAccessibleName('לצאת מהמשחק?');
     expect(leaveRoom).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
+    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
     expect(leaveRoom).toHaveBeenCalled();
   });
 });
@@ -509,8 +509,8 @@ describe('robots at the table', () => {
       lobby: lobbyFixture({
         phase: 'inGame',
         players: [
-          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
-          { id: GUEST_ID, name: 'רובוט תמר', isHost: false, health: 'connected', seat: 1, bot: true },
+          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'רובוט תמר', isCreator: false, health: 'connected', seat: 1, bot: true },
         ],
       }),
     });
@@ -528,11 +528,11 @@ describe('robots at the table', () => {
         sentAt: 1_000_000,
         seatGraceMs: 300_000,
         players: [
-          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
+          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
           {
             id: GUEST_ID,
             name: 'אלי',
-            isHost: false,
+            isCreator: false,
             health: 'disconnected',
             seat: 1,
             absentSince: 900_000,
@@ -549,20 +549,27 @@ describe('robots at the table', () => {
     expect(screen.queryByText(/שומרים את המושב/)).not.toBeInTheDocument();
   });
 
-  it('lets the host hand the seat back, and offers a guest no such control', () => {
-    table({ hand: [red5, red7], myTurn: false });
+  it('lets the seat with the lobby buttons hand a covered seat back, and offers others no such control', () => {
+    /*
+     * Which seat holds the buttons is now read off `creatorPlayerId` in the lobby the
+     * room sends, rather than off a local `role` flag — so the two halves of this
+     * differ by *who this device is*, which is the thing that actually decides it.
+     */
+    const THIRD = 'pl_third00000';
     const players = [
-      { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected' as const, seat: 0 },
+      { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected' as const, seat: 0 },
       {
         id: GUEST_ID,
         name: 'אלי',
-        isHost: false,
+        isCreator: false,
         health: 'disconnected' as const,
         seat: 1,
         absentSince: 900_000,
         standIn: true,
       },
+      { id: THIRD, name: 'נועה', isCreator: false, health: 'connected' as const, seat: 2 },
     ];
+    table({ hand: [red5, red7], myTurn: false });
     setState({ lobby: lobbyFixture({ phase: 'inGame', sentAt: 1_000_000, players }) });
     const first = renderApp();
     expect(screen.getByRole('button', { name: 'עצירת הרובוט' })).toBeInTheDocument();
@@ -571,8 +578,8 @@ describe('robots at the table', () => {
     resetStore();
     table({ hand: [red5, red7], myTurn: false });
     setState({
-      role: 'client',
-      localPlayerId: HOST_ID,
+      inRoom: true,
+      localPlayerId: THIRD,
       lobby: lobbyFixture({ phase: 'inGame', sentAt: 1_000_000, players }),
     });
     renderApp();

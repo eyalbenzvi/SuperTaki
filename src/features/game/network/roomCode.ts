@@ -4,26 +4,27 @@ import { randomInt } from '../../../lib/id.ts';
  * Room codes are digits you can read out loud, not secrets.
  *
  * Format: six digits (e.g. `482913`), which is a number pad on a phone and one
- * glance to copy off a screen. The host's PeerJS id is derived from the code,
- * which is what makes "join by code" possible without any server-side room
- * registry.
+ * glance to copy off a screen. The code names the room's Durable Object directly —
+ * `idFromName(code)` — so "join by code" needs no registry to consult and no
+ * indirection to resolve.
  *
- * Six rather than four, and the reason is not collisions — those the broker
- * catches and the host retries through. It is that *every* string of digits is a
- * valid code. At four digits a single mistyped digit is somebody else's live
- * room rather than an error message, and the whole space of ten thousand rooms
- * can be walked by hand in an evening; at six, a typo lands nowhere and the space
- * is a million. Neither is a password — the room is only open while it is being
- * played — but a private game should at least be hard to wander into.
+ * Six rather than four, and the reason is not collisions — the room itself catches
+ * those, by already having players in it. It is that *every* string of digits is a
+ * valid code. At four digits a single mistyped digit is somebody else's live room
+ * rather than an error message, and the whole space of ten thousand rooms can be
+ * walked by hand in an evening; at six, a typo lands nowhere and the space is a
+ * million. Neither is a password — the room is only open while it is being played —
+ * but a private game should at least be hard to wander into.
  */
 
 const ROOM_CODE_LENGTH = 6;
-const PEER_ID_PREFIX = 'crush';
 const ROOM_CODE_PATTERN = new RegExp(`^\\d{${String(ROOM_CODE_LENGTH)}}$`);
 
 /**
- * Number of distinguishable codes. Collisions are additionally detected by
- * PeerJS (`unavailable-id`), which lets the host regenerate.
+ * Number of distinguishable codes.
+ *
+ * A collision is detected by the room answering `roomTaken` to a request that meant
+ * to create it, which the caller retries with a fresh code.
  */
 export const ROOM_CODE_SPACE = 10 ** ROOM_CODE_LENGTH;
 
@@ -50,60 +51,23 @@ export function isValidRoomCode(input: string): boolean {
   return ROOM_CODE_PATTERN.test(normalizeRoomCode(input));
 }
 
-/**
- * Deterministic host peer id for a room code.
- *
- * `generation` exists so a room can move to another device without the room code
- * changing: after a handover the successor claims generation 1, and a client that
- * cannot find generation 0 knows where to look without any registry to consult.
- * Generation 0 keeps the original, unadorned id, so old invites stay valid.
- */
-export function hostPeerIdForRoom(roomCode: string, generation = 0): string {
-  const base = `${PEER_ID_PREFIX}-${normalizeRoomCode(roomCode)}`;
-  return generation > 0 ? `${base}-h${String(generation)}` : base;
-}
-
-/**
- * The inverse of `hostPeerIdForRoom`: which room a host peer id lives in.
- *
- * The relay names its rooms by room code, so a guest transport that only knows
- * the host's peer id derives the room to dial from the id itself — any
- * generation suffix included.
- */
-export function roomCodeFromHostPeerId(peerId: string): string | null {
-  const match = new RegExp(`^${PEER_ID_PREFIX}-(\\d{${String(ROOM_CODE_LENGTH)}})(?:-h\\d+)?$`).exec(peerId);
-  return match ? (match[1] as string) : null;
-}
-
-const PEER_ID_PATTERN = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
-
-export function isValidPeerId(input: string): boolean {
-  return input.length > 0 && input.length <= 64 && PEER_ID_PATTERN.test(input);
-}
-
 export interface InviteDetails {
   readonly roomCode: string;
-  /** Present only when the host advertised a non-derived peer id. */
-  readonly hostPeerId?: string;
 }
 
 /**
  * Builds the shareable invite URL. Hash routing keeps it valid on GitHub Pages,
  * which cannot rewrite unknown paths to `index.html`.
+ *
+ * The room code is the whole of it. An invite used to be able to carry a `host=`
+ * override too, for a room whose peer id was not the derived one — a room that had
+ * been handed to another device. Rooms do not move any more, so the code is enough
+ * and always will be.
  */
 export function buildInviteUrl(details: InviteDetails, baseUrl: string): string {
   const url = new URL(baseUrl);
-  // Carry the transport override across, so an invite generated in
-  // same-browser mode still works when opened in another tab. In production the
-  // parameter is absent and the link stays clean.
-  const transport = url.searchParams.get('transport');
-  url.search = transport === 'broadcast' ? `?transport=${transport}` : '';
-  const params = new URLSearchParams({ room: details.roomCode });
-  const derived = hostPeerIdForRoom(details.roomCode);
-  if (details.hostPeerId && details.hostPeerId !== derived) {
-    params.set('host', details.hostPeerId);
-  }
-  url.hash = `#/join?${params.toString()}`;
+  url.search = '';
+  url.hash = `#/join?${new URLSearchParams({ room: details.roomCode }).toString()}`;
   return url.toString();
 }
 
@@ -121,14 +85,8 @@ export function parseInvite(input: string): InviteDetails | null {
   const queryPart = hashIndex >= 0 ? trimmed.slice(hashIndex + 1) : trimmed;
   const questionIndex = queryPart.indexOf('?');
   if (questionIndex >= 0) {
-    const params = new URLSearchParams(queryPart.slice(questionIndex + 1));
-    const room = params.get('room');
-    const host = params.get('host');
-    if (room && isValidRoomCode(room)) {
-      const roomCode = normalizeRoomCode(room);
-      return host && isValidPeerId(host) ? { roomCode, hostPeerId: host } : { roomCode };
-    }
-    return null;
+    const room = new URLSearchParams(queryPart.slice(questionIndex + 1)).get('room');
+    return room && isValidRoomCode(room) ? { roomCode: normalizeRoomCode(room) } : null;
   }
 
   if (isValidRoomCode(trimmed)) {

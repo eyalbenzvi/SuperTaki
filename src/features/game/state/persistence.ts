@@ -1,13 +1,13 @@
 import { DEFAULT_LANGUAGE, isLanguage, type Language } from '../../../i18n/index.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import { STORAGE_KEYS, readJson, readRaw, removeRaw, writeJson, writeRaw } from '../../../lib/storage.ts';
-import { isValidPeerId, isValidRoomCode } from '../network/roomCode.ts';
+import { isValidRoomCode } from '../network/roomCode.ts';
 
 /**
  * The only things this app persists locally:
  * display preferences, the player's chosen name, and a short-lived token that
  * lets them re-take their seat after a refresh. No game history, no identifiers
- * shared with anyone but the room's host.
+ * shared with anyone but the room.
  */
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
@@ -17,15 +17,20 @@ const THEMES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
 /** Resume metadata expires so a stale token never lingers on a shared device. */
 export const RESUME_TTL_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * A seat this device can come back to.
+ *
+ * The room code and the credential, and nothing else. It used to carry the host's
+ * peer id and the host generation as well, because the room could be on a device
+ * whose address had changed since the invite was sent. The room is at the room code,
+ * always, so there is nothing left to remember about where it is.
+ */
 export interface ResumableRoom {
   readonly roomCode: string;
-  readonly hostPeerId: string;
   readonly playerId: string;
   readonly resumeToken: string;
   readonly displayName: string;
   readonly savedAt: number;
-  /** Host generation this credential was last seen at, so a handover can be followed. */
-  readonly generation?: number;
 }
 
 export function loadLanguage(): Language {
@@ -79,7 +84,6 @@ function validateResumable(value: unknown, now: number): ResumableRoom | null {
   const candidate = value as Partial<ResumableRoom>;
   if (
     typeof candidate.roomCode !== 'string' ||
-    typeof candidate.hostPeerId !== 'string' ||
     typeof candidate.playerId !== 'string' ||
     typeof candidate.resumeToken !== 'string' ||
     typeof candidate.displayName !== 'string' ||
@@ -87,7 +91,7 @@ function validateResumable(value: unknown, now: number): ResumableRoom | null {
   ) {
     return null;
   }
-  if (!isValidRoomCode(candidate.roomCode) || !isValidPeerId(candidate.hostPeerId)) {
+  if (!isValidRoomCode(candidate.roomCode)) {
     return null;
   }
   if (candidate.resumeToken.length < 8 || candidate.resumeToken.length > 64) {
@@ -98,14 +102,10 @@ function validateResumable(value: unknown, now: number): ResumableRoom | null {
   }
   return {
     roomCode: candidate.roomCode,
-    hostPeerId: candidate.hostPeerId,
     playerId: candidate.playerId,
     resumeToken: candidate.resumeToken,
     displayName: sanitizeDisplayName(candidate.displayName) || 'Player',
     savedAt: candidate.savedAt,
-    ...(typeof candidate.generation === 'number' && candidate.generation >= 0
-      ? { generation: candidate.generation }
-      : {}),
   };
 }
 

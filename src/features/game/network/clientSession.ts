@@ -4,15 +4,17 @@ import { onSleep, onWake } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import { probeReachability } from './reachability.ts';
-import { hostPeerIdForRoom } from './roomCode.ts';
 import { MessageDeduplicator, clientMessage, type MessageContext } from './envelope.ts';
 import {
-  parseHostMessage,
+  parseRoomMessage,
   type ClientMessage,
   type GameAction,
-  type HostMessage,
+  type JoinRejectionReason,
   type LobbySnapshot,
+  type RoomCommand,
+  type RoomMessage,
 } from './protocol.ts';
+import { openRoomChannel, RoomError, type ChannelFactory, type RoomChannel } from './roomTransport.ts';
 import {
   sessionError,
   type ConnectionPhase,
@@ -21,20 +23,14 @@ import {
   type SessionObserver,
 } from './session.ts';
 import {
-  CHANNEL_DEAD_MS,
-  CONNECT_DEADLINE_GRACE_MS,
   CONNECT_TIMEOUT_FIRST_MS,
   CONNECT_TIMEOUT_RETRY_MS,
   JOIN_TIMEOUT_MS,
   PROBE_DEADLINE_MS,
   SEAT_GRACE_MS,
-  UNSTABLE_AFTER_MISSES,
   backoffDelay,
-  probeInterval,
   reconnectDeadlineMs,
 } from './timing.ts';
-import { ProbeTracker, createWatchdog, type Watchdog } from './watchdog.ts';
-import { TransportError, type Transport, type TransportConnection } from './transport.ts';
 
 const log = createLogger('client');
 
@@ -43,19 +39,26 @@ export interface ResumeCredentials {
   readonly resumeToken: string;
 }
 
+/** Options for the connection that *creates* a room, as opposed to joining one. */
+export interface CreateRoomOptions {
+  readonly maxPlayers: number;
+  readonly tableLanguage: 'he' | 'en';
+}
+
 export interface ClientSessionOptions {
-  readonly transport: Transport;
   readonly roomCode: string;
-  readonly hostPeerId: string;
   readonly displayName: string;
   readonly observer: SessionObserver;
+  /** Present when this connection is opening a brand-new room. */
+  readonly create?: CreateRoomOptions;
   /** Present when rejoining an existing seat after a refresh. */
   readonly resume?: ResumeCredentials;
   readonly now?: () => number;
   /** Attempts allowed *before* a seat has been secured. */
   readonly maxAttempts?: number;
-  readonly heartbeatIntervalMs?: number;
   readonly joinTimeoutMs?: number;
+  /** How a channel is obtained. Injected by tests, which need no WebSocket. */
+  readonly connect?: ChannelFactory;
 }
 
 /**
@@ -77,36 +80,40 @@ interface Outbox {
 }
 
 /**
- * A non-authoritative peer.
+ * A player's connection to their room.
  *
- * Sends *intents* only and renders whatever the host confirms. Snapshots older
- * than the newest one already applied are dropped, so a late-arriving message
- * can never roll the table back.
+ * Sends *intents* only and renders whatever the room confirms. Snapshots older than
+ * the newest one already applied are dropped, so a late-arriving message can never
+ * roll the table back.
+ *
+ * There is one of these per player now, including whoever opened the room. The class
+ * that used to sit opposite it — `HostSession`, 2,600 lines of authority running in
+ * one player's tab — has no counterpart here: the room is the other side.
  */
 export class ClientSession implements Session {
   readonly role = 'client' as const;
   readonly roomCode: string;
-  hostPeerId: string;
 
-  private readonly transport: Transport;
   private readonly observer: SessionObserver;
   private readonly now: () => number;
   private readonly maxAttempts: number;
   private readonly joinTimeoutMs: number;
-  private readonly fixedIntervalMs: number | null;
+  private readonly connectChannel: ChannelFactory;
   /**
    * Session-scoped and never reset.
    *
    * It used to be cleared on every attach, which defeated the entire point:
-   * anything the host replayed on a fresh channel — and a reconnecting host
-   * replays state and events by design — was accepted a second time.
+   * anything the room replays on a fresh channel — and it replays state on every
+   * resume by design — was accepted a second time.
    */
   private readonly dedup = new MessageDeduplicator();
-  private readonly probes = new ProbeTracker();
   private readonly displayName: string;
+  /** Labels this tab in the envelope, for the log. Not an address; nothing is routed. */
+  private readonly connectionId = `c-${randomHex(6)}`;
+  private readonly create: CreateRoomOptions | null;
 
-  private connection: TransportConnection | null = null;
-  private unsubscribeConnection: (() => void) | null = null;
+  private channel: RoomChannel | null = null;
+  private detachChannel: (() => void) | null = null;
   private readonly unsubscribes: Array<() => void> = [];
   private resume: ResumeCredentials | null;
   private playerId: string | null = null;
@@ -115,11 +122,12 @@ export class ClientSession implements Session {
   private joined = false;
   private destroyed = false;
   /**
-   * Set when the host gave a definitive answer (room full, bad token).
-   * Retrying on a timer would only repeat the same rejection, so the UI offers
-   * an explicit retry instead.
+   * Set when the room gave a definitive answer (room full, bad token, code taken).
+   * Retrying on a timer would only repeat the same rejection, so the UI offers an
+   * explicit retry instead.
    */
   private autoRetryDisabled = false;
+  private lastRejection: JoinRejectionReason | null = null;
   private lastStateVersion = -1;
   private lastHandVersion = -1;
   private lastEventVersion = -1;
@@ -128,41 +136,50 @@ export class ClientSession implements Session {
   private lastCurrentPlayerId: string | null = null;
   private joinTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private watchdog: Watchdog | null = null;
   /**
    * Guards against two connects racing.
    *
    * A wake, an `online` event and a channel close can all ask for a reconnect at
-   * once. Without a generation the later answer clobbers the earlier one, the host
-   * sees two channels from the same peer and kicks one as a duplicate — which the
-   * client treats as fatal. Reconnecting eagerly makes that the common case rather
-   * than a rarity, so the guard is a prerequisite for the eagerness, not a polish.
+   * once. Without a generation the later answer clobbers the earlier one and the room
+   * sees two sockets claiming the same seat — one of which it closes as superseded,
+   * which looks to the client like being kicked.
    */
   private connectGeneration = 0;
   private connecting = false;
-  /** When the give-up deadline expires; derived from the host's own seat grace. */
+  /** When the give-up deadline expires; derived from the room's own seat grace. */
   private seatGraceMs = SEAT_GRACE_MS;
   private reconnectingSince: number | null = null;
   private outbox: Outbox | null = null;
   /** `false` only while we have positive evidence to the contrary. */
   private online = true;
-  private busy = false;
+  /**
+   * Settles the first time the room gives a definitive answer to our join.
+   *
+   * `start()` resolves as soon as a socket is open and the request has gone out,
+   * which is the right contract for the connection but the wrong one for the caller:
+   * the answer arrives later, on the wire, and a caller that acts on `start()`
+   * returning is acting before the room has said anything. That is not a theoretical
+   * gap — it is exactly how `createRoom` would fail to notice `roomTaken` and drop
+   * the player into the lobby of a room that was already somebody else's.
+   */
+  private joinSettled: (() => void) | null = null;
+  private readonly joinAnswer = new Promise<void>((resolve) => {
+    this.joinSettled = resolve;
+  });
 
   constructor(options: ClientSessionOptions) {
-    this.transport = options.transport;
     this.observer = options.observer;
     this.roomCode = options.roomCode;
-    this.hostPeerId = options.hostPeerId;
     this.displayName = sanitizeDisplayName(options.displayName) || 'Player';
     this.resume = options.resume ?? null;
-    // Wrapped rather than captured: taking a reference to `Date.now` freezes
-    // whichever implementation was installed when the session was built, which
-    // makes the clock unswappable afterwards and is a trap for anything that
-    // needs to reason about time passing.
+    this.create = options.create ?? null;
+    // Wrapped rather than captured: taking a reference to `Date.now` freezes whichever
+    // implementation was installed when the session was built, which makes the clock
+    // unswappable and is a trap for anything that reasons about time passing.
     this.now = options.now ?? ((): number => Date.now());
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.joinTimeoutMs = options.joinTimeoutMs ?? JOIN_TIMEOUT_MS;
-    this.fixedIntervalMs = options.heartbeatIntervalMs ?? null;
+    this.connectChannel = options.connect ?? openRoomChannel;
 
     this.unsubscribes.push(
       onWake((reason) => {
@@ -170,17 +187,10 @@ export class ClientSession implements Session {
       }),
       onSleep((reason) => {
         if (reason === 'offline') {
-          // A hint, not a verdict: `navigator.onLine` is true behind a captive
-          // portal and flaps during a network handover, so it may never lengthen
-          // into a stop.
+          // A hint, not a verdict: `navigator.onLine` is true behind a captive portal
+          // and flaps during a network handover, so it may never lengthen into a stop.
           this.online = false;
           record('suspicion', 'browser reports offline');
-        }
-      }),
-      this.transport.onSignallingChange((state) => {
-        record('signalling', state);
-        if (state === 'up' && !this.isLive()) {
-          this.scheduleRetry(0);
         }
       }),
     );
@@ -194,16 +204,27 @@ export class ClientSession implements Session {
     return this.phase;
   }
 
+  /** The reason the room gave for refusing us, if it did. */
+  get rejection(): JoinRejectionReason | null {
+    return this.lastRejection;
+  }
+
+  /**
+   * Resolves once the room has accepted or refused this seat, or the attempt has
+   * given up. Never rejects: the outcome is read from `rejection` and the phase.
+   */
+  awaitJoin(): Promise<void> {
+    return this.joinAnswer;
+  }
+
+  private settleJoin(): void {
+    this.joinSettled?.();
+    this.joinSettled = null;
+  }
+
   /** Starts the connect/join sequence. Resolves once the attempt loop settles. */
   async start(): Promise<void> {
-    this.setPhase('initializing');
-    try {
-      await this.transport.ready();
-    } catch (error) {
-      this.fail(error);
-      return;
-    }
-    this.setPhase('ready');
+    this.setPhase('connecting');
     await this.attemptConnect(false);
   }
 
@@ -217,17 +238,18 @@ export class ClientSession implements Session {
   }
 
   private isLive(): boolean {
-    return this.connection !== null && this.connection.open;
+    return this.channel !== null && this.channel.open;
   }
 
   private fail(error: unknown): void {
     const mapped =
-      error instanceof TransportError
+      error instanceof RoomError
         ? sessionError(error.code, error.message)
         : sessionError('unknown', error instanceof Error ? error.message : String(error));
     record('connectFailed', mapped.code, { detail: mapped.detail });
     this.observer({ type: 'error', error: mapped });
     this.setPhase('failed');
+    this.settleJoin();
   }
 
   private clearTimer(which: 'join' | 'retry'): void {
@@ -247,10 +269,10 @@ export class ClientSession implements Session {
   /**
    * A wake is new information, so it short-circuits whatever we were waiting for.
    *
-   * If the channel looks alive it is still asked to prove it, on a short deadline:
-   * a suspended tab very likely lost its ICE consent (the browser gives it 30 s)
-   * while `open` stayed true, so believing the channel here is how a player ends
-   * up staring at a table that will never update.
+   * If the socket looks alive it is still asked to prove it, on a short deadline: a
+   * suspended tab very likely had its TCP connection torn down while `readyState`
+   * stayed `OPEN`, and believing the socket here is how a player ends up staring at a
+   * table that will never update.
    */
   private handleWake(reason: string): void {
     if (this.destroyed) {
@@ -264,16 +286,7 @@ export class ClientSession implements Session {
       void this.attemptConnect(true);
       return;
     }
-    this.probes.reset();
-    this.sendProbe();
-    this.watchdog?.restart();
-    setTimeout(() => {
-      if (!this.destroyed && this.probes.unanswered > 0 && this.isLive()) {
-        log.warn('no answer after waking; rebuilding the channel');
-        record('suspicion', 'silent after wake');
-        this.connection?.close();
-      }
-    }, PROBE_DEADLINE_MS);
+    this.channel?.probe(PROBE_DEADLINE_MS);
   }
 
   // ---------------------------------------------------------------- connecting
@@ -290,18 +303,18 @@ export class ClientSession implements Session {
     if (this.reconnectingSince === null) {
       this.reconnectingSince = this.now();
     }
-    record('connectAttempt', this.hostPeerId, { attempt: this.attempt, joined: this.joined });
+    record('connectAttempt', this.roomCode, { attempt: this.attempt, joined: this.joined });
 
     try {
       const budget = isRetry ? CONNECT_TIMEOUT_RETRY_MS : CONNECT_TIMEOUT_FIRST_MS;
-      const connection = await this.connectWithin(budget);
+      const channel = await this.connectChannel(this.roomCode, budget);
       if (this.destroyed || generation !== this.connectGeneration) {
-        // Superseded while we waited. Closing it matters: a channel left open
-        // here is what the host kicks as a duplicate.
-        connection.close();
+        // Superseded while we waited. Closing it matters: a socket left open here is
+        // what the room closes as a duplicate claim on our seat.
+        channel.close();
         return;
       }
-      this.attachConnection(connection);
+      this.attach(channel);
       this.sendJoin();
       this.attempt = 0;
       this.reconnectingSince = null;
@@ -315,16 +328,13 @@ export class ClientSession implements Session {
        */
       this.connecting = false;
       log.warn('connect attempt failed', this.attempt, error);
-      const code = error instanceof TransportError ? error.code : 'unknown';
+      const code = error instanceof RoomError ? error.code : 'unknown';
       record('connectFailed', code, { attempt: this.attempt, joined: this.joined });
-      /*
-       * "No such peer" before joining means the room code is wrong or the host
-       * has closed the page. Retrying cannot change that, and silently backing
-       * off would just delay an answer the player needs now. After a seat exists
-       * the same error means the opposite — the host is briefly away — so it is
-       * retried indefinitely.
-       */
-      if (!this.joined && error instanceof TransportError && error.code === 'peerUnavailable') {
+      if (
+        error instanceof RoomError &&
+        (error.code === 'notConfigured' || error.code === 'browserUnsupported')
+      ) {
+        // Nothing about these improves by trying again.
         this.autoRetryDisabled = true;
         this.fail(error);
         return;
@@ -341,8 +351,7 @@ export class ClientSession implements Session {
       }
       this.observer({
         type: 'error',
-        error:
-          error instanceof TransportError ? sessionError(error.code, error.message) : sessionError('unknown'),
+        error: error instanceof RoomError ? sessionError(error.code, error.message) : sessionError('unknown'),
       });
       this.setPhase('reconnecting');
       void this.scheduleRetryChecked();
@@ -351,46 +360,7 @@ export class ClientSession implements Session {
     }
   }
 
-  /**
-   * The connect, with its deadline also enforced on this side.
-   *
-   * The transport is given the budget and honours it; this is the backstop for the
-   * case where it cannot. A promise that never settles is the worst possible
-   * outcome here — `connecting` stays set, so no retry is armed, no deadline is
-   * ever reached, and the player is told nothing while the session sits in
-   * `reconnecting` for good. That is the same failure the reconnect loop had, and
-   * it should not be reachable through a single misbehaving dependency.
-   */
-  private connectWithin(budget: number): Promise<TransportConnection> {
-    const attempt = this.transport.connect(this.hostPeerId, budget);
-    return new Promise<TransportConnection>((resolve, reject) => {
-      let expired = false;
-      const timer = setTimeout(() => {
-        expired = true;
-        reject(new TransportError('timeout', 'connect exceeded its own budget'));
-      }, budget + CONNECT_DEADLINE_GRACE_MS);
-      attempt.then(
-        (connection) => {
-          clearTimeout(timer);
-          if (expired) {
-            // Arrived after we gave up. Closing it matters: an orphaned channel is
-            // exactly what the host kicks as a duplicate.
-            connection.close();
-            return;
-          }
-          resolve(connection);
-        },
-        (error: unknown) => {
-          clearTimeout(timer);
-          if (!expired) {
-            reject(error instanceof Error ? error : new TransportError('unknown', String(error)));
-          }
-        },
-      );
-    });
-  }
-
-  /** True once we have been failing for longer than the host will hold the seat. */
+  /** True once we have been failing for longer than the room will hold the seat. */
   private deadlineExpired(): boolean {
     if (this.reconnectingSince === null) {
       return false;
@@ -401,9 +371,9 @@ export class ClientSession implements Session {
   /**
    * Schedules the next attempt, checking first whether there is any internet.
    *
-   * A same-origin request answers that honestly, where `navigator.onLine` does
-   * not. Being offline lengthens the wait; it never ends the loop, because the
-   * event that would restart it is exactly the one some browsers fail to fire.
+   * A same-origin request answers that honestly, where `navigator.onLine` does not.
+   * Being offline lengthens the wait; it never ends the loop, because the event that
+   * would restart it is exactly the one some browsers fail to fire.
    */
   private async scheduleRetryChecked(): Promise<void> {
     const delay = backoffDelay(this.attempt - 1);
@@ -426,99 +396,54 @@ export class ClientSession implements Session {
     }, delay);
   }
 
-  private attachConnection(connection: TransportConnection): void {
-    this.detachConnection();
-    this.connection = connection;
-    this.probes.reset();
+  private attach(channel: RoomChannel): void {
+    this.detach();
+    this.channel = channel;
 
-    const offData = connection.onData((payload) => {
+    const offData = channel.onData((payload) => {
       this.handleIncoming(payload);
     });
-    const offClose = connection.onClose(() => {
+    const offClose = channel.onClose(() => {
       this.handleClosed();
     });
-    const offError = connection.onError((error) => {
-      log.warn('connection error', error.code, error.message);
-      record('transportError', error.code, { detail: error.message });
-    });
-    const offUnstable = connection.onUnstable(() => {
-      record('channelUnstable', this.hostPeerId);
-      this.sampleDiagnostics('unstable');
+    const offUnstable = channel.onUnstable(() => {
+      record('channelUnstable', this.roomCode);
       if (this.phase === 'connected') {
         this.setPhase('reconnecting');
       }
-      this.sendProbe();
     });
-    this.unsubscribeConnection = () => {
+    this.detachChannel = () => {
       offData();
       offClose();
-      offError();
       offUnstable();
     };
-    this.startWatchdog();
   }
 
-  /**
-   * Records what the path actually was, at the moment it went wrong.
-   *
-   * The candidate types are the whole difference between "we never had a path" and
-   * "our path died", and they are unrecoverable after the fact — so they are
-   * sampled while the connection is still there to ask.
-   */
-  private sampleDiagnostics(at: 'unstable' | 'closed' | 'connected'): void {
-    const connection = this.connection;
-    if (!connection) {
-      return;
-    }
-    void connection
-      .diagnostics()
-      .then((info) => {
-        // Filed under its own kind, which is never evicted: the candidate types are
-        // the one thing this module calls unrecoverable, and putting them under a
-        // routine kind meant ordinary chatter flushed them out of the ring first.
-        record('path', at, {
-          local: info.localCandidateType,
-          remote: info.remoteCandidateType,
-          protocol: info.candidateProtocol,
-          ice: info.iceConnectionState,
-          buffered: info.bufferedAmount,
-        });
-      })
-      .catch(() => {
-        /* nothing to report */
-      });
-  }
-
-  private detachConnection(): void {
-    this.unsubscribeConnection?.();
-    this.unsubscribeConnection = null;
-    const previous = this.connection;
-    this.connection = null;
-    this.stopWatchdog();
+  private detach(): void {
+    this.detachChannel?.();
+    this.detachChannel = null;
+    const previous = this.channel;
+    this.channel = null;
     /*
-     * Closing what we drop is not tidiness. A detached-but-open channel stays
-     * registered with the peer, and the host answers a second channel from the
-     * same peer id by kicking one of them.
+     * Closing what we drop is not tidiness. A detached-but-open socket is still bound
+     * to our seat in the room, and the room answers a second socket for one seat by
+     * closing the older — which the client would read as being kicked.
      */
     previous?.close();
   }
 
   private get messageContext(): MessageContext {
-    return {
-      roomId: this.roomCode,
-      senderPeerId: this.transport.localId ?? 'unknown',
-      now: this.now,
-    };
+    return { roomId: this.roomCode, senderPeerId: this.connectionId, now: this.now };
   }
 
   private send<TType extends ClientMessage['type']>(
     type: TType,
     payload: Extract<ClientMessage, { type: TType }>['payload'],
   ): boolean {
-    if (!this.connection?.open) {
+    if (!this.channel?.open) {
       return false;
     }
-    this.connection.send(clientMessage(this.messageContext, type, payload as never));
+    this.channel.send(clientMessage(this.messageContext, type, payload as never));
     return true;
   }
 
@@ -530,7 +455,12 @@ export class ClientSession implements Session {
         resumeToken: this.resume.resumeToken,
       });
     } else {
-      this.send('joinRequest', { displayName: this.displayName });
+      this.send('joinRequest', {
+        displayName: this.displayName,
+        // Only on the very first attempt. A retry that still claimed to be creating
+        // the room would be answered `roomTaken` by the room we ourselves just made.
+        ...(this.create !== null && !this.joined ? { create: this.create } : {}),
+      });
     }
     this.joinTimer = setTimeout(() => {
       if (this.joined) {
@@ -539,22 +469,20 @@ export class ClientSession implements Session {
       log.warn('join timed out');
       record('connectFailed', 'join timed out');
       /*
-       * Not terminal any more. A lost `joinAccepted` used to end the session for
-       * good, with no credential saved either — so the one message whose loss is
-       * most costly was also the one nothing recovered from. The host answers a
-       * repeated join for a seat it already holds, so trying again is safe.
+       * Not terminal. A lost `joinAccepted` used to end the session for good, with no
+       * credential saved either — so the one message whose loss is most costly was
+       * also the one nothing recovered from. The room answers a repeated join for a
+       * seat it already holds, so trying again is safe.
        */
       this.observer({ type: 'error', error: sessionError('timeout', 'join timed out') });
       this.setPhase('reconnecting');
-      this.connection?.close();
+      this.channel?.close();
     }, this.joinTimeoutMs);
   }
 
   private handleClosed(): void {
-    // Sampled before the connection is dropped: afterwards there is nothing to ask.
-    this.sampleDiagnostics('closed');
-    record('channelClosed', this.hostPeerId, { joined: this.joined });
-    this.detachConnection();
+    record('channelClosed', this.roomCode, { joined: this.joined });
+    this.detach();
     if (this.destroyed) {
       return;
     }
@@ -564,6 +492,7 @@ export class ClientSession implements Session {
     }
     if (!this.joined && this.attempt >= this.maxAttempts) {
       this.setPhase('failed');
+      this.settleJoin();
       return;
     }
     if (this.reconnectingSince === null) {
@@ -581,15 +510,16 @@ export class ClientSession implements Session {
   // ------------------------------------------------------------------ messages
 
   private handleIncoming(payload: unknown): void {
-    const parsed = parseHostMessage(payload);
+    const parsed = parseRoomMessage(payload);
     if (!parsed.ok) {
-      log.warn('rejected host message', parsed.error);
+      log.warn('rejected a message from the room', parsed.error);
       if (parsed.error === 'protocolMismatch') {
+        this.autoRetryDisabled = true;
         this.observer({ type: 'error', error: sessionError('protocolMismatch') });
       }
       return;
     }
-    const message: HostMessage = parsed.message;
+    const message: RoomMessage = parsed.message;
     if (message.roomId !== this.roomCode) {
       return;
     }
@@ -616,10 +546,9 @@ export class ClientSession implements Session {
         });
         this.applyLobby(message.payload.lobby);
         this.setPhase('connected');
-        // Record which kind of path this turned out to be, once, while it works.
-        this.sampleDiagnostics('connected');
-        // Re-ask about whatever was in flight when the channel went, now that
-        // there is somewhere to ask.
+        this.settleJoin();
+        // Re-ask about whatever was in flight when the socket went, now that there is
+        // somewhere to ask.
         this.replayOutbox();
         return;
       }
@@ -627,13 +556,15 @@ export class ClientSession implements Session {
         const reason = message.payload.reason;
         log.warn('join rejected', reason);
         this.autoRetryDisabled = true;
-        // A stale resume token means the seat is gone; drop it so an explicit
-        // retry joins as a new player instead of replaying a dead credential.
+        this.lastRejection = reason;
+        // A stale resume token means the seat is gone; drop it so an explicit retry
+        // joins as a new player rather than replaying a dead credential.
         if (reason === 'invalidResumeToken' || reason === 'unknownSeat') {
           this.resume = null;
         }
         this.observer({ type: 'error', error: sessionError(reason) });
         this.setPhase('failed');
+        this.settleJoin();
         return;
       }
       case 'lobbyState':
@@ -666,9 +597,9 @@ export class ClientSession implements Session {
       }
       case 'gameEvents': {
         /*
-         * Events need a version floor of their own. They were the one payload
-         * without one, so a host replaying its log after a reconnect duplicated
-         * every line the player had already read.
+         * Events need a version floor of their own. They were the one payload without
+         * one, so a room replaying its log after a reconnect duplicated every line the
+         * player had already read.
          */
         if (message.payload.version < this.lastEventVersion) {
           return;
@@ -706,150 +637,41 @@ export class ClientSession implements Session {
       case 'nudged':
         this.observer({ type: 'nudged', fromPlayerId: message.payload.fromPlayerId });
         return;
-      case 'handoffOffer':
-        // Only the store can start a host, so the offer is handed up with the
-        // state attached. Nothing is verified here beyond the schema: the offer
-        // arrived from the living host on the channel this seat already trusts,
-        // which is exactly the condition that makes a handover safe and an
-        // automatic takeover from a silent host unsafe.
-        this.observer({
-          type: 'handoffOffer',
-          generation: message.payload.generation,
-          snapshot: message.payload.snapshot,
-          accept: () => {
-            this.send('handoffAccepted', { generation: message.payload.generation });
-          },
-        });
-        return;
       case 'kicked':
         this.handleKicked(message.payload.reason);
         return;
-      case 'hostClosed':
-        this.handleHostClosed(message.payload);
-        return;
-      case 'ping':
-        this.send('pong', { nonce: message.payload.nonce });
-        return;
-      case 'pong':
-        this.probes.answered(message.payload.nonce, this.now());
-        if (this.phase === 'reconnecting' && this.joined && this.isLive()) {
-          this.setPhase('connected');
-        }
+      case 'roomClosed':
+        this.closeWith(message.payload.reason === 'roomReset' ? 'roomReset' : 'roomClosed');
         return;
     }
   }
 
   private applyLobby(lobby: LobbySnapshot): void {
-    if (typeof lobby.seatGraceMs === 'number' && lobby.seatGraceMs > 0) {
-      // The host owns this number. Deriving our deadline from it is what stops
-      // the countdown a player is shown from being contradicted by our own timer.
+    if (lobby.seatGraceMs > 0) {
+      // The room owns this number. Deriving our deadline from it is what stops the
+      // countdown a player is shown from being contradicted by our own timer.
       this.seatGraceMs = lobby.seatGraceMs;
     }
     this.observer({ type: 'lobby', lobby });
   }
 
-  private handleKicked(reason: 'removedByHost' | 'duplicateConnection'): void {
+  private handleKicked(reason: 'removedByCreator' | 'duplicateConnection'): void {
     if (reason === 'duplicateConnection' && !this.joined) {
       // Our own racing attempt, not another tab. Keep trying.
-      record('suspicion', 'kicked as duplicate before joining');
+      record('suspicion', 'closed as a duplicate before joining');
       this.setPhase('reconnecting');
-      this.connection?.close();
+      this.channel?.close();
       return;
     }
-    this.closeWith(reason === 'removedByHost' ? 'removedByHost' : 'duplicateConnection');
-  }
-
-  private handleHostClosed(payload: {
-    readonly reason: 'hostLeft' | 'roomReset' | 'restarting' | 'handoff';
-    readonly generation?: number;
-  }): void {
-    if (payload.reason === 'restarting') {
-      // Not a goodbye. Hold the seat and keep trying.
-      record('hostRestart', 'host is restarting');
-      this.observer({ type: 'error', error: sessionError('closed', 'host restarting') });
-      this.setPhase('reconnecting');
-      this.attempt = 0;
-      this.reconnectingSince = this.now();
-      return;
-    }
-    if (payload.reason === 'handoff' && payload.generation !== undefined) {
-      /*
-       * The new host's id is *derived* from the room code and the generation, so
-       * there is nothing to look up and nothing to be told: every client can work
-       * out where the room went from a single number. That is also why the room
-       * code never has to change when a room moves.
-       */
-      const generation = payload.generation;
-      this.hostPeerId = hostPeerIdForRoom(this.roomCode, generation);
-      record('handover', this.hostPeerId, { generation });
-      this.observer({ type: 'handover', generation });
-      this.setPhase('reconnecting');
-      this.attempt = 0;
-      this.reconnectingSince = this.now();
-      this.connection?.close();
-      return;
-    }
-    this.closeWith(payload.reason === 'roomReset' ? 'roomReset' : 'hostLeft');
+    this.closeWith(reason === 'removedByCreator' ? 'removedByCreator' : 'duplicateConnection');
   }
 
   private closeWith(reason: SessionClosedReason): void {
     this.destroyed = true;
     this.teardown();
     this.setPhase('disconnected');
+    this.settleJoin();
     this.observer({ type: 'closed', reason });
-  }
-
-  // ----------------------------------------------------------------- heartbeat
-
-  private currentInterval(): number {
-    return this.fixedIntervalMs ?? probeInterval(this.busy);
-  }
-
-  private sendProbe(): void {
-    const nonce = randomHex(4);
-    if (this.send('ping', { nonce })) {
-      this.probes.sent(nonce, this.now());
-    }
-  }
-
-  private startWatchdog(): void {
-    this.stopWatchdog();
-    this.watchdog = createWatchdog({
-      intervalMs: () => this.currentInterval(),
-      now: this.now,
-      onTick: (tick) => {
-        if (!this.isLive()) {
-          return;
-        }
-        if (tick.late) {
-          /*
-           * We were asleep, so the peer is not on trial. But nor is it presumed
-           * well: extending grace is exactly wrong when a suspension has very
-           * likely already killed the channel. Ask now, on a short deadline.
-           */
-          record('suspicion', 'watchdog tick was late', { elapsedMs: tick.elapsedMs });
-          this.probes.reset();
-          this.sendProbe();
-          return;
-        }
-        this.sendProbe();
-        const oldest = this.probes.oldestAgeMs(this.now());
-        if (oldest !== null && oldest > CHANNEL_DEAD_MS) {
-          log.warn('host stopped answering; rebuilding the channel');
-          record('suspicion', 'probes unanswered past the channel deadline', { oldest });
-          this.connection?.close();
-          return;
-        }
-        if (this.probes.unanswered >= UNSTABLE_AFTER_MISSES && this.phase === 'connected') {
-          this.setPhase('reconnecting');
-        }
-      },
-    });
-  }
-
-  private stopWatchdog(): void {
-    this.watchdog?.stop();
-    this.watchdog = null;
   }
 
   // ------------------------------------------------------------------ actions
@@ -857,10 +679,10 @@ export class ClientSession implements Session {
   /**
    * Sends one intent and remembers it until it is answered.
    *
-   * The turn token travels only for the moves that belong to a turn. Declaring
-   * last card, catching somebody who did not, and answering a +3 are legal at any
-   * moment and race each other on purpose; gating them on a turn would hand every
-   * tie to whichever player broke the rule.
+   * The turn token travels only for the moves that belong to a turn. Declaring last
+   * card, catching somebody who did not, and answering a +3 are legal at any moment
+   * and race each other on purpose; gating them on a turn would hand every tie to
+   * whichever player broke the rule.
    */
   submitAction(action: GameAction, requestId: string = randomHex(8)): void {
     const turnScoped =
@@ -871,7 +693,6 @@ export class ClientSession implements Session {
       turnSeq: turnScoped ? this.lastTurnSeq : null,
       sentAt: this.now(),
     };
-    this.busy = true;
     this.sendOutbox();
   }
 
@@ -885,10 +706,9 @@ export class ClientSession implements Session {
       action: pending.action,
       requestId: pending.requestId,
       /*
-       * `currentPlayerId` is who *we believed* was on turn — not who we are. The
-       * host checks only the sequence number, so a field that named the sender
-       * would have been a lie nobody caught, and the next reader would have built
-       * on it.
+       * `currentPlayerId` is who *we believed* was on turn — not who we are. The room
+       * checks only the sequence number, so a field that named the sender would have
+       * been a lie nobody caught, and the next reader would have built on it.
        */
       ...(turnScoped && this.lastTurnSeq !== null
         ? { turnToken: { currentPlayerId: this.lastCurrentPlayerId, turnSeq: this.lastTurnSeq } }
@@ -897,45 +717,32 @@ export class ClientSession implements Session {
   }
 
   /**
-   * Re-asks about the one action in flight, if it can still mean what it meant.
+   * Re-asks about the one action in flight.
    *
-   * A turn-scoped intent whose turn has since moved on is dropped rather than
-   * replayed: a card that was legal three moves ago may be illegal now, or already
-   * played. An out-of-turn intent has no such problem and is always safe to repeat,
-   * because the host answers a request id it has already seen with the same answer
-   * rather than applying it twice.
+   * Always re-sent, and judged by the room. Dropping it here when the turn had moved
+   * seemed prudent and was actively misleading: on the commonest lost-acknowledgement
+   * path the move *was* applied — which is precisely why the turn moved — so the
+   * player was told "it is not your turn" about a card they had successfully played.
+   * The room answers a request id it has already seen from its own record, and checks
+   * the turn token for anything it has not, so it can tell those two cases apart and
+   * this cannot.
    */
   private replayOutbox(): void {
-    const pending = this.outbox;
-    if (!pending) {
+    if (!this.outbox) {
       return;
     }
-    /*
-     * Always re-sent, and judged by the host.
-     *
-     * Dropping it here when the turn had moved seemed prudent and was actively
-     * misleading: on the commonest lost-acknowledgement path the move *was* applied
-     * — which is precisely why the turn moved — so the player was told "it is not
-     * your turn" about a card they had successfully played. The host answers a
-     * request id it has already seen from its own record, and checks the turn token
-     * for anything it has not, so it can tell those two cases apart and this cannot.
-     */
     record('note', 'replaying an unanswered action');
     this.sendOutbox();
   }
 
   private clearOutbox(requestId?: string): void {
     if (!this.outbox) {
-      // Nothing in flight, so nothing is at stake: never leave the probe cadence
-      // stuck at its busy rate on the strength of an answer we cannot match.
-      this.busy = false;
       return;
     }
     if (requestId !== undefined && requestId !== this.outbox.requestId) {
       return;
     }
     this.outbox = null;
-    this.busy = false;
   }
 
   votePlayAgain(agree: boolean): void {
@@ -954,21 +761,21 @@ export class ClientSession implements Session {
     this.send('nudge', { targetPlayerId });
   }
 
-  /** Tells the heartbeat that this player has something at stake. */
-  setBusy(busy: boolean): void {
-    this.busy = busy;
+  /**
+   * Asks for a lobby power.
+   *
+   * Sent by anybody; honoured only for the seat that holds them. The UI hides the
+   * buttons from everybody else, but that is a courtesy — the check that matters is
+   * the room's, against `creatorPlayerId`.
+   */
+  roomCommand(command: RoomCommand): void {
+    this.send('roomCommand', { command });
   }
 
-  /**
-   * Test seam: sends an intent against a turn that has already moved on.
-   *
-   * The state a client would have to be holding to do this by accident is exactly
-   * the one that is hard to arrange deliberately, so it is arranged here.
-   */
+  /** Test seam: sends an intent against a turn that has already moved on. */
   submitStaleActionForTests(action: GameAction, requestId: string): void {
     const stale = this.lastTurnSeq === null ? 0 : this.lastTurnSeq - 1;
     this.outbox = { requestId, action, turnSeq: stale, sentAt: this.now() };
-    this.busy = true;
     this.send('action', {
       action,
       requestId,
@@ -981,15 +788,9 @@ export class ClientSession implements Session {
     this.sendJoin();
   }
 
-  /** Test seam: drops the live channel the way a lost network would. */
+  /** Test seam: drops the live socket the way a lost network would. */
   forceReconnectForTests(): void {
-    this.connection?.close();
-  }
-
-  /** Test seam: reports the channel as degraded without closing it. */
-  degradeForTests(): void {
-    const connection = this.connection as unknown as { degrade?: () => void } | null;
-    connection?.degrade?.();
+    this.channel?.close();
   }
 
   /** Manual retry, offered by the UI after a failure. */
@@ -998,6 +799,7 @@ export class ClientSession implements Session {
       return;
     }
     this.autoRetryDisabled = false;
+    this.lastRejection = null;
     this.attempt = 0;
     this.reconnectingSince = null;
     void this.attemptConnect(true);
@@ -1006,13 +808,11 @@ export class ClientSession implements Session {
   private teardown(): void {
     this.clearTimer('join');
     this.clearTimer('retry');
-    this.stopWatchdog();
     for (const unsubscribe of this.unsubscribes) {
       unsubscribe();
     }
     this.unsubscribes.length = 0;
-    this.detachConnection();
-    this.transport.destroy();
+    this.detach();
   }
 
   destroy(reason: SessionClosedReason = 'leftVoluntarily'): void {
@@ -1020,11 +820,12 @@ export class ClientSession implements Session {
       return;
     }
     this.destroyed = true;
-    if (this.connection?.open) {
+    if (this.channel?.open) {
       this.send('leave', {});
     }
     this.teardown();
     this.setPhase('disconnected');
+    this.settleJoin();
     this.observer({ type: 'closed', reason });
   }
 }

@@ -76,11 +76,11 @@ describe('create room form', () => {
     setState({
       screen: 'create',
       phase: 'failed',
-      error: { code: 'signalingUnavailable', retryable: true },
+      error: { code: 'network', retryable: true },
     });
     renderApp();
 
-    expect(screen.getByText(/לא הצלחנו להגיע לממסר המשחק/)).toBeInTheDocument();
+    expect(screen.getByText(/החיבור לחדר נכשל/)).toBeInTheDocument();
     expect(screen.getByText('למה זה קורה?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'חזרה לדף הבית' })).toBeInTheDocument();
   });
@@ -89,7 +89,7 @@ describe('create room form', () => {
     setState({
       screen: 'create',
       phase: 'failed',
-      error: { code: 'idUnavailable', retryable: false },
+      error: { code: 'roomTaken', retryable: false },
     });
     renderApp();
     expect(screen.getByText(/קוד החדר הזה תפוס/)).toBeInTheDocument();
@@ -143,7 +143,6 @@ describe('join room form', () => {
     expect(joinRoom).toHaveBeenCalledWith({
       name: 'דנה',
       roomCode: '482913',
-      hostPeerId: 'custom-host-1',
     });
   });
 
@@ -183,7 +182,6 @@ describe('join room form', () => {
       joinRoom,
       resumable: {
         roomCode: '482913',
-        hostPeerId: 'crush-482913',
         playerId: 'pl_abc',
         resumeToken: 'a'.repeat(32),
         displayName: 'דנה',
@@ -196,7 +194,6 @@ describe('join room form', () => {
     expect(joinRoom).toHaveBeenCalledWith({
       name: 'דנה',
       roomCode: '482913',
-      hostPeerId: 'crush-482913',
       resume: { playerId: 'pl_abc', resumeToken: 'a'.repeat(32) },
     });
   });

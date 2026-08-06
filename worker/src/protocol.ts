@@ -1,140 +1,67 @@
 /**
- * The relay wire protocol, shared by the server and (by copy) the client.
+ * What is left of the relay's own wire protocol: almost nothing.
  *
- * The relay knows nothing about Taki. It routes small JSON frames between named
- * peers inside a room, tells everybody who is present, and arbitrates who owns a
- * peer id. Game meaning lives entirely in the payloads (`d`), which the relay
- * forwards without reading.
+ * The relay used to speak a second protocol underneath the game's — a hello with
+ * a peer-id claim, then `open`/`accept`/`msg`/`close` frames routed between named
+ * peers, plus `peerUp`/`peerDown`/`gone` presence. Its whole job was routing, and
+ * once the room itself became the authority there was exactly one destination left
+ * to route to. So the layer is gone and the socket *is* the session: a client
+ * connects and immediately speaks the game protocol
+ * (`src/features/game/network/protocol.ts`), which the room answers.
  *
- * Design rule: every frame a client sends is validated structurally before it
- * touches room state, and the `from` field of every routed frame is stamped by
- * the server — a client cannot speak in another peer's name.
+ * That leaves one protocol version in the system rather than two, gated in one
+ * place — the envelope's `protocolVersion`, checked by `parseClientMessage`. What
+ * remains here are the concerns that belong to the socket rather than to the game:
+ * which paths name a room, how large a frame may be, and how long an empty room is
+ * remembered.
  */
 
-/** Bumped only for incompatible changes; the server refuses other versions. */
-export const RELAY_PROTOCOL_VERSION = 1;
+/** Six digits, read out loud over a table. Also the Durable Object's name. */
+export const ROOM_CODE_PATTERN = /^\d{6}$/;
 
 /**
- * Ceiling on a single frame. The largest legitimate payload is a full game
- * handover snapshot (tens of KB); everything else is a few hundred bytes.
+ * The liveness probe, and why it is a bare string rather than a game message.
+ *
+ * A phone coming out of sleep cannot tell a live socket from a half-open one, so
+ * the client has to ask. It used to ask with a `ping` *message*, which the room
+ * answered — and every one of those woke the Durable Object, on a cadence, for
+ * every player, for the whole life of the room. That is precisely the bill
+ * hibernation exists to avoid.
+ *
+ * These two strings are registered with `setWebSocketAutoResponse`, so the runtime
+ * answers them itself while the object stays asleep. The room never sees a probe
+ * and does not need to: it learns about a departure from the close event, which is
+ * the runtime telling it rather than the room inferring.
+ */
+export const PROBE_REQUEST = 'ping';
+export const PROBE_RESPONSE = 'pong';
+
+/**
+ * Ceiling on a single frame.
+ *
+ * The largest legitimate message is a public snapshot for six players plus a full
+ * hand — a couple of kilobytes. This is generous by two orders of magnitude on
+ * purpose: it is a memory bound against a hostile client, not a budget.
+ *
+ * The game protocol enforces its own, tighter limit (`MAX_MESSAGE_BYTES`, 64 KiB)
+ * on the decoded message. This one is checked first, on the raw string, so a
+ * megabyte of garbage is dropped without being parsed.
  */
 export const MAX_FRAME_BYTES = 131_072;
 
 /**
- * How long a dead peer's id stays reserved for its claim holder.
+ * A room with nobody in it is forgotten after this long.
  *
- * This is the host-recovery window: a host that crashed can re-present its claim
- * at any time, while a *different* device trying to take the same id must wait
- * this long after the last sign of life. Matches the session layer's seat grace.
- */
-export const CLAIM_HOLD_MS = 5 * 60 * 1000;
-
-/**
- * A room with nobody in it is forgotten after this long. Matches the client's
- * snapshot and resume TTLs, so the room outlives every credential that could
- * still return to it.
+ * It has to outlive every credential that could still come back to it, because a
+ * resume token for a room that has been deleted is a dead end with no explanation.
+ * Six hours covers an evening interrupted by dinner; past that the players have
+ * gone to bed and the hands are not worth keeping.
  */
 export const ROOM_IDLE_TTL_MS = 6 * 60 * 60 * 1000;
 
-const PEER_ID_PATTERN = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
-const CLAIM_PATTERN = /^[a-f0-9]{16,64}$/;
-const CHANNEL_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
-export const ROOM_CODE_PATTERN = /^\d{6}$/;
-
-export function isValidPeerId(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 64 && PEER_ID_PATTERN.test(value);
-}
-
-export function isValidClaim(value: unknown): value is string {
-  return typeof value === 'string' && CLAIM_PATTERN.test(value);
-}
-
-export function isValidChannel(value: unknown): value is string {
-  return typeof value === 'string' && CHANNEL_PATTERN.test(value);
-}
-
-/** First frame on every socket: who I am, and my proof of ownership. */
-export interface HelloFrame {
-  readonly t: 'hello';
-  readonly v: number;
-  readonly peerId: string;
-  readonly claim: string;
-}
-
-/**
- * Frames routed peer-to-peer through the relay. `open`/`accept`/`close` manage a
- * virtual connection (`ch` names it, minted by the opener); `msg` carries data.
- */
-export type RoutedType = 'open' | 'accept' | 'msg' | 'close';
-
-export interface RoutedFrame {
-  readonly t: RoutedType;
-  readonly to: string;
-  readonly ch: string;
-  readonly d?: unknown;
-}
-
-export type ClientFrame = HelloFrame | RoutedFrame;
-
-/** Server → client frames. */
-export type DeniedReason = 'idTaken' | 'badHello' | 'protocolVersion';
-
-export type ServerFrame =
-  | { readonly t: 'welcome'; readonly peers: readonly string[] }
-  | { readonly t: 'denied'; readonly reason: DeniedReason }
-  | { readonly t: 'peerUp'; readonly peerId: string }
-  | { readonly t: 'peerDown'; readonly peerId: string }
-  /** The routed frame's target is not in the room. */
-  | { readonly t: 'gone'; readonly peerId: string; readonly ch: string }
-  | {
-      readonly t: 'open' | 'accept' | 'msg' | 'close';
-      readonly from: string;
-      readonly ch: string;
-      readonly d?: unknown;
-    };
-
-const ROUTED_TYPES: readonly string[] = ['open', 'accept', 'msg', 'close'];
-
-/**
- * Parses and validates one client frame. Returns `null` for anything malformed —
- * the caller drops the socket, because a client that sends garbage once will
- * send it again.
- */
-export function parseClientFrame(raw: string): ClientFrame | null {
-  if (raw.length > MAX_FRAME_BYTES) {
-    return null;
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof value !== 'object' || value === null) {
-    return null;
-  }
-  const frame = value as Record<string, unknown>;
-  if (frame['t'] === 'hello') {
-    if (frame['v'] !== RELAY_PROTOCOL_VERSION) {
-      // Distinguished so the server can answer `denied(protocolVersion)` instead
-      // of a silent drop that reads as a network fault.
-      return { t: 'hello', v: typeof frame['v'] === 'number' ? frame['v'] : -1, peerId: '', claim: '' };
-    }
-    if (!isValidPeerId(frame['peerId']) || !isValidClaim(frame['claim'])) {
-      return null;
-    }
-    return { t: 'hello', v: RELAY_PROTOCOL_VERSION, peerId: frame['peerId'], claim: frame['claim'] };
-  }
-  if (typeof frame['t'] === 'string' && ROUTED_TYPES.includes(frame['t'])) {
-    if (!isValidPeerId(frame['to']) || !isValidChannel(frame['ch'])) {
-      return null;
-    }
-    return {
-      t: frame['t'] as RoutedType,
-      to: frame['to'],
-      ch: frame['ch'],
-      ...('d' in frame ? { d: frame['d'] } : {}),
-    };
-  }
-  return null;
-}
+/** Close codes surfaced to clients; 4xxx is the app-reserved range. */
+export const CLOSE_BAD_FRAME = 4000;
+/** A newer socket claimed this seat; this one is obsolete. */
+export const CLOSE_SUPERSEDED = 4001;
+/** The join was refused. The client has been told why in a `joinRejected`. */
+export const CLOSE_REJECTED = 4003;

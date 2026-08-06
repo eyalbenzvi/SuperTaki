@@ -1,16 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProbeTracker, createWatchdog } from '../../../src/features/game/network/watchdog.ts';
 import {
-  LATE_TICK_FACTOR,
-  PROBE_INTERVAL_BUSY_MS,
   PROBE_INTERVAL_IDLE_MS,
   RECONNECT_BACKOFF_MS,
+  DIAGNOSTICS_CAPACITY,
   SEAT_GRACE_MS,
   backoffDelay,
-  probeInterval,
   reconnectDeadlineMs,
-  silentAfterMs,
-  unstableAfterMs,
+  ABSENT_TURN_GRACE_CLOSED_MS,
+  PROBE_DEADLINE_MS,
 } from '../../../src/features/game/network/timing.ts';
 import {
   __resetDiagnosticsForTests,
@@ -41,29 +38,23 @@ afterEach(() => {
 });
 
 describe('the timeout hierarchy', () => {
-  it('never convicts on fewer than three missed probes', () => {
-    // Nine milliseconds under a five-second cadence was less than two intervals,
-    // so "unstable" used to mean "one round trip was lost" — routine on cellular.
-    expect(unstableAfterMs(PROBE_INTERVAL_BUSY_MS)).toBeGreaterThanOrEqual(PROBE_INTERVAL_BUSY_MS * 3);
-  });
-
-  it('waits at least as long as the browser does before giving up on a path', () => {
-    // ICE consent freshness expires at 30 s. Before that the browser's own agent
-    // has not surrendered, so neither should we.
-    expect(silentAfterMs(PROBE_INTERVAL_BUSY_MS)).toBeGreaterThanOrEqual(30_000);
-    expect(silentAfterMs(PROBE_INTERVAL_IDLE_MS)).toBeGreaterThanOrEqual(30_000);
-  });
-
-  it('lets a client stop strictly before the host may vacate the seat', () => {
+  it('lets a client stop strictly before the room may vacate the seat', () => {
     // The two used to be independent constants pointing in opposite directions, so
     // minutes were spent reconnecting into a seat that had already been freed.
     expect(reconnectDeadlineMs(SEAT_GRACE_MS)).toBeLessThan(SEAT_GRACE_MS);
   });
 
-  it('slows the probe cadence when nothing is at stake', () => {
-    expect(probeInterval(true)).toBe(PROBE_INTERVAL_BUSY_MS);
-    expect(probeInterval(false)).toBe(PROBE_INTERVAL_IDLE_MS);
-    expect(probeInterval(false)).toBeGreaterThan(probeInterval(true));
+  it('keeps the liveness probe slow enough for a radio to idle', () => {
+    // The probe is answered by the Cloudflare runtime without waking the room, so a
+    // faster cadence would buy nothing and cost a modem that never sleeps.
+    expect(PROBE_INTERVAL_IDLE_MS).toBeGreaterThanOrEqual(10_000);
+    expect(PROBE_DEADLINE_MS).toBeLessThan(PROBE_INTERVAL_IDLE_MS);
+  });
+
+  it('gives an absent seat a grace far shorter than the seat is held for', () => {
+    // A blip is answered by a free skip that costs the absent player nothing; losing
+    // the seat is a different and much slower decision.
+    expect(ABSENT_TURN_GRACE_CLOSED_MS).toBeLessThan(SEAT_GRACE_MS / 10);
   });
 
   it('retries immediately the first time, then backs off with jitter', () => {
@@ -85,121 +76,6 @@ describe('the timeout hierarchy', () => {
     // The signalling broker is a donated service shared with everybody else using
     // PeerJS, and an unbounded retry loop against it is not ours to run.
     expect(cap).toBeGreaterThanOrEqual(20_000);
-  });
-});
-
-describe('the watchdog', () => {
-  it('reports a tick as late only when the page really stopped running', () => {
-    vi.useFakeTimers();
-    let clock = 0;
-    const ticks: { elapsedMs: number; late: boolean }[] = [];
-    const dog = createWatchdog({
-      intervalMs: () => 1_000,
-      now: () => clock,
-      onTick: (tick) => ticks.push({ elapsedMs: tick.elapsedMs, late: tick.late }),
-    });
-
-    clock += 1_000;
-    vi.advanceTimersByTime(1_000);
-    expect(ticks.at(-1)?.late).toBe(false);
-
-    // A gap several intervals long is a suspended tab, not a dead peer. Two
-    // intervals would have been inside ordinary foreground jank on a slow phone,
-    // which is why the threshold is three.
-    clock += 1_000 * (LATE_TICK_FACTOR + 1);
-    vi.advanceTimersByTime(1_000);
-    expect(ticks.at(-1)?.late).toBe(true);
-
-    dog.stop();
-  });
-
-  it('can be poked, because a wake should not wait for the next tick', () => {
-    vi.useFakeTimers();
-    let count = 0;
-    const dog = createWatchdog({
-      intervalMs: () => 10_000,
-      onTick: () => {
-        count += 1;
-      },
-    });
-    dog.poke();
-    expect(count).toBe(1);
-    dog.stop();
-  });
-
-  it('picks up a changed interval without being restarted', () => {
-    vi.useFakeTimers();
-    let interval = 1_000;
-    let count = 0;
-    const dog = createWatchdog({
-      intervalMs: () => interval,
-      onTick: () => {
-        count += 1;
-      },
-    });
-    vi.advanceTimersByTime(1_000);
-    expect(count).toBe(1);
-
-    interval = 100;
-    // The tick that observes the change is the one that reschedules, so the faster
-    // cadence applies from the tick after it. This is what lets the probe interval
-    // follow the game — brisk while a move is at stake, relaxed otherwise — without
-    // anything having to tear the timer down.
-    vi.advanceTimersByTime(1_000);
-    expect(count).toBe(2);
-    vi.advanceTimersByTime(1_000);
-    expect(count).toBeGreaterThan(5);
-    dog.stop();
-  });
-
-  it('stops for good', () => {
-    vi.useFakeTimers();
-    let count = 0;
-    const dog = createWatchdog({
-      intervalMs: () => 100,
-      onTick: () => {
-        count += 1;
-      },
-    });
-    dog.stop();
-    vi.advanceTimersByTime(1_000);
-    expect(count).toBe(0);
-  });
-});
-
-describe('probe correlation', () => {
-  it('counts unanswered probes rather than quiet milliseconds', () => {
-    const probes = new ProbeTracker();
-    probes.sent('a', 1_000);
-    probes.sent('b', 2_000);
-    expect(probes.unanswered).toBe(2);
-
-    // An answer proves the earlier probes arrived too, so the whole prefix clears.
-    expect(probes.answered('b', 2_100)).toBe(100);
-    expect(probes.unanswered).toBe(0);
-    expect(probes.roundTripMs).toBe(100);
-  });
-
-  it('ignores an answer to something it never asked', () => {
-    const probes = new ProbeTracker();
-    expect(probes.answered('never-sent', 5)).toBeNull();
-  });
-
-  it('reports how long the oldest question has gone unanswered', () => {
-    const probes = new ProbeTracker();
-    probes.sent('a', 1_000);
-    probes.sent('b', 4_000);
-    expect(probes.oldestAgeMs(5_000)).toBe(4_000);
-    probes.reset();
-    expect(probes.oldestAgeMs(5_000)).toBeNull();
-  });
-
-  it('stays bounded', () => {
-    const probes = new ProbeTracker(4);
-    for (let i = 0; i < 20; i += 1) {
-      probes.sent(`n-${String(i)}`, i);
-    }
-    expect(probes.unanswered).toBeLessThanOrEqual(4);
   });
 });
 
@@ -259,6 +135,45 @@ describe('the page lifecycle', () => {
 });
 
 describe('diagnostics', () => {
+  it('survives a reload, because the failure it explains usually caused one', () => {
+    /*
+     * The ring is in `sessionStorage` for exactly one reason: the interesting entries
+     * are the ones written just before something went wrong, and what a player does
+     * when something goes wrong is reload. A log that started empty on the way back
+     * would never hold the lines anybody wanted.
+     */
+    window.sessionStorage.setItem(
+      'superTaki:diagnostics',
+      JSON.stringify([
+        { at: 1_700_000_000_000, monotonic: 12, kind: 'connectFailed', detail: 'from before' },
+        { nonsense: true },
+      ]),
+    );
+    __resetDiagnosticsForTests();
+
+    const entries = readDiagnostics();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.detail).toBe('from before');
+    // And a row that does not parse is dropped rather than taking the log with it.
+    expect(formatDiagnostics()).toContain('from before');
+  });
+
+  it('ignores a stored log that is not a list at all', () => {
+    window.sessionStorage.setItem('superTaki:diagnostics', '{"not":"an array"}');
+    __resetDiagnosticsForTests();
+    expect(readDiagnostics()).toHaveLength(0);
+  });
+
+  it('keeps what explains a failure when routine chatter fills the ring', () => {
+    record('connectFailed', 'the one that matters');
+    for (let index = 0; index < DIAGNOSTICS_CAPACITY + 20; index += 1) {
+      record('note', `chatter ${String(index)}`);
+    }
+    const kinds = readDiagnostics().map((entry) => entry.kind);
+    expect(kinds).toContain('connectFailed');
+    expect(readDiagnostics().length).toBeLessThanOrEqual(DIAGNOSTICS_CAPACITY);
+  });
+
   it('records what distinguishes one failure from another', () => {
     record('connectFailed', 'peerUnavailable', { attempt: 2, joined: false });
     const entries = readDiagnostics();
@@ -289,9 +204,9 @@ describe('diagnostics', () => {
   });
 
   it('formats a dump somebody can paste into a message', () => {
-    record('signalling', 'down');
+    record('note', 'down');
     const text = formatDiagnostics();
-    expect(text).toContain('signalling');
+    expect(text).toContain('note');
     expect(text).toContain('down');
   });
 

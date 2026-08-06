@@ -28,14 +28,14 @@ export interface TopBarProps {
 export function TopBar({ onOpenSettings, settingsOpen }: TopBarProps): ReactNode {
   const t = useT();
   const screen = useAppStore((state) => state.screen);
-  const role = useAppStore((state) => state.role);
+  const inRoom = useAppStore((state) => state.inRoom);
   const requestLeave = useAppStore((state) => state.requestLeave);
 
   return (
     <header className="topbar">
       <div className="topbar__brand">{screen === 'home' ? null : <BrandMark size="sm" />}</div>
       <div className="topbar__controls">
-        {role === null ? null : (
+        {inRoom ? (
           <Button
             iconOnly
             icon="leave"
@@ -43,7 +43,7 @@ export function TopBar({ onOpenSettings, settingsOpen }: TopBarProps): ReactNode
             aria-label={t('common.leave')}
             onClick={requestLeave}
           />
-        )}
+        ) : null}
         <Button
           iconOnly
           icon="settings"

@@ -56,15 +56,22 @@ export const GUEST_ID = 'pl_guest00000';
 export function lobbyFixture(overrides: Partial<LobbySnapshot> = {}): LobbySnapshot {
   return {
     roomCode: '482913',
-    hostPeerId: 'crush-482913',
-    hostPlayerId: HOST_ID,
+    creatorPlayerId: HOST_ID,
     maxPlayers: 4,
     phase: 'lobby',
     tableLanguage: 'he',
     players: [
-      { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
-      { id: GUEST_ID, name: 'אלי', isHost: false, health: 'connected', seat: 1 },
+      { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+      { id: GUEST_ID, name: 'אלי', isCreator: false, health: 'connected', seat: 1 },
     ],
+    sentAt: 1_700_000_000_000,
+    seatGraceMs: 300_000,
+    pausedBy: null,
+    waitingFor: null,
+    waitingReason: null,
+    waitingSince: null,
+    abandonVotes: [],
+    standInEnabled: true,
     ...overrides,
   };
 }
@@ -98,11 +105,10 @@ export function enterGame(options: { myTurn?: boolean; seed?: number } = {}): Ga
   const myTurn = options.myTurn ?? true;
   setState({
     screen: 'game',
-    role: 'host',
+    inRoom: true,
     phase: 'connected',
     localPlayerId: HOST_ID,
     roomCode: '482913',
-    hostPeerId: 'crush-482913',
     lobby: lobbyFixture({ phase: 'inGame' }),
     publicState: {
       ...fixture.publicState,

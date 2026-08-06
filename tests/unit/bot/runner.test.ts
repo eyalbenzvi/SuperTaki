@@ -5,6 +5,17 @@ import type { BotMove } from '../../../src/features/game/bot/policy.ts';
 import { createRng, nextFloat } from '../../../src/features/game/engine/prng.ts';
 import type { GameState } from '../../../src/features/game/engine/state.ts';
 import { cards, makeState, players } from '../helpers/engineFixtures.ts';
+import {
+  BOT_ANSWER_MAX_MS,
+  BOT_ANSWER_MIN_MS,
+  BOT_CATCH_MIN_MS,
+  BOT_DECLARE_MAX_MS,
+  BOT_DECLARE_MIN_MS,
+  BOT_SEQUENCE_MAX_MS,
+  BOT_SEQUENCE_MIN_MS,
+  BOT_THINK_MAX_MS,
+  BOT_THINK_MIN_MS,
+} from '../../../src/features/game/network/timing.ts';
 
 /**
  * The driver, with its timer in the test's hand.
@@ -41,6 +52,7 @@ function harness(
   initial: GameState,
   controlled: string[] = [ANN],
   random: () => number = () => 0.5,
+  options: { realPacing?: boolean; standIn?: boolean } = {},
 ): Harness {
   const pauses: { ms: number; run: () => void; cancelled?: boolean }[] = [];
   const submitted: { playerId: string; move: BotMove }[] = [];
@@ -72,7 +84,7 @@ function harness(
 
   const runner = new BotRunner({
     view: (playerId) => botViewFor(box.state, playerId, () => true),
-    controlled: () => box.controlled.map((playerId) => ({ playerId, standIn: false })),
+    controlled: () => box.controlled.map((playerId) => ({ playerId, standIn: options.standIn === true })),
     blocked: () => box.blocked,
     submit: (playerId, move) => {
       submitted.push({ playerId, move });
@@ -86,7 +98,7 @@ function harness(
         entry.cancelled = true;
       };
     },
-    pauseMs: () => 10,
+    ...(options.realPacing === true ? {} : { pauseMs: (): number => 10 }),
   });
   (box as { runner: BotRunner }).runner = runner;
   return box;
@@ -298,5 +310,127 @@ describe('choosing between seats', () => {
     // Ann could call Ben out for a silent last card, and could play. The turn is
     // what keeps the table moving, so it comes first.
     expect(box.submitted[0]?.move.kind).toBe('turn');
+  });
+});
+
+/**
+ * The pacing itself, which every test above replaces with a flat ten milliseconds.
+ *
+ * These numbers are the difference between a table that reads and one where cards
+ * appear to play themselves, and they are also the window in which a human can beat
+ * a robot to a catch — so they are worth asserting rather than stubbing out.
+ */
+describe('how long a robot thinks', () => {
+  it('takes a human-shaped pause over an ordinary turn', () => {
+    const box = harness(turnForAnn(), [ANN], () => 0.5, { realPacing: true });
+    box.runner.schedule();
+    const pause = box.pauses[0]?.ms ?? 0;
+    expect(pause).toBeGreaterThanOrEqual(BOT_THINK_MIN_MS);
+    expect(pause).toBeLessThanOrEqual(BOT_THINK_MAX_MS);
+  });
+
+  it('answers a +3 far faster than it calls somebody out', () => {
+    // Answering unfreezes every other seat, so it leads; a catch is the slowest move
+    // it makes, so the people at the table normally get there first.
+    const answering = harness(
+      makeState({
+        players: players('Ann', 'Ben'),
+        hands: { [ANN]: cards('breakPlusThree'), [BEN]: cards('blue:4') },
+        currentPlayerIndex: 1,
+        discardPile: cards('red:9'),
+        plusThree: { playerId: BEN, awaiting: [ANN] },
+      }),
+      [ANN],
+      () => 0.5,
+      { realPacing: true },
+    );
+    answering.runner.schedule();
+    const answer = answering.pauses[0]?.ms ?? 0;
+    expect(answer).toBeGreaterThanOrEqual(BOT_ANSWER_MIN_MS);
+    expect(answer).toBeLessThanOrEqual(BOT_ANSWER_MAX_MS);
+
+    const catching = harness(
+      makeState({
+        players: players('Ann', 'Ben'),
+        hands: { [ANN]: cards('red:5', 'red:7'), [BEN]: cards('blue:4') },
+        currentPlayerIndex: 1,
+        discardPile: cards('red:9'),
+      }),
+      [ANN],
+      () => 0.5,
+      { realPacing: true },
+    );
+    catching.runner.schedule();
+    const catchPause = catching.pauses[0]?.ms ?? 0;
+    expect(catchPause).toBeGreaterThanOrEqual(BOT_CATCH_MIN_MS);
+    expect(catchPause).toBeGreaterThan(answer);
+  });
+
+  it('declares its own last card with a window somebody can catch it in', () => {
+    // Being catchable is what keeps a robot a player rather than an oracle.
+    const box = harness(
+      makeState({
+        players: players('Ann', 'Ben'),
+        hands: { [ANN]: cards('red:5'), [BEN]: cards('blue:4', 'blue:6') },
+        currentPlayerIndex: 1,
+        discardPile: cards('red:9'),
+      }),
+      [ANN],
+      () => 0.5,
+      { realPacing: true },
+    );
+    box.runner.schedule();
+    const pause = box.pauses[0]?.ms ?? 0;
+    expect(pause).toBeGreaterThanOrEqual(BOT_DECLARE_MIN_MS);
+    expect(pause).toBeLessThanOrEqual(BOT_DECLARE_MAX_MS);
+  });
+
+  it('declares a covered seat’s last card with no window at all', () => {
+    /*
+     * The one asymmetry. A robot's own last card is fair game, but a seat it is
+     * merely standing in for belongs to somebody who is not there — and a four-card
+     * penalty would follow them into the standings for a rule they had no chance to
+     * keep.
+     */
+    const box = harness(
+      makeState({
+        players: players('Ann', 'Ben'),
+        hands: { [ANN]: cards('red:5'), [BEN]: cards('blue:4', 'blue:6') },
+        currentPlayerIndex: 1,
+        discardPile: cards('red:9'),
+      }),
+      [ANN],
+      () => 0.5,
+      { realPacing: true, standIn: true },
+    );
+    box.runner.schedule();
+    expect(box.pauses[0]?.ms).toBe(0);
+  });
+
+  it('rattles through a Taki sequence rather than pausing between every card', () => {
+    // At a real table those cards go down in one movement; the decision is already made.
+    const box = harness(
+      makeState({
+        players: players('Ann', 'Ben'),
+        hands: { [ANN]: cards('red:5', 'red:7'), [BEN]: cards('blue:4') },
+        currentPlayerIndex: 0,
+        discardPile: cards('red:taki'),
+        takiMode: { color: 'red', playerId: ANN, cardsPlayed: 1, openedWithSuperTaki: false },
+      }),
+      [ANN],
+      () => 0.5,
+      { realPacing: true },
+    );
+    box.runner.schedule();
+    const pause = box.pauses[0]?.ms ?? 0;
+    expect(pause).toBeGreaterThanOrEqual(BOT_SEQUENCE_MIN_MS);
+    expect(pause).toBeLessThanOrEqual(BOT_SEQUENCE_MAX_MS);
+    expect(pause).toBeLessThan(BOT_THINK_MIN_MS);
+  });
+
+  it('owes nothing for a seat with no view of the table', () => {
+    const box = harness(turnForAnn(), ['p-nobody']);
+    box.runner.schedule();
+    expect(box.pauses).toHaveLength(0);
   });
 });

@@ -19,7 +19,6 @@ const NOW = 1_700_000_000_000;
 
 const validRoom = {
   roomCode: '482913',
-  hostPeerId: 'crush-482913',
   playerId: 'pl_abc',
   resumeToken: 'a'.repeat(32),
   displayName: 'Dana',
@@ -97,7 +96,6 @@ describe('resumable room metadata', () => {
     const raw = localStorage.getItem('superTaki:resumableRoom') ?? '{}';
     expect(Object.keys(JSON.parse(raw) as object).sort()).toEqual([
       'displayName',
-      'hostPeerId',
       'playerId',
       'resumeToken',
       'roomCode',

@@ -1,8 +1,5 @@
 import { create } from 'zustand';
 import { DEFAULT_LANGUAGE, directionFor, type Language } from '../../../i18n/index.ts';
-import { record } from '../../../lib/diagnostics.ts';
-import { onSleep } from '../../../lib/lifecycle.ts';
-import { createRoomClaim } from '../../../lib/id.ts';
 import { releaseSound, setSoundEnabled, unlockSound } from '../../../lib/audio.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
@@ -10,9 +7,10 @@ import type { Card } from '../engine/cards.ts';
 import type { GameEvent, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import { ClientSession } from '../network/clientSession.ts';
-import { HostSession, createHostSession, type HostRestoreState } from '../network/hostSession.ts';
-import type { GameAction, LobbySnapshot } from '../network/protocol.ts';
-import { buildInviteUrl, generateRoomCode, hostPeerIdForRoom } from '../network/roomCode.ts';
+import type { ChannelFactory } from '../network/roomTransport.ts';
+import type { GameAction, LobbySnapshot, RoomCommand } from '../network/protocol.ts';
+import { buildInviteUrl, generateRoomCode } from '../network/roomCode.ts';
+import { RoomError } from '../network/roomTransport.ts';
 import {
   CREDENTIAL_ENDING_REASONS,
   sessionError,
@@ -21,17 +19,7 @@ import {
   type SessionError,
   type SessionUpdate,
 } from '../network/session.ts';
-import { ACTION_LOCK_MS, HOST_ID_RETRY_SCHEDULE_MS } from '../network/timing.ts';
-import { TransportError, type Transport } from '../network/transport.ts';
-import { createTransport } from '../network/transportFactory.ts';
-import {
-  clearHostedRoom,
-  flushHostedRoom,
-  loadHostedRoom,
-  saveHostedRoom,
-  validateHandoffSnapshot,
-  type HostedRoom,
-} from './hostSnapshot.ts';
+import { ACTION_LOCK_MS } from '../network/timing.ts';
 import {
   applyLanguage,
   applyTheme,
@@ -75,15 +63,6 @@ export interface Announcement {
 const FEED_LIMIT = 60;
 const ROOM_CODE_ATTEMPTS = 4;
 
-/**
- * How many times a returning host tries to reclaim its own room code.
- *
- * The relay recognises the stored claim, so the first attempt normally wins; the
- * rest of the schedule is patience with the *network*, because giving up means
- * conceding the room code and invalidating every invite already sent.
- */
-const HOST_ID_ATTEMPTS = HOST_ID_RETRY_SCHEDULE_MS.length;
-
 export interface AppState {
   language: Language;
   theme: ThemeChoice;
@@ -93,11 +72,11 @@ export interface AppState {
 
   screen: Screen;
 
-  role: 'host' | 'client' | null;
+  /** Whether this device is in a room at all. Everybody at a table is a client. */
+  inRoom: boolean;
   phase: ConnectionPhase;
   busy: boolean;
   roomCode: string | null;
-  hostPeerId: string | null;
   inviteUrl: string | null;
   localPlayerId: string | null;
 
@@ -120,8 +99,6 @@ export interface AppState {
   rejection: RejectionNotice | null;
   closedReason: SessionClosedReason | null;
   resumable: ResumableRoom | null;
-  /** A room this device was hosting and can take back. */
-  hostable: HostedRoom | null;
   /** Who asked the table to hold, or `null`. */
   pausedBy: string | null;
   /** Set when another player nudges you; the nonce forces a re-announcement. */
@@ -163,7 +140,6 @@ export interface AppActions {
   readonly dismissRejection: () => void;
   readonly dismissClosed: () => void;
   readonly forgetResumable: () => void;
-  readonly forgetHostable: () => void;
   readonly dismissNudge: () => void;
   readonly dismissCaught: () => void;
 
@@ -175,25 +151,22 @@ export interface AppActions {
   readonly joinRoom: (options: {
     name: string;
     roomCode: string;
-    hostPeerId?: string;
     resume?: { playerId: string; resumeToken: string };
   }) => Promise<void>;
   readonly retryConnection: () => void;
-  /** Takes back a room this device was hosting, on the same room code. */
-  readonly resumeHosting: () => Promise<void>;
 
   readonly setMaxPlayers: (value: number) => void;
   readonly removePlayer: (playerId: string) => void;
   readonly startGame: () => void;
-  /** Seats a robot. Lobby only, host only. */
+  /** Seats a robot. Lobby only, and only for the seat holding the lobby buttons. */
   readonly addBot: () => void;
-  /** Whether a robot may play a seat nobody is answering for. Host only. */
+  /** Whether a robot may play a seat nobody is answering for. */
   readonly setStandInEnabled: (enabled: boolean) => void;
-  /** Puts a robot on somebody's seat now, rather than waiting. Host only. */
+  /** Puts a robot on somebody's seat now, rather than waiting. */
   readonly standInNow: (playerId: string) => void;
-  /** Hands a seat back from the robot playing it. Host only. */
+  /** Hands a seat back from the robot playing it. */
   readonly stopStandIn: (playerId: string) => void;
-  /** Passes the turn of a player who is away. Host only. */
+  /** Passes the turn of a player who is away. */
   readonly skipAbsentTurn: (playerId: string) => void;
   /** Takes an absent player out of the round, keeping their cards out of play. */
   readonly removeFromRound: (playerId: string) => void;
@@ -201,8 +174,6 @@ export interface AppActions {
   readonly setPaused: (paused: boolean) => void;
   readonly voteAbandon: (agree: boolean) => void;
   readonly nudgePlayer: (playerId: string) => void;
-  /** Offers the room to another player. Returns whether the offer went out. */
-  readonly handOver: (playerId: string) => boolean;
   readonly playCard: (cardId: string, chosenColor?: 'red' | 'blue' | 'green' | 'yellow') => void;
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
@@ -220,26 +191,17 @@ export interface AppActions {
 export type AppStore = AppState & AppActions;
 
 /**
- * The live session lives outside the store: it holds timers and transport
- * handles that must never be treated as renderable state.
+ * The live session lives outside the store: it holds timers and a socket that must
+ * never be treated as renderable state.
  */
-let session: HostSession | ClientSession | null = null;
-/**
- * Relay claim for the room this device is hosting. Minted when the room is
- * created, persisted in the host snapshot, and presented again on reclaim — it
- * is what proves to the relay that this device owns the room code.
- */
-let activeRoomClaim: string | null = null;
+let session: ClientSession | null = null;
 /**
  * Which session the store is currently listening to.
  *
- * A session's observer is fixed when it is constructed, so a session that has
- * been superseded can still speak — and one of the things it says on the way out
- * is `closed`, which clears `session`. During a handover that is actively
- * harmful: this device creates its new host session, then tears down the client
- * session it used to be, and the teardown's `closed` would null out the host that
- * had just been installed. Stamping each observer with the epoch it belongs to
- * makes a superseded session's parting words inert.
+ * A session's observer is fixed when it is constructed, so a session that has been
+ * superseded can still speak — and one of the things it says on the way out is
+ * `closed`, which clears `session`. Stamping each observer with the epoch it belongs
+ * to makes a superseded session's parting words inert.
  */
 let sessionEpoch = 0;
 let feedCounter = 0;
@@ -279,11 +241,21 @@ let actionLockTimer: ReturnType<typeof setTimeout> | null = null;
  * look like a delivered one.
  */
 let pendingRequestId: string | null = null;
-let detachSleepHook: (() => void) | null = null;
+
+/**
+ * How sessions reach a room. Replaced by tests, which run a real room in-process
+ * rather than a socket — see `tests/unit/helpers/room.ts`.
+ */
+let channelFactory: ChannelFactory | null = null;
 
 /** Test seam: replaces the active session (used by component tests). */
-export function __setSessionForTests(next: HostSession | ClientSession | null): void {
+export function __setSessionForTests(next: ClientSession | null): void {
   session = next;
+}
+
+/** Test seam: routes every new session to a room of the test's choosing. */
+export function __setChannelFactoryForTests(next: ChannelFactory | null): void {
+  channelFactory = next;
 }
 
 function initialState(): AppState {
@@ -295,11 +267,10 @@ function initialState(): AppState {
     sound: loadSound(),
     displayName: loadDisplayName(),
     screen: 'home',
-    role: null,
+    inRoom: false,
     phase: 'idle',
     busy: false,
     roomCode: null,
-    hostPeerId: null,
     inviteUrl: null,
     localPlayerId: null,
     lobby: null,
@@ -312,7 +283,6 @@ function initialState(): AppState {
     rejection: null,
     closedReason: null,
     resumable: loadResumableRoom(),
-    hostable: loadHostedRoom(),
     pausedBy: null,
     nudge: null,
     caught: null,
@@ -324,11 +294,10 @@ function initialState(): AppState {
 }
 
 const CLEARED_SESSION: Partial<AppState> = {
-  role: null,
+  inRoom: false,
   phase: 'idle',
   busy: false,
   roomCode: null,
-  hostPeerId: null,
   inviteUrl: null,
   localPlayerId: null,
   lobby: null,
@@ -393,121 +362,6 @@ export const useAppStore = create<AppStore>((set, get) => {
     if (get().actionPending) {
       set({ actionPending: false });
     }
-  }
-
-  /**
-   * Becomes the host, on the room the previous one just handed over.
-   *
-   * The order matters: this device starts serving on the next generation *before*
-   * telling the old host it accepted. Only then does the old host step down and
-   * point everybody here, so the table never has a moment with nowhere to go. If
-   * anything fails, nothing is accepted and the old host simply carries on.
-   */
-  async function acceptHandoff(generation: number, snapshot: unknown, accept: () => void): Promise<void> {
-    const roomCode = get().roomCode;
-    if (!roomCode) {
-      return;
-    }
-    const restore = validateHandoffSnapshot(snapshot);
-    if (!restore) {
-      log.warn('refusing a handover whose state did not parse');
-      record('handover', 'refused: unreadable state');
-      return;
-    }
-    const peerId = hostPeerIdForRoom(roomCode, generation);
-    let transport: Transport | null = null;
-    try {
-      // A fresh claim: the successor owns a new generation id, not the old one.
-      const claim = createRoomClaim();
-      transport = createTransport({ id: peerId, claim });
-      activeRoomClaim = claim;
-      const previous = session;
-      sessionEpoch += 1;
-      const hostSession = await createHostSession({
-        transport,
-        roomCode,
-        hostDisplayName: get().displayName || 'Host',
-        maxPlayers: restore.maxPlayers,
-        tableLanguage: restore.tableLanguage,
-        observer: observerFor(sessionEpoch),
-        restore,
-        onSnapshot: persistHostedRoom,
-        generation,
-      });
-      session = hostSession;
-      attachSleepHook();
-      accept();
-      // The old client session has served its purpose; its transport must go, or
-      // this device holds two peers and answers to both.
-      if (previous instanceof ClientSession) {
-        queueMicrotask(() => {
-          previous.destroy('leftVoluntarily');
-        });
-      }
-      set({
-        role: 'host',
-        hostPeerId: peerId,
-        busy: false,
-        inviteUrl: buildInviteUrl({ roomCode, hostPeerId: peerId }, window.location.href),
-      });
-      record('handover', 'took over the room', { generation });
-    } catch (error) {
-      log.warn('could not take the room over', error);
-      record('handover', 'refused: could not claim the id', { generation });
-      transport?.destroy();
-    }
-  }
-
-  /** Persists the room whenever the host's authoritative state changes. */
-  function persistHostedRoom(restore: HostRestoreState): void {
-    const active = session;
-    if (!(active instanceof HostSession)) {
-      return;
-    }
-    saveHostedRoom({
-      roomCode: active.roomCode,
-      hostPeerId: active.hostPeerId,
-      claim: activeRoomClaim,
-      generation: active.generation,
-      restore,
-    });
-    // Only touch the store when the *existence* of a recoverable room changes.
-    // Re-publishing an equivalent object on every accepted move would churn every
-    // subscriber for nothing.
-    if (get().hostable === null) {
-      const hostable = loadHostedRoom();
-      if (hostable) {
-        set({ hostable });
-      }
-    }
-  }
-
-  /**
-   * Tells the table this device is reloading, and writes the room down first.
-   *
-   * `pagehide` is the only hook that fires reliably on a phone, and this single
-   * message is what turns an ambiguous silence into "the host is coming back" —
-   * which is the difference between a held seat and a lost game.
-   */
-  function attachSleepHook(): void {
-    detachSleepHook?.();
-    detachSleepHook = onSleep((reason) => {
-      if (reason !== 'pagehide') {
-        return;
-      }
-      const active = session;
-      if (!(active instanceof HostSession)) {
-        return;
-      }
-      flushHostedRoom({
-        roomCode: active.roomCode,
-        hostPeerId: active.hostPeerId,
-        claim: activeRoomClaim,
-        generation: active.generation,
-        restore: active.snapshot(),
-      });
-      active.announceRestarting();
-    });
   }
 
   /**
@@ -636,33 +490,26 @@ export const useAppStore = create<AppStore>((set, get) => {
         nudgeCounter += 1;
         set({ nudge: { fromPlayerId: update.fromPlayerId, nonce: nudgeCounter } });
         return;
-      case 'handover':
-        // The client session already re-points itself at the new host; the store
-        // only needs to remember where the room went, so a later resume follows it.
-        set((state) =>
-          state.resumable ? { resumable: { ...state.resumable, generation: update.generation } } : {},
-        );
-        return;
-      case 'handoffOffer':
-        void acceptHandoff(update.generation, update.snapshot, update.accept);
-        return;
       case 'playAgain':
         set({ playAgain: { agreed: update.agreed, required: update.required } });
         return;
       case 'identity': {
-        const state = get();
+        const roomCode = get().roomCode;
         set({ localPlayerId: update.playerId, displayName: update.displayName });
         saveDisplayName(update.displayName);
-        if (state.role === 'client' && state.roomCode && state.hostPeerId) {
-          const room = {
-            roomCode: state.roomCode,
-            hostPeerId: state.hostPeerId,
+        if (roomCode) {
+          /*
+           * Saved for *every* seat now, the room's creator included. Their seat used
+           * to be the one seat with no way back — it was the authority, and an
+           * authority cannot rejoin itself — so instead of a credential they got a
+           * copy of the whole game in `localStorage` and a button to restart it from.
+           */
+          saveResumableRoom({
+            roomCode,
             playerId: update.playerId,
             resumeToken: update.resumeToken,
             displayName: update.displayName,
-            ...(state.resumable?.generation !== undefined ? { generation: state.resumable.generation } : {}),
-          };
-          saveResumableRoom(room);
+          });
           set({ resumable: loadResumableRoom() });
         }
         return;
@@ -678,8 +525,6 @@ export const useAppStore = create<AppStore>((set, get) => {
         clearHold();
         releaseSound();
         session = null;
-        detachSleepHook?.();
-        detachSleepHook = null;
         /*
          * Only an explicit departure or a removal means the seat is gone. This
          * used to clear the credential for every reason but one — including a host
@@ -690,21 +535,14 @@ export const useAppStore = create<AppStore>((set, get) => {
         if (CREDENTIAL_ENDING_REASONS.has(update.reason)) {
           clearResumableRoom();
         }
-        if (get().role === 'host') {
-          clearHostedRoom();
-          activeRoomClaim = null;
-        }
         set({
           ...CLEARED_SESSION,
           closedReason: update.reason,
           resumable: loadResumableRoom(),
-          hostable: loadHostedRoom(),
           /*
-           * A voluntary ending explains itself, so no dialog is drawn for it — which
-           * left a host who had just handed the room over sitting on a lobby screen
-           * with no lobby behind it and nothing to press. Every other reason keeps the
-           * screen, because the dialog that explains it is drawn on top and offers the
-           * way out.
+           * A voluntary ending explains itself, so no dialog is drawn for it. Every
+           * other reason keeps the screen, because the dialog that explains it is drawn
+           * on top and offers the way out.
            */
           ...(update.reason === 'leftVoluntarily' ? { screen: 'home' as const } : {}),
         });
@@ -736,14 +574,20 @@ export const useAppStore = create<AppStore>((set, get) => {
     pendingRequestId = requestId;
     actionLockTimer = setTimeout(clearActionLock, ACTION_LOCK_MS);
     set({ actionPending: true });
+    session.submitAction(action, requestId);
+  }
 
-    if (session instanceof HostSession) {
-      session.submitLocalAction(action);
-      // The host answers itself synchronously, so nothing is left in flight.
-      clearActionLock();
-    } else {
-      session.submitAction(action, requestId);
-    }
+  /**
+   * Asks the room for a lobby power.
+   *
+   * Every one of these used to be a direct method call on the local authority, which
+   * is why the UI could simply check `role === 'host'` and call it. They are messages
+   * now, and the room decides: it honours them only from the seat named by
+   * `creatorPlayerId`. The UI still hides the buttons from everybody else, but that
+   * is a courtesy rather than the enforcement.
+   */
+  function command(next: RoomCommand): void {
+    session?.roomCommand(next);
   }
 
   return {
@@ -794,12 +638,6 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ resumable: null });
     },
 
-    forgetHostable: () => {
-      clearHostedRoom();
-      activeRoomClaim = null;
-      set({ hostable: null });
-    },
-
     dismissNudge: () => {
       set({ nudge: null });
     },
@@ -813,9 +651,9 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       /*
-       * Woken here, inside the gesture, and never on the first card tap: `resume()`
-       * is asynchronous, so a context woken by the tap that should have made a
-       * sound swallows or delays its own first cue.
+       * Woken here, inside the gesture, and never on the first card tap: `resume()` is
+       * asynchronous, so a context woken by the tap that should have made a sound
+       * swallows or delays its own first cue.
        */
       unlockSound();
       const cleaned = sanitizeDisplayName(name);
@@ -823,187 +661,65 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ busy: true, error: null, closedReason: null, feed: [], beat: null });
       saveDisplayName(cleaned);
 
+      /*
+       * Draw a code, and let the room tell us whether it is free.
+       *
+       * The collision check used to live in the relay's id table: the host claimed a
+       * peer id derived from the code, and a second host was refused it. There is no
+       * id to claim now, so the room answers instead — `roomTaken` means it already
+       * has players in it, and we draw again. Same four attempts, same odds, one
+       * fewer secret.
+       */
       for (let attempt = 0; attempt < ROOM_CODE_ATTEMPTS; attempt += 1) {
         const roomCode = generateRoomCode();
-        const peerId = hostPeerIdForRoom(roomCode);
-        const claim = createRoomClaim();
-        // Held outside the try so a failed attempt can tear its transport down
-        // instead of leaving an orphaned socket that may still fire `open`.
-        let transport: Transport | null = null;
-        try {
-          transport = createTransport({ id: peerId, claim });
-          activeRoomClaim = claim;
-          set({ role: 'host', roomCode, hostPeerId: peerId, phase: 'initializing' });
-          sessionEpoch += 1;
-          const hostSession = await createHostSession({
-            transport,
-            roomCode,
-            hostDisplayName: cleaned,
-            maxPlayers,
-            tableLanguage,
-            observer: observerFor(sessionEpoch),
-            onSnapshot: persistHostedRoom,
-          });
-          session = hostSession;
-          attachSleepHook();
-          set({
-            busy: false,
-            screen: 'lobby',
-            inviteUrl: buildInviteUrl({ roomCode, hostPeerId: hostSession.hostPeerId }, window.location.href),
-          });
+        set({ inRoom: true, roomCode, phase: 'connecting' });
+        sessionEpoch += 1;
+        const attemptEpoch = sessionEpoch;
+        const clientSession = new ClientSession({
+          roomCode,
+          displayName: cleaned,
+          create: { maxPlayers, tableLanguage },
+          observer: observerFor(attemptEpoch),
+          ...(channelFactory ? { connect: channelFactory } : {}),
+        });
+        session = clientSession;
+        await clientSession.start();
+        // The room's answer arrives on the wire, after the request has gone out.
+        // Acting on `start()` alone is acting before it has said anything.
+        await clientSession.awaitJoin();
+        if (attemptEpoch !== sessionEpoch) {
+          // The player walked away while we were connecting.
           return;
-        } catch (error) {
-          const isTaken = error instanceof TransportError && error.code === 'idUnavailable';
-          log.warn('room creation failed', error);
-          transport?.destroy();
-          if (!isTaken || attempt === ROOM_CODE_ATTEMPTS - 1) {
-            set({
-              ...CLEARED_SESSION,
-              error:
-                error instanceof TransportError
-                  ? sessionError(error.code, error.message)
-                  : sessionError('unknown', error instanceof Error ? error.message : undefined),
-              phase: 'failed',
-            });
-            return;
-          }
         }
-      }
-    },
-
-    /**
-     * Takes back a room this device was hosting, on the *same* room code.
-     *
-     * Keeping the code is the whole point: every invite already sent stays valid,
-     * and every client's stored credential still fits, so the players reconnect on
-     * their own without being told anything. The stored claim makes the relay hand
-     * the id straight back — even if the room still shows our old socket as
-     * present, the claim supersedes it — so failures here are network failures,
-     * and network failures deserve patience rather than conceding the code.
-     */
-    resumeHosting: async () => {
-      const hostable = get().hostable;
-      if (!hostable || get().busy) {
+        if (clientSession.rejection === 'roomTaken') {
+          clientSession.destroy('leftVoluntarily');
+          session = null;
+          set({ error: null, closedReason: null });
+          continue;
+        }
+        if (clientSession.connectionPhase === 'failed') {
+          set({ busy: false });
+          return;
+        }
+        set({
+          busy: false,
+          screen: 'lobby',
+          inviteUrl: buildInviteUrl({ roomCode }, window.location.href),
+        });
         return;
       }
-      resetBeatTracking();
-      set({
-        busy: true,
-        error: null,
-        closedReason: null,
-        feed: [],
-        beat: null,
-        role: 'host',
-        roomCode: hostable.roomCode,
-        hostPeerId: hostable.hostPeerId,
-        phase: 'initializing',
-      });
-      record('hostRestart', 'reclaiming room code', { room: hostable.roomCode });
-      /*
-       * The loop below can run for over a minute, and the player may leave in the
-       * middle of it. Without this, a retry that finally succeeded would install a
-       * session and republish a room they had deliberately walked away from.
-       */
-      sessionEpoch += 1;
-      const attemptEpoch = sessionEpoch;
 
-      for (let attempt = 0; attempt < HOST_ID_ATTEMPTS; attempt += 1) {
-        if (attemptEpoch !== sessionEpoch || get().hostable === null) {
-          record('hostRestart', 'abandoned: the room was let go');
-          // Cleared rather than merely returned from: leaving `busy` set left the
-          // player watching a spinner for a room nobody was going to reclaim.
-          set({ ...CLEARED_SESSION, screen: 'home' });
-          return;
-        }
-        if (attempt > 0) {
-          const previous = HOST_ID_RETRY_SCHEDULE_MS[attempt - 1] ?? 0;
-          const target = HOST_ID_RETRY_SCHEDULE_MS[attempt] ?? previous;
-          await new Promise((resolve) => setTimeout(resolve, Math.max(target - previous, 0)));
-        }
-        let transport: Transport | null = null;
-        try {
-          /*
-           * The stored claim is the room key: presenting it makes the relay hand
-           * the id straight back, however long this device was gone. A snapshot
-           * from before claims existed falls back to a fresh one, which succeeds
-           * once the relay's hold on the old id expires.
-           */
-          const claim = hostable.claim ?? createRoomClaim();
-          transport = createTransport({ id: hostable.hostPeerId, claim });
-          activeRoomClaim = claim;
-          const hostSession = await createHostSession({
-            transport,
-            roomCode: hostable.roomCode,
-            hostDisplayName: get().displayName || 'Host',
-            maxPlayers: hostable.restore.maxPlayers,
-            tableLanguage: hostable.restore.tableLanguage,
-            observer: observerFor(attemptEpoch),
-            restore: hostable.restore,
-            onSnapshot: persistHostedRoom,
-            generation: hostable.generation,
-          });
-          /*
-           * Checked again on the way out, not only on the way in. The attempt that
-           * is in flight is the one most likely to succeed, so a player who gives up
-           * while it is pending — the card offering this also offers "forget it" —
-           * would otherwise have the room reinstated under them a moment later, and
-           * republished to everybody holding an invitation.
-           */
-          if (attemptEpoch !== sessionEpoch || get().hostable === null) {
-            record('hostRestart', 'abandoned: the room was let go');
-            hostSession.destroy('leftVoluntarily');
-            if (attemptEpoch === sessionEpoch) {
-              // Only this attempt's own state is cleared. A newer epoch means some
-              // other session owns the store now, and stamping over it would take a
-              // room the player is actually in away from them.
-              set({ ...CLEARED_SESSION, screen: 'home' });
-            }
-            return;
-          }
-          session = hostSession;
-          attachSleepHook();
-          set({
-            busy: false,
-            inviteUrl: buildInviteUrl(
-              { roomCode: hostable.roomCode, hostPeerId: hostSession.hostPeerId },
-              window.location.href,
-            ),
-          });
-          record('hostRestart', 'room reclaimed', { attempt });
-          return;
-        } catch (error) {
-          transport?.destroy();
-          const isTaken = error instanceof TransportError && error.code === 'idUnavailable';
-          log.warn('reclaiming the room failed', attempt, error);
-          if (!isTaken) {
-            set({
-              ...CLEARED_SESSION,
-              error:
-                error instanceof TransportError
-                  ? sessionError(error.code, error.message)
-                  : sessionError('unknown', error instanceof Error ? error.message : undefined),
-              phase: 'failed',
-            });
-            return;
-          }
-        }
-      }
-      record('hostRestart', 'could not reclaim the room code');
-      set({
-        ...CLEARED_SESSION,
-        error: sessionError('idUnavailable'),
-        phase: 'failed',
-      });
+      log.warn('could not find a free room code');
+      set({ ...CLEARED_SESSION, error: sessionError('roomTaken'), phase: 'failed' });
     },
 
-    joinRoom: async ({ name, roomCode, hostPeerId, resume }) => {
+    joinRoom: async ({ name, roomCode, resume }) => {
       // Same reason as `createRoom`: inside the gesture, before any cue is due.
       unlockSound();
       if (get().busy) {
         return;
       }
       const cleaned = sanitizeDisplayName(name);
-      const targetHost = hostPeerId ?? hostPeerIdForRoom(roomCode);
       resetBeatTracking();
       set({
         busy: true,
@@ -1011,37 +727,33 @@ export const useAppStore = create<AppStore>((set, get) => {
         closedReason: null,
         feed: [],
         beat: null,
-        role: 'client',
+        inRoom: true,
         roomCode,
-        hostPeerId: targetHost,
-        phase: 'initializing',
+        phase: 'connecting',
         screen: 'lobby',
       });
       saveDisplayName(cleaned);
 
-      let transport: Transport | null = null;
+      sessionEpoch += 1;
+      const clientSession = new ClientSession({
+        roomCode,
+        displayName: cleaned,
+        observer: observerFor(sessionEpoch),
+        ...(resume ? { resume } : {}),
+        ...(channelFactory ? { connect: channelFactory } : {}),
+      });
+      session = clientSession;
       try {
-        transport = createTransport({});
-        sessionEpoch += 1;
-        const clientSession = new ClientSession({
-          transport,
-          roomCode,
-          hostPeerId: targetHost,
-          displayName: cleaned,
-          observer: observerFor(sessionEpoch),
-          ...(resume ? { resume } : {}),
-        });
-        session = clientSession;
         await clientSession.start();
-        set({ busy: false });
+        await clientSession.awaitJoin();
+        set({ busy: false, inviteUrl: buildInviteUrl({ roomCode }, window.location.href) });
       } catch (error) {
         log.warn('join failed', error);
-        transport?.destroy();
         set({
           busy: false,
           phase: 'failed',
           error:
-            error instanceof TransportError
+            error instanceof RoomError
               ? sessionError(error.code, error.message)
               : sessionError('unknown', error instanceof Error ? error.message : undefined),
         });
@@ -1049,108 +761,59 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     retryConnection: () => {
-      const active = session;
       set({ error: null });
-      if (active instanceof ClientSession) {
-        active.retry();
-      }
+      session?.retry();
     },
 
     setMaxPlayers: (value) => {
-      if (session instanceof HostSession) {
-        session.setMaxPlayers(value);
-      }
+      command({ type: 'setMaxPlayers', maxPlayers: Math.round(value) });
     },
 
     removePlayer: (playerId) => {
-      if (session instanceof HostSession) {
-        session.removePlayer(playerId);
-      }
+      command({ type: 'kickPlayer', playerId });
     },
 
     startGame: () => {
-      if (session instanceof HostSession) {
-        clearActionLock();
-        resetBeatTracking();
-        set({ feed: [], beat: null, caught: null });
-        session.startGame();
-      }
+      clearActionLock();
+      resetBeatTracking();
+      set({ feed: [], beat: null, caught: null });
+      command({ type: 'startGame' });
     },
 
     addBot: () => {
-      if (session instanceof HostSession) {
-        session.addBot();
-      }
+      command({ type: 'addBot' });
     },
 
     setStandInEnabled: (enabled) => {
-      if (session instanceof HostSession) {
-        session.setStandInEnabled(enabled);
-      }
+      command({ type: 'setStandInEnabled', enabled });
     },
 
     standInNow: (playerId) => {
-      if (session instanceof HostSession) {
-        session.standInNow(playerId);
-      }
+      command({ type: 'standInNow', playerId });
     },
 
     stopStandIn: (playerId) => {
-      if (session instanceof HostSession) {
-        session.stopStandIn(playerId);
-      }
+      command({ type: 'stopStandIn', playerId });
     },
 
     skipAbsentTurn: (playerId) => {
-      if (session instanceof HostSession) {
-        session.skipAbsentTurn(playerId);
-      }
+      command({ type: 'skipAbsentTurn', playerId });
     },
 
     removeFromRound: (playerId) => {
-      if (session instanceof HostSession) {
-        session.removeFromRound(playerId);
-      }
+      command({ type: 'removeFromRound', playerId });
     },
 
     setPaused: (paused) => {
-      const active = session;
-      if (active instanceof HostSession) {
-        // Asking the table to hold is something a person does, so it takes the host's
-        // own seat back from a robot that had stepped in for their silence.
-        active.noteLocalIntent();
-        active.setPaused(paused ? active.localPlayerId : null);
-      } else if (active instanceof ClientSession) {
-        active.requestPause(paused);
-      }
+      session?.requestPause(paused);
     },
 
     voteAbandon: (agree) => {
-      const active = session;
-      if (active instanceof HostSession) {
-        active.voteAbandon(agree);
-      } else if (active instanceof ClientSession) {
-        active.voteAbandon(agree);
-      }
+      session?.voteAbandon(agree);
     },
 
     nudgePlayer: (playerId) => {
-      const active = session;
-      if (active instanceof HostSession) {
-        active.nudge(playerId);
-      } else if (active instanceof ClientSession) {
-        active.nudge(playerId);
-      }
-    },
-
-    handOver: (playerId) => {
-      if (!(session instanceof HostSession)) {
-        return false;
-      }
-      // A living host, vouching on a channel both sides already trust. That is
-      // what makes this safe without any of the verification an automatic
-      // takeover from a silent host would need — and could not get.
-      return session.offerHandoff(playerId);
+      session?.nudge(playerId);
     },
 
     playCard: (cardId, chosenColor) => {
@@ -1178,11 +841,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     votePlayAgain: (agree) => {
-      if (session instanceof HostSession) {
-        session.votePlayAgain(agree);
-      } else if (session instanceof ClientSession) {
-        session.votePlayAgain(agree);
-      }
+      session?.votePlayAgain(agree);
     },
 
     requestLeave: () => {
@@ -1200,11 +859,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       releaseSound();
       session?.destroy('leftVoluntarily');
       session = null;
-      detachSleepHook?.();
-      detachSleepHook = null;
       clearResumableRoom();
-      clearHostedRoom();
-      activeRoomClaim = null;
       clearActionLock();
       set({
         ...CLEARED_SESSION,
@@ -1212,7 +867,6 @@ export const useAppStore = create<AppStore>((set, get) => {
         error: null,
         closedReason: null,
         resumable: null,
-        hostable: null,
         nudge: null,
       });
     },

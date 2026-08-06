@@ -3,7 +3,6 @@ import { BrandMark } from '../../../../app/BrandMark.tsx';
 import { Button } from '../../../../components/Button.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
-import { HostResumeCard } from '../components/HostResumeCard.tsx';
 import { ResumeCard } from '../components/ResumeCard.tsx';
 
 /**
@@ -29,7 +28,6 @@ export function HomeScreen(): ReactNode {
 
       {/* Hosting comes first: it is the offer that saves a whole table's game,
           not just this device's seat. */}
-      <HostResumeCard />
 
       <ResumeCard
         onResume={() => {

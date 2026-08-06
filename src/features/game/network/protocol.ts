@@ -33,27 +33,33 @@ import { REJECTION_CODES } from '../engine/state.ts';
  * event to say so. A rule, not a field: two peers on different sides of this
  * disagree about which cards are legal, which is exactly what the version gate
  * exists to catch.
+ *
+ * 6 — the room is the authority. There is no host peer to address, no host
+ * generation to follow and no room to hand over, so `hostPeerId`, `generation`,
+ * `handoffOffer` and `handoffAccepted` are gone; `hostClosed` becomes
+ * `roomClosed`; `hostPlayerId` becomes `creatorPlayerId`, which names the seat
+ * with the lobby buttons rather than the device running the game. The powers that
+ * used to be method calls on a local object travel as `roomCommand`. Seat health
+ * is what the runtime reports about a socket, so `'unstable'` — the state that
+ * meant "we are inferring and unsure" — has nothing left to describe.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /**
  * Versions this build will *accept*, as opposed to the one it sends.
  *
- * This matters more than it looks. The site is static and cached per browser, so
- * when one player reloads — which is the very thing the resilience work exists to
- * make survivable — they fetch the new bundle while everybody else keeps the old
- * one. With a single exact version, that reload would answer `protocolMismatch`
- * to the whole table and end the game outright: a release that defeats its own
- * purpose on the way in.
+ * A single entry, and now permanently so. This list used to hold two, because
+ * both sides of a table were browsers: the site is static and cached per browser,
+ * so a player who reloaded fetched the new bundle while everybody else kept the
+ * old one, and an exact-match gate would have ended the game on the reload the
+ * resilience work existed to make survivable.
  *
- * Every field added in 4 is optional, Zod strips the ones a version-3 reader does
- * not know about, and a mixed 3/4 table loses the new behaviour rather than the
- * game. Version 5 is the first bump that cannot be carried that way: it changes
- * which cards are legal, so a table split across it would have two peers refusing
- * each other's moves and blaming the game. A stale tab is told to reload instead,
- * which is the outcome the gate is for.
+ * That problem belonged to the topology. The room is one deployed worker, every
+ * client talks only to it, and a stale tab meets a server that is always the
+ * newer of the two — so the honest answer is "reload", which is exactly what the
+ * gate says. Mixed-version tables are not a thing to be compatible with any more.
  */
-export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [5];
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly number[] = [PROTOCOL_VERSION];
 
 /** Hard cap on a single decoded message, to bound memory from a hostile peer. */
 export const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -222,35 +228,40 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('roundAbandoned') }),
 ]);
 
-export const connectionHealthSchema = z.enum(['connected', 'unstable', 'disconnected']);
+/**
+ * A seat's link quality, as the room can actually observe it.
+ *
+ * Two states, not three. `'unstable'` existed because the authority was another
+ * browser and had to *infer* presence from unanswered probes — so it needed a word
+ * for "we are counting missed pings and are not sure yet". The room is told when a
+ * socket closes, by the runtime, as it happens. There is nothing left to be unsure
+ * about, and a state that only ever meant uncertainty has nothing to describe.
+ */
+export const connectionHealthSchema = z.enum(['connected', 'disconnected']);
 export type ConnectionHealth = z.infer<typeof connectionHealthSchema>;
 
 export const lobbyPlayerSchema = z.object({
   id: playerIdSchema,
   name: displayNameSchema,
-  isHost: z.boolean(),
+  /** Whether this seat holds the lobby buttons. Not an authority; see `creatorPlayerId`. */
+  isCreator: z.boolean(),
   health: connectionHealthSchema,
   /** Seat order; stable for the lifetime of the room. */
   seat: z.number().int().min(0).max(5),
   /**
-   * When this seat went quiet, on the *host's* clock, paired with the snapshot's
+   * When this seat went quiet, on the *room's* clock, paired with the snapshot's
    * `sentAt` so a client can work out its own offset once.
    *
    * A pre-computed duration was the obvious shape and the wrong one: it is stale
    * the moment it is sent, and a live countdown would force a full lobby
-   * broadcast — and a re-render of the whole table — on every heartbeat.
+   * broadcast — and a re-render of the whole table — on every snapshot.
    */
   absentSince: z.number().int().min(0).optional(),
   /** True once this seat has left the round for good. */
   left: z.boolean().optional(),
   /** A robot seat: there is no device behind it, and never will be. */
   bot: z.boolean().optional(),
-  /**
-   * A robot is playing this human's seat while nobody is answering for it.
-   *
-   * Optional, like everything added after protocol 5: a reader that does not know
-   * the field drops it and loses the badge, not the game.
-   */
+  /** A robot is playing this human's seat while nobody is answering for it. */
   standIn: z.boolean().optional(),
   /**
    * A robot played this seat at some point in the round that just ended.
@@ -264,48 +275,54 @@ export const lobbyPlayerSchema = z.object({
 
 export const lobbySnapshotSchema = z.object({
   roomCode: z.string().min(3).max(32),
-  hostPeerId: z.string().min(1).max(64),
-  hostPlayerId: playerIdSchema,
+  /**
+   * The seat that holds the lobby buttons: start the game, set the size, remove
+   * somebody, seat a robot.
+   *
+   * Emphatically not an authority. It used to be `hostPlayerId` and it named the
+   * device the whole game was running on; it now names a seat like any other, whose
+   * only privilege is over the lobby. If that seat leaves the room the powers pass
+   * to the lowest-numbered remaining one, so a table can always be started.
+   */
+  creatorPlayerId: playerIdSchema,
   maxPlayers: z.number().int().min(2).max(6),
   phase: z.enum(['lobby', 'inGame', 'finished']),
   players: z.array(lobbyPlayerSchema).max(6).readonly(),
-  /** Table language the host suggests; clients may override locally. */
+  /** Table language the room suggests; clients may override locally. */
   tableLanguage: z.enum(['he', 'en']),
-  /** The host's clock when this snapshot was built. */
-  sentAt: z.number().int().min(0).optional(),
+  /** The room's clock when this snapshot was built. */
+  sentAt: z.number().int().min(0),
   /**
-   * How long the host will hold an absent seat.
+   * How long the room will hold an absent seat.
    *
    * On the wire because there must be exactly one authority for it. The client
    * derives its own give-up deadline from this rather than declaring a second
    * number, so the countdown a player is shown can never be contradicted by the
    * timer running underneath it.
    */
-  seatGraceMs: z.number().int().min(0).optional(),
+  seatGraceMs: z.number().int().min(0),
   /** Whether the table is paused, and who asked. */
-  pausedBy: playerIdSchema.nullish(),
+  pausedBy: playerIdSchema.nullable(),
   /** Who the table is waiting for, and why — so no screen has to guess. */
-  waitingFor: playerIdSchema.nullish(),
-  waitingReason: z.enum(['turn', 'absent', 'breaker', 'paused']).nullish(),
-  /** Host clock at which the table started waiting, paired with `sentAt`. */
-  waitingSince: z.number().int().min(0).nullish(),
+  waitingFor: playerIdSchema.nullable(),
+  waitingReason: z.enum(['turn', 'absent', 'breaker', 'paused']).nullable(),
+  /** Room clock at which the table started waiting, paired with `sentAt`. */
+  waitingSince: z.number().int().min(0).nullable(),
   /** Players who have voted to abandon the round. */
-  abandonVotes: z.array(playerIdSchema).max(6).readonly().optional(),
-  /** Host generation, so a client can follow a handover. */
-  generation: z.number().int().min(0).max(16).optional(),
+  abandonVotes: z.array(playerIdSchema).max(6).readonly(),
   /**
    * Whether this table lets a robot play a seat nobody is answering for.
    *
    * On the wire because it is a fact about the room every player is entitled to
-   * know, not only the host who set it.
+   * know, not only the seat that set it.
    */
-  standInEnabled: z.boolean().optional(),
+  standInEnabled: z.boolean(),
 });
 
 export type LobbySnapshot = z.infer<typeof lobbySnapshotSchema>;
 export type LobbyPlayer = z.infer<typeof lobbyPlayerSchema>;
 
-/** Action a client asks for. The host attaches the authenticated player id. */
+/** Action a client asks for. The room attaches the authenticated player id. */
 export const gameActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('playCard'), cardId: cardIdSchema, chosenColor: colorSchema.optional() }),
   z.object({ type: z.literal('drawCard') }),
@@ -324,19 +341,28 @@ export const joinRejectionReasonSchema = z.enum([
   'unknownSeat',
   'invalidResumeToken',
   'roomClosed',
+  /**
+   * Asked to *create* a room that already has players in it.
+   *
+   * A room code collision, which used to surface as the relay refusing a peer id
+   * claim. The client draws another six digits and tries again, exactly as before —
+   * there is simply no id to claim any more, so the room itself answers.
+   */
+  'roomTaken',
 ]);
 export type JoinRejectionReason = z.infer<typeof joinRejectionReasonSchema>;
 
 /**
- * Why the host stopped serving.
+ * Why the room stopped.
  *
- * `restarting` and `handoff` are the two that are *not* the end of anything: the
- * first means "reloading, hold your seat", the second "somebody else is taking
- * over, follow them". Without that distinction a client had no way to tell a
- * goodbye from a see-you-in-a-moment, and treated both as fatal.
+ * Both of these are terminal, and that is the whole difference from the four
+ * reasons this replaced. A host could stop serving without the room ending —
+ * reloading, or handing over — so a client had to tell a goodbye from a
+ * see-you-in-a-moment and hold its seat through the second. The room does not
+ * reload and does not move: if it says it is closed, it is.
  */
-export const hostClosedReasonSchema = z.enum(['hostLeft', 'roomReset', 'restarting', 'handoff']);
-export const kickReasonSchema = z.enum(['removedByHost', 'duplicateConnection']);
+export const roomClosedReasonSchema = z.enum(['roomClosed', 'roomReset']);
+export const kickReasonSchema = z.enum(['removedByCreator', 'duplicateConnection']);
 
 const envelopeShape = {
   protocolVersion: z.number().int().min(0).max(1000),
@@ -372,11 +398,54 @@ const turnTokenSchema = z.object({
   turnSeq: z.number().int().nonnegative(),
 });
 
-/** Messages a client may send to the host. */
+/**
+ * The lobby powers, as messages.
+ *
+ * Every one of these used to be a method call on the local `HostSession`, which is
+ * why they were never on the wire: the person with the buttons was, by
+ * construction, the person running the game. Now they travel, and the room
+ * authorises each one against `creatorPlayerId` — so the buttons follow a
+ * credential rather than following whichever device happens to be serving.
+ *
+ * One message type rather than ten keeps the top-level union readable and, more to
+ * the point, keeps the authorisation check in exactly one place.
+ */
+export const roomCommandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('startGame') }),
+  z.object({ type: z.literal('setMaxPlayers'), maxPlayers: z.number().int().min(2).max(6) }),
+  z.object({ type: z.literal('setTableLanguage'), language: z.enum(['he', 'en']) }),
+  z.object({ type: z.literal('kickPlayer'), playerId: playerIdSchema }),
+  z.object({ type: z.literal('addBot') }),
+  z.object({ type: z.literal('setStandInEnabled'), enabled: z.boolean() }),
+  z.object({ type: z.literal('standInNow'), playerId: playerIdSchema }),
+  z.object({ type: z.literal('stopStandIn'), playerId: playerIdSchema }),
+  /** Passes the turn of a seat that is not there. Never reaches the engine from a client. */
+  z.object({ type: z.literal('skipAbsentTurn'), playerId: playerIdSchema }),
+  z.object({ type: z.literal('removeFromRound'), playerId: playerIdSchema }),
+]);
+export type RoomCommand = z.infer<typeof roomCommandSchema>;
+
+/** Messages a client may send to the room. */
 export const clientMessageSchema = z.discriminatedUnion('type', [
   message(
     'joinRequest',
-    z.object({ displayName: displayNameSchema, wantsSpectator: z.boolean().optional() }),
+    z.object({
+      displayName: displayNameSchema,
+      /**
+       * Present on the first connection to a room that does not exist yet.
+       *
+       * The room accepts it only while it has no seats; otherwise the answer is
+       * `roomTaken` and the client draws another code. This is what replaces
+       * claiming a peer id derived from the room code: the collision check moved
+       * from the relay's id table to the room's own emptiness.
+       */
+      create: z
+        .object({
+          maxPlayers: z.number().int().min(2).max(6),
+          tableLanguage: z.enum(['he', 'en']),
+        })
+        .optional(),
+    }),
   ),
   message('resumeRequest', z.object({ playerId: playerIdSchema, resumeToken: resumeTokenSchema })),
   message(
@@ -394,8 +463,6 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     }),
   ),
   message('leave', z.object({})),
-  message('ping', z.object({ nonce: z.string().min(1).max(64) })),
-  message('pong', z.object({ nonce: z.string().min(1).max(64) })),
   message('playAgainVote', z.object({ agree: z.boolean() })),
   /** Asks the table to hold, out loud, so nobody has to race a countdown. */
   message('pauseRequest', z.object({ paused: z.boolean() })),
@@ -403,12 +470,12 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   message('abandonVote', z.object({ agree: z.boolean() })),
   /** Nudges a player who is connected but not looking. */
   message('nudge', z.object({ targetPlayerId: playerIdSchema })),
-  /** The named successor confirms it can take the room over. */
-  message('handoffAccepted', z.object({ generation: z.number().int().min(0).max(16) })),
+  /** A lobby power. Refused unless it comes from the seat that holds them. */
+  message('roomCommand', z.object({ command: roomCommandSchema })),
 ]);
 
-/** Messages the host may send to a client. */
-export const hostMessageSchema = z.discriminatedUnion('type', [
+/** Messages the room may send to a client. */
+export const roomMessageSchema = z.discriminatedUnion('type', [
   message(
     'joinAccepted',
     z.object({
@@ -446,17 +513,7 @@ export const hostMessageSchema = z.discriminatedUnion('type', [
     z.object({ requestId: requestIdSchema, version: z.number().int().nonnegative() }),
   ),
   message('kicked', z.object({ reason: kickReasonSchema })),
-  message(
-    'hostClosed',
-    z.object({
-      reason: hostClosedReasonSchema,
-      /** For a handover: where to find the new host. */
-      successorPeerId: z.string().min(1).max(64).optional(),
-      generation: z.number().int().min(0).max(16).optional(),
-    }),
-  ),
-  message('ping', z.object({ nonce: z.string().min(1).max(64) })),
-  message('pong', z.object({ nonce: z.string().min(1).max(64) })),
+  message('roomClosed', z.object({ reason: roomClosedReasonSchema })),
   message(
     'playAgainState',
     z.object({ agreed: z.array(playerIdSchema).max(6).readonly(), required: z.number().int().min(0).max(6) }),
@@ -465,29 +522,13 @@ export const hostMessageSchema = z.discriminatedUnion('type', [
   message('paused', z.object({ pausedBy: playerIdSchema.nullable() })),
   /** Somebody nudged this player: it is their turn and they may not have noticed. */
   message('nudged', z.object({ fromPlayerId: playerIdSchema })),
-  /**
-   * Everything the named successor needs to keep the round going.
-   *
-   * Sent exactly once, at the moment of a voluntary handover — not continuously.
-   * A per-commit snapshot would have been roughly a megabyte a round onto one
-   * player's mobile data, and it only seemed necessary while the plan still
-   * imagined taking over from a host that might be lying. A living host handing
-   * over on an already-trusted channel needs no such apparatus.
-   */
-  message(
-    'handoffOffer',
-    z.object({
-      generation: z.number().int().min(0).max(16),
-      snapshot: z.unknown(),
-    }),
-  ),
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
-export type HostMessage = z.infer<typeof hostMessageSchema>;
-export type AnyMessage = ClientMessage | HostMessage;
+export type RoomMessage = z.infer<typeof roomMessageSchema>;
+export type AnyMessage = ClientMessage | RoomMessage;
 export type ClientMessageType = ClientMessage['type'];
-export type HostMessageType = HostMessage['type'];
+export type RoomMessageType = RoomMessage['type'];
 
 export type ParseFailure =
   | { readonly ok: false; readonly error: 'notAnObject' }
@@ -538,12 +579,12 @@ function parseWith<T>(schema: z.ZodType<T>, raw: unknown): ParseResult<T> {
   return { ok: true, message: parsed.data };
 }
 
-/** Validates a message received by the host (i.e. sent by a client). */
+/** Validates a message received by the room (i.e. sent by a client). */
 export function parseClientMessage(raw: unknown): ParseResult<ClientMessage> {
   return parseWith(clientMessageSchema, raw);
 }
 
-/** Validates a message received by a client (i.e. sent by the host). */
-export function parseHostMessage(raw: unknown): ParseResult<HostMessage> {
-  return parseWith(hostMessageSchema, raw);
+/** Validates a message received by a client (i.e. sent by the room). */
+export function parseRoomMessage(raw: unknown): ParseResult<RoomMessage> {
+  return parseWith(roomMessageSchema, raw);
 }

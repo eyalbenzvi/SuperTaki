@@ -1,8 +1,17 @@
 import { createMessageId } from '../../../lib/id.ts';
-import { PROTOCOL_VERSION, type ClientMessage, type HostMessage } from './protocol.ts';
+import { PROTOCOL_VERSION, type ClientMessage, type RoomMessage } from './protocol.ts';
 
 export interface MessageContext {
   readonly roomId: string;
+  /**
+   * Who is speaking, for the log.
+   *
+   * It used to be a routable peer id, and routing is what it was for: the relay
+   * addressed frames by it. Nothing is routed any more — a client's only
+   * correspondent is the room, and the room's only correspondents are the sockets
+   * it holds — so this is now a connection label. Clients stamp a per-tab id; the
+   * room stamps `'room'`.
+   */
   readonly senderPeerId: string;
   /** Injectable clock so tests stay deterministic. */
   readonly now?: () => number;
@@ -33,21 +42,25 @@ export function clientMessage<TType extends ClientMessage['type']>(
   return { ...envelope(context), type, payload } as Extract<ClientMessage, { type: TType }>;
 }
 
-/** Builds a fully-formed, schema-valid host message. */
-export function hostMessage<TType extends HostMessage['type']>(
+/** Builds a fully-formed, schema-valid room message. */
+export function roomMessage<TType extends RoomMessage['type']>(
   context: MessageContext,
   type: TType,
-  payload: Extract<HostMessage, { type: TType }>['payload'],
-): Extract<HostMessage, { type: TType }> {
-  return { ...envelope(context), type, payload } as Extract<HostMessage, { type: TType }>;
+  payload: Extract<RoomMessage, { type: TType }>['payload'],
+): Extract<RoomMessage, { type: TType }> {
+  return { ...envelope(context), type, payload } as Extract<RoomMessage, { type: TType }>;
 }
 
 /**
  * Bounded set of recently seen message ids.
  *
- * WebRTC data channels are reliable and ordered by default, so duplicates are
- * rare — but a peer can resend after a reconnect, and a buggy or hostile peer
- * can replay deliberately. Dropping repeats keeps command handling idempotent.
+ * A WebSocket is reliable and ordered, so duplicates are rare — but a client
+ * resends after a reconnect by design, and a buggy or hostile one can replay
+ * deliberately. Dropping repeats keeps message handling idempotent.
+ *
+ * This is *not* what makes a move idempotent: an envelope id is minted fresh on
+ * every send, so a deliberate re-send of the same intent has a new one. That is
+ * `requestId`'s job, and it lives on the seat rather than the connection.
  */
 export class MessageDeduplicator {
   private readonly seen = new Set<string>();

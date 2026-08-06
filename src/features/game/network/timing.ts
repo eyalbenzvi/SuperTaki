@@ -1,58 +1,39 @@
 /**
- * Every deadline in the connection layer, in one place.
+ * Every deadline in the system, in one place, shared by the client and the room.
  *
- * These numbers used to live in three files and disagree with each other. The
- * rules that generate them:
+ * One file, imported by both sides — the app bundle and the worker — so a number
+ * that governs a countdown a player is shown and the timer that enforces it cannot
+ * be two numbers. The rules that generate them:
  *
- * 1. **One authority per deadline.** Anything about the lifetime of a *seat* is
- *    the host's to decide, travels in the lobby snapshot, and is *derived* by the
- *    client — never re-declared. Two constants that have to agree eventually will
- *    not; one constant plus a subtraction cannot disagree.
- * 2. **Detection thresholds are counted in missed probes, never in raw
- *    milliseconds**, with a floor of three, so a single lost round trip on a
- *    mobile network never convicts anybody.
- * 3. **A "give up" deadline must exceed the other side's "keep trying" deadline**
- *    for the same resource by the worst realistic recovery time: a 40 s
- *    WiFi/cellular handover, plus up to 75 s of the broker holding a dropped peer
- *    id, plus one backoff round — call it three minutes.
- * 4. **Nothing terminal is decided from a single failed attempt or a single timer
+ * 1. **One authority per deadline.** Anything about the lifetime of a *seat* is the
+ *    room's to decide, travels in the lobby snapshot, and is *derived* by the client
+ *    — never re-declared. Two constants that have to agree eventually will not; one
+ *    constant plus a subtraction cannot disagree.
+ * 2. **A "give up" deadline must exceed the other side's "keep trying" deadline** for
+ *    the same resource by the worst realistic recovery time: a 40 s WiFi/cellular
+ *    handover plus one backoff round.
+ * 3. **Nothing terminal is decided from a single failed attempt or a single timer
  *    expiry.**
+ *
+ * A whole family of constants used to live here and no longer does, because the
+ * thing they measured has gone. Presence used to be *inferred* by one browser about
+ * another, from unanswered probes: hence a probe cadence, a busy cadence, a count of
+ * misses before "unstable", another before "silent", a floor under that derived from
+ * ICE consent freshness, and a deadline for giving up on a channel. The room is told
+ * when a socket closes, by the runtime, as it happens. An observation replaced the
+ * entire apparatus.
  */
 
-/** Probe cadence while the local player has something at stake. */
-export const PROBE_INTERVAL_BUSY_MS = 5_000;
-
 /**
- * Probe cadence the rest of the time.
+ * How often a client asks its socket to prove it is alive.
  *
- * A fixed 5 s cadence never lets a cellular modem reach its idle state, and a
- * turn-based card game does not need sub-second failure detection. The bytes are
- * irrelevant; the radio is not.
+ * Answered by the Cloudflare runtime's auto-responder without waking the room, so
+ * the cadence costs nothing but bytes. Fifteen seconds rather than five: a faster
+ * cadence never lets a cellular modem reach its idle state, and a turn-based card
+ * game does not need sub-second failure detection. The bytes are irrelevant; the
+ * radio is not.
  */
 export const PROBE_INTERVAL_IDLE_MS = 15_000;
-
-/** Missed probes before a peer is shown as unstable. Three is the floor. */
-export const UNSTABLE_AFTER_MISSES = 3;
-
-/** Missed probes before a peer is treated as silent. */
-export const SILENT_AFTER_MISSES = 6;
-
-/**
- * Floor under the "peer is silent" deadline.
- *
- * ICE consent freshness (RFC 7675) expires after 30 s of unanswered checks, and
- * before that the browser's own ICE agent has not given up — so neither should
- * we, however fast we happen to be probing.
- */
-export const PEER_SILENT_FLOOR_MS = 30_000;
-
-/**
- * When to stop waiting and rebuild the channel.
- *
- * Past 30 s of consent plus a margin, the ICE agent has surrendered too, so
- * there is nothing left to wait for.
- */
-export const CHANNEL_DEAD_MS = 45_000;
 
 /**
  * Deadline for the liveness probe fired after a wake or a late tick.
@@ -63,48 +44,23 @@ export const CHANNEL_DEAD_MS = 45_000;
 export const PROBE_DEADLINE_MS = 3_000;
 
 /**
- * How late a watchdog tick has to be before we conclude *we* were asleep rather
- * than that the peer died.
+ * Socket budget, first attempt versus later ones.
  *
- * Three intervals rather than two: two is inside ordinary foreground timer jank
- * on a loaded low-end phone, and a false "we slept" suppresses a real
- * conviction.
- */
-export const LATE_TICK_FACTOR = 3;
-
-/** How long to wait for the broker to assign a peer id. Re-armable. */
-export const SIGNALLING_READY_MS = 12_000;
-
-/**
- * Data-connection budget, first attempt versus later ones.
- *
- * A flat 15 s was wrong in both directions: too long for the attempt a player is
- * watching, and too short for a *relayed* candidate pair on slow cellular, which
- * can need most of 20 s to nominate.
+ * Short for the attempt a player is actively watching, longer for the ones that
+ * happen while they are waiting to get back in.
  */
 export const CONNECT_TIMEOUT_FIRST_MS = 8_000;
 export const CONNECT_TIMEOUT_RETRY_MS = 20_000;
 
-/**
- * How much longer than the budget the caller waits before enforcing it itself.
- *
- * The transport is asked to honour the budget and does; this is the backstop for
- * the case where it cannot — a promise that never settles freezes the session with
- * no attempt in flight, no deadline and nothing said to the player, which is the
- * exact shape of the reconnect bug this work exists to remove. The grace keeps the
- * transport's own, more specific error the one that is normally reported.
- */
-export const CONNECT_DEADLINE_GRACE_MS = 2_000;
-
-/** Join handshake budget. Must exceed the host's own turnaround, and is not terminal. */
+/** Join handshake budget. Must exceed the room's own turnaround, and is not terminal. */
 export const JOIN_TIMEOUT_MS = 15_000;
 
 /**
  * Reconnection backoff, in seconds: 0, 1, 2, 5, 10, 20, 30.
  *
- * The first attempt is immediate because the thing that triggered it — a wake,
- * an `online` event, a channel close — is new information. The 30 s cap keeps a
- * quiet ceiling on how hard a room full of phones hammers the relay.
+ * The first attempt is immediate because the thing that triggered it — a wake, an
+ * `online` event, a socket close — is new information. The 30 s cap keeps a quiet
+ * ceiling on how hard a room full of phones hammers the room.
  */
 export const RECONNECT_BACKOFF_MS = [0, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000] as const;
 
@@ -117,9 +73,9 @@ export const LOBBY_GRACE_MS = 30_000;
 /**
  * How long a seat is held mid-game before the table may vacate it.
  *
- * Must exceed the worst realistic recovery (rule 3 above) with margin. This is
- * the host's number and it goes on the wire, so the countdown a player sees is
- * never a promise their own timer will break.
+ * Must exceed the worst realistic recovery (rule 2 above) with margin. This is the
+ * room's number and it goes on the wire, so the countdown a player sees is never a
+ * promise their own timer will break.
  */
 export const SEAT_GRACE_MS = 300_000;
 
@@ -127,16 +83,17 @@ export const SEAT_GRACE_MS = 300_000;
 export const RECONNECT_DEADLINE_MARGIN_MS = 30_000;
 
 /**
- * Before skipping the turn of a player whose channel is provably closed.
+ * Before skipping the turn of a player whose socket is provably closed.
  *
- * Short on purpose. The host already *knows* the channel is gone, so waiting
- * learns nothing — and a skip costs the absent player no cards at all, which is
- * what makes a short window affordable.
+ * Short on purpose. The room already *knows* the socket is gone, so waiting learns
+ * nothing — and a skip costs the absent player no cards at all, which is what makes
+ * a short window affordable.
+ *
+ * There used to be a second, longer grace for a player who was merely *unstable*.
+ * That state existed because presence was guessed at; it is not, so there is one
+ * grace and it applies to the one thing that can now be true.
  */
 export const ABSENT_TURN_GRACE_CLOSED_MS = 12_000;
-
-/** The same, for a player who is merely unstable: they may still be there. */
-export const ABSENT_TURN_GRACE_UNSTABLE_MS = 30_000;
 
 /**
  * A pending skip is called off if the seat tried to rejoin this recently.
@@ -147,34 +104,11 @@ export const ABSENT_TURN_GRACE_UNSTABLE_MS = 30_000;
 export const RESUME_ATTEMPT_SUPPRESSES_SKIP_MS = 20_000;
 
 /**
- * How long a returning host keeps trying to reclaim its own room code, as a
- * schedule of attempt times.
- *
- * The relay recognises the host's stored claim and hands the id straight back,
- * so the first attempt normally succeeds — the rest of the schedule exists for
- * the network, not the server: a host reclaiming from a train needs the loop to
- * survive a tunnel's worth of failed connects before it concedes the code and
- * invalidates every invite already sent.
- */
-export const HOST_ID_RETRY_SCHEDULE_MS = [0, 2_000, 5_000, 10_000, 20_000, 35_000, 55_000, 75_000] as const;
-
-/**
- * How long a host may fail to re-register before it tells the table so.
- *
- * A host whose broker socket is dead keeps serving everyone already connected
- * but cannot accept anybody new. Saying nothing is the dishonest option.
- */
-export const HOST_SELF_DEMOTE_MS = 90_000;
-
-/** Budget for a named successor to confirm a voluntary handover. */
-export const HANDOFF_TIMEOUT_MS = 10_000;
-
-/**
  * How long one submitted move keeps the table locked with no answer.
  *
- * 5 s was shorter than a single connection attempt, so any hiccup released the
- * lock and invited a second tap. This is now only a backstop: the lock is
- * released by an explicit acknowledgement.
+ * 5 s was shorter than a single connection attempt, so any hiccup released the lock
+ * and invited a second tap. This is only a backstop: the lock is released by an
+ * explicit acknowledgement.
  */
 export const ACTION_LOCK_MS = 20_000;
 
@@ -264,7 +198,7 @@ export const BOT_ANSWER_MIN_MS = 500;
 export const BOT_ANSWER_MAX_MS = 1_200;
 
 /**
- * How long the table waits for a robot before the host passes the seat itself.
+ * How long the table waits for a robot before the room passes the seat itself.
  *
  * A robot cannot be absent, so none of the seat machinery would ever rescue a
  * table stuck on one — and a suspended tab, a throttled timer or a bug in the
@@ -317,24 +251,9 @@ export function backoffDelay(attempt: number, random: () => number = Math.random
   return Math.round(base - spread + random() * spread * 2);
 }
 
-/** Probe interval for the current situation. */
-export function probeInterval(busy: boolean): number {
-  return busy ? PROBE_INTERVAL_BUSY_MS : PROBE_INTERVAL_IDLE_MS;
-}
-
-/** How long silence has to last, at this cadence, before a peer counts as silent. */
-export function silentAfterMs(intervalMs: number): number {
-  return Math.max(intervalMs * SILENT_AFTER_MISSES, PEER_SILENT_FLOOR_MS);
-}
-
-/** How long silence has to last, at this cadence, before a peer counts as unstable. */
-export function unstableAfterMs(intervalMs: number): number {
-  return intervalMs * UNSTABLE_AFTER_MISSES;
-}
-
 /**
- * The client's own give-up deadline, derived from the host's seat grace so the
- * two can never contradict each other.
+ * The client's own give-up deadline, derived from the room's seat grace so the two
+ * can never contradict each other.
  */
 export function reconnectDeadlineMs(seatGraceMs: number): number {
   return Math.max(seatGraceMs - RECONNECT_DEADLINE_MARGIN_MS, RECONNECT_DEADLINE_MARGIN_MS);

@@ -72,7 +72,7 @@ export function useShellEffects(screen: Screen): void {
       depth.current = landed;
 
       const state = useAppStore.getState();
-      if (state.role !== null && IN_ROOM.has(state.screen)) {
+      if (state.inRoom && IN_ROOM.has(state.screen)) {
         depth.current += 1;
         window.history.pushState({ superTakiDepth: depth.current } satisfies ShellHistoryState, '');
         state.requestLeave();
