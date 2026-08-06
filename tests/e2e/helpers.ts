@@ -128,6 +128,24 @@ export async function takeAnyTurn(page: Page): Promise<boolean> {
    * when it is not our turn anyway. `canDrawFrom` is the check for it — it already knows
    * why `aria-disabled` rather than `isEnabled()` is the question to ask.
    */
+  /*
+   * A sequence of our own, with nothing left to add to it.
+   *
+   * The pile is refused while a Taki is open — that is the rule, not a glitch — so a
+   * driver that only knows "play a card or draw" has no move here at all. It is our
+   * turn, so no robot will break the tie either, and the round stops until the budget
+   * runs out. Two of this suite's failures were this state wearing different clothes:
+   * first an unbounded click waiting ten minutes on the disabled pile, then, once that
+   * was guarded, a spin doing nothing for eight.
+   *
+   * Closing it is what a player does, and what the room's own test driver does.
+   */
+  const closeTaki = page.getByRole('button', { name: 'Close Taki' });
+  if (await closeTaki.isVisible().catch(() => false)) {
+    await closeTaki.click({ timeout: 5_000 });
+    return true;
+  }
+
   if (!(await canDrawFrom(page))) {
     return false;
   }
