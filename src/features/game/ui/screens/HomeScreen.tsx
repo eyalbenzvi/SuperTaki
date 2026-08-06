@@ -16,6 +16,9 @@ import { ResumeCard } from '../components/ResumeCard.tsx';
 export function HomeScreen(): ReactNode {
   const t = useT();
   const goTo = useAppStore((state) => state.goTo);
+  const busy = useAppStore((state) => state.busy);
+  const resumable = useAppStore((state) => state.resumable);
+  const joinRoom = useAppStore((state) => state.joinRoom);
 
   return (
     <div className="page page--home">
@@ -26,12 +29,24 @@ export function HomeScreen(): ReactNode {
         <p className="hero__subtitle">{t('app.subtitle')}</p>
       </div>
 
-      {/* Hosting comes first: it is the offer that saves a whole table's game,
-          not just this device's seat. */}
-
+      {/*
+        One tap, and it reconnects — it does not walk the player to the join screen to
+        ask again. This is the whole of what a reload costs now: there used to be a
+        second card here offering to reinstate a room from a copy of the game in
+        `localStorage`, and it was the only way a table survived its creator pressing
+        refresh. The room survives that by itself, so what is left is a seat to take
+        back, and every player takes theirs the same way.
+      */}
       <ResumeCard
+        busy={busy}
         onResume={() => {
-          goTo('join');
+          if (resumable) {
+            void joinRoom({
+              name: resumable.displayName,
+              roomCode: resumable.roomCode,
+              resume: { playerId: resumable.playerId, resumeToken: resumable.resumeToken },
+            });
+          }
         }}
       />
 

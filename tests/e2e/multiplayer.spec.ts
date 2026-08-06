@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
-  BROADCAST,
   createRoom,
   joinRoom,
   openApp,
@@ -17,10 +16,10 @@ import {
  * UI — is the production code path.
  */
 async function seatTwoPlayers(host: Page, guest: Page): Promise<string> {
-  await openApp(host, `/${BROADCAST}`);
+  await openApp(host, '/');
   const roomCode = await createRoom(host, 'Dana', 2);
 
-  await openApp(guest, `/${BROADCAST}`);
+  await openApp(guest, '/');
   await joinRoom(guest, 'Eli', roomCode);
 
   await expect(host.getByText('2 of 2 players')).toBeVisible();
@@ -28,14 +27,14 @@ async function seatTwoPlayers(host: Page, guest: Page): Promise<string> {
   return roomCode;
 }
 
-test.describe('two-player game over the deterministic transport', () => {
+test.describe('a two-player game, against the real room', () => {
   test('creates a room, joins by code and starts a game', async ({ context }) => {
     const host = await context.newPage();
     const guest = await context.newPage();
     await seatTwoPlayers(host, guest);
 
     await expect(host.getByRole('button', { name: 'Start game' })).toBeEnabled();
-    await expect(guest.getByText('Waiting for the host to start')).toBeVisible();
+    await expect(guest.getByText('Waiting for the game to start')).toBeVisible();
 
     await host.getByRole('button', { name: 'Start game' }).click();
 
@@ -58,7 +57,7 @@ test.describe('two-player game over the deterministic transport', () => {
    * layout hung the plate over the edge of the card.
    */
   test('paints the QR code at a scannable size, inside its panel', async ({ page }) => {
-    await openApp(page, `/${BROADCAST}`);
+    await openApp(page, '/');
     await createRoom(page, 'Dana', 2);
 
     const qr = page.locator('.qr');
@@ -77,10 +76,10 @@ test.describe('two-player game over the deterministic transport', () => {
     const host = await context.newPage();
     const guest = await context.newPage();
 
-    await openApp(host, `/${BROADCAST}`);
+    await openApp(host, '/');
     const roomCode = await createRoom(host, 'Dana', 4);
 
-    await guest.goto(`/${BROADCAST}#/join?room=${roomCode}`);
+    await guest.goto(`/#/join?room=${roomCode}`);
     await switchToEnglish(guest);
     await expect(guest.getByText(`Invitation detected for room ${roomCode}`)).toBeVisible();
     await guest.getByLabel('Your display name').fill('Eli');
@@ -205,7 +204,7 @@ test.describe('two-player game over the deterministic transport', () => {
     await expect(guest.getByRole('alert')).toContainText('Wait for your turn');
   });
 
-  test('lets the host remove a player before the game starts', async ({ context }) => {
+  test('lets the seat with the lobby buttons remove a player before the game starts', async ({ context }) => {
     const host = await context.newPage();
     const guest = await context.newPage();
     await seatTwoPlayers(host, guest);
@@ -215,21 +214,27 @@ test.describe('two-player game over the deterministic transport', () => {
     // beside their name in a list, so it asks first.
     await host.getByRole('dialog').getByRole('button', { name: 'Remove player' }).click();
     await expect(host.getByText('1 of 2 players')).toBeVisible();
-    await expect(guest.getByText('The host removed you from the room')).toBeVisible();
+    await expect(guest.getByText('You were removed from the room')).toBeVisible();
   });
 
-  test('tells the guest the room is gone when the host leaves', async ({ context }) => {
+  test('leaves the room open for everybody else when the creator goes', async ({ context }) => {
+    /*
+     * This test used to assert the opposite, and the assertion was true: the room
+     * *was* the host's tab, so their leaving closed it on everybody, and the UI said
+     * so in as many words. The room outlives every player now, so what has to be
+     * proved is that nothing happens to the people still at it.
+     */
     const host = await context.newPage();
     const guest = await context.newPage();
     await seatTwoPlayers(host, guest);
 
     await host.getByRole('button', { name: 'Leave' }).click();
-    // A host with another player present is offered a handover first; closing the
-    // room for everybody is the explicitly destructive choice.
-    await host.getByRole('dialog').getByRole('button', { name: 'Close the room for everyone' }).click();
+    await host.getByRole('dialog').getByRole('button', { name: 'Leave' }).click();
 
-    await expect(guest.getByText('the room is closed')).toBeVisible();
-    await expect(guest.getByText('cannot continue without the host')).toBeVisible();
+    // Still in the room, still seated, and now holding the lobby buttons.
+    await expect(guest.getByRole('button', { name: 'Start game' })).toBeVisible();
+    await expect(guest.getByText('1 of 2 players')).toBeVisible();
+    await expect(guest.getByText(/room is closed/)).toBeHidden();
   });
 
   test('refuses a third player in a two-player room', async ({ context }) => {
@@ -238,15 +243,17 @@ test.describe('two-player game over the deterministic transport', () => {
     const third = await context.newPage();
     const roomCode = await seatTwoPlayers(host, guest);
 
-    await openApp(third, `/${BROADCAST}`);
+    await openApp(third, '/');
     await joinRoom(third, 'Noa', roomCode);
     await expect(third.getByText('The room is full')).toBeVisible();
   });
 
-  test('reports an unreachable room honestly', async ({ page }) => {
-    await openApp(page, `/${BROADCAST}`);
+  test('says plainly that a room code leads nowhere', async ({ page }) => {
+    // A mistyped code used to surface as "no such peer" from the broker. It is now the
+    // room itself answering, because there is nothing in it.
+    await openApp(page, '/');
     await joinRoom(page, 'Dana', '482914');
-    await expect(page.getByText('The host could not be reached')).toBeVisible();
+    await expect(page.getByText('The room is closed')).toBeVisible();
     await expect(page.getByText('Why can this happen?')).toBeVisible();
   });
 });

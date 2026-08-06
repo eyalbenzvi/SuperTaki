@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 /**
  * Plays a complete round through the UI.
@@ -99,9 +99,9 @@ test.describe('a complete round', () => {
     const host = await context.newPage();
     const guest = await context.newPage();
 
-    await openApp(host, `/${BROADCAST}`);
+    await openApp(host, '/');
     const roomCode = await createRoom(host, 'Dana', 2);
-    await openApp(guest, `/${BROADCAST}`);
+    await openApp(guest, '/');
     await joinRoom(guest, 'Eli', roomCode);
     await expect(host.getByText('2 of 2 players')).toBeVisible();
 

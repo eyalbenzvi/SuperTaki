@@ -1,8 +1,5 @@
 import { expect, type Page } from '@playwright/test';
 
-/** Query string that selects the deterministic same-browser transport. */
-export const BROADCAST = '?transport=broadcast';
-
 /** Loads the app and switches the UI to English so assertions read clearly. */
 export async function openApp(page: Page, path = '/'): Promise<void> {
   await page.goto(path);

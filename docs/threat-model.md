@@ -3,27 +3,31 @@
 ## What this is, and what it is not
 
 Super Taki is a **private game between people who know each other**, running as a static site
-with no server and no accounts. That context sets the security bar honestly:
+against one small server the repository owner deploys. That context sets the security bar
+honestly:
 
 - It **is** a goal that a buggy or hostile _client_ cannot corrupt the game, read another
   player's hand, or crash the room.
-- It **is not** a goal to make cheating impossible for the _host_. The host's own tab holds
-  the game; a determined host with developer tools can deal itself a good hand. No amount of
-  client-side code can prevent that without a trusted server, which this project deliberately
-  does not have.
+- It **is** now also true that no _player_ can cheat by inspecting the authority. This used to
+  be the opposite: the game ran in the room creator's tab, so a determined host with developer
+  tools could deal itself a good hand, and this document said so. Moving the game to the
+  server removed that, and it is the one security property this change actually improved.
+- What it costs is stated in §11: every hand now exists on the operator's infrastructure for
+  the life of the room. The operator is the repository owner.
 - It **is not** an authentication system. A room code is an invitation, not a password.
 
 Everything below follows from that.
 
 ## Assets
 
-| Asset             | Why it matters                                     |
-| ----------------- | -------------------------------------------------- |
-| A player's hand   | The only genuinely private game data.              |
-| Game integrity    | The rules must hold, or the game is pointless.     |
-| Display names     | Shown to everyone in the room; a spoofing surface. |
-| Rejoin token      | Grants a seat back after a refresh.                |
-| Local preferences | Low value; still not worth leaking.                |
+| Asset             | Why it matters                                      |
+| ----------------- | --------------------------------------------------- |
+| A player's hand   | The only genuinely private game data.               |
+| Game integrity    | The rules must hold, or the game is pointless.      |
+| Display names     | Shown to everyone in the room; a spoofing surface.  |
+| Rejoin token      | Grants a seat back after a refresh.                 |
+| Room storage      | Holds every hand and the deck, for the room's life. |
+| Local preferences | Low value; still not worth leaking.                 |
 
 There is no password, no email address, no payment data and no persistent account anywhere in
 the system, so none of those can be lost.
@@ -32,16 +36,19 @@ the system, so none of those can be lost.
 
 ```
   Player's browser (trusted by that player only)
+   • holds its own hand and the public table, and nothing else
         │
-        │  wss:// (TLS) frames, routed by the relay, host-authoritative
+        │  wss:// (TLS), one socket per player, game messages end to end
         ▼
-  Room relay — worker/ on the operator's Cloudflare account
-  (semi-trusted: routes and can read frames, stores only peer-id claims,
-   holds no game state, runs code from this repository)
-        │
-        ▼
-  Host's browser (authoritative; trusted by the players who joined its room)
+  The room — worker/ on the operator's Cloudflare account
+   • authoritative: holds every hand, the deck and the RNG state
+   • persists them in the object's SQLite for the life of the room
+   • runs code from this repository
 ```
+
+Two boundaries, not three. The previous design had a relay in the middle that could read
+frames but held no state, and behind it a _player's browser_ that held everything. The
+player-shaped trust boundary is gone: no device now holds anything but its own cards.
 
 ## Threats and mitigations
 
@@ -143,9 +150,9 @@ Tested three ways: a unit test asserts no hand card id appears in a serialised p
 snapshot; a session test asserts the two players' hands are disjoint and invisible to each
 other; a Playwright test asserts the same in real rendered HTML.
 
-**Remaining exposure:** the host legitimately holds every hand, because someone has to. A
-modified host could look. That is inherent to a server-free design and is stated plainly in
-the README rather than papered over.
+**Remaining exposure:** the room legitimately holds every hand, because someone has to. No
+_player_ can look, which is the change: the holder used to be one of the players. What holds
+it now is the operator's infrastructure — see §11.
 
 ### 8. Cross-site scripting
 
@@ -201,69 +208,72 @@ peer id, seat id, rejoin token and a timestamp.
 - On a shared or public device, the rejoin token is the one thing worth caring about, and the
   worst it grants is one seat in one room that has probably already ended.
 
-### 11. Host disappearing
+### 11. Hands on the server — the honest limits
 
-If the host closes the tab, everyone is told the room is closed and why. There is no host
-migration: transferring authority would require the departed host's private state, plus a way
-for the other players to verify that a self-appointed successor is not lying about the state it
-claims to have inherited. That is a consensus problem, and a half-working version would
-silently corrupt games. Not implemented, not claimed.
+Every hand, the draw pile order and the RNG state live in the room's Durable Object storage,
+for as long as the room exists. This is new, it is the cost of the change that removed host
+cheating, and it deserves stating plainly rather than in a footnote.
+
+**Who can read them.** Whoever holds the Cloudflare account: `wrangler tail` shows the
+worker's logs, and account access reaches the object's storage. That is the repository owner —
+the same person who deploys the site the players load. No player can, and no third party can:
+the transport is TLS and the object is not addressable from outside the worker.
+
+**How long.** Until six hours after the last player leaves, when the TTL alarm fires and calls
+`storage.deleteAll()`. A finished round is not special — the room holds its state until the
+TTL, because players commonly deal again.
+
+**What was considered and rejected.** Encrypting hands under a key the server does not hold is
+incompatible with the server being the rules authority: it has to know what is in a hand to
+decide whether a card may be played. Any scheme that keeps that from it moves the authority
+back into a browser, which is the arrangement this replaced.
+
+**Why this is acceptable here.** The game has no stakes, the operator is the person whose
+repository the players are already trusting to serve them JavaScript, and the alternative
+placed the same data on a _player's_ device, where the incentive to look actually exists.
+
+### 12. The room disappearing
+
+If Cloudflare's edge or the free plan has a bad day, no game runs. The client reports the
+outage honestly and retries with jittered, capped backoff; seats and credentials survive, so a
+room that comes back is the room the players left. This is a single point of failure and is
+listed as one in [architecture.md](architecture.md).
 
 ## Summary
 
-| Threat                         | Status                                                                     |
-| ------------------------------ | -------------------------------------------------------------------------- |
-| Client forges game state       | Prevented structurally (no such message)                                   |
-| Client sends illegal moves     | Prevented (host-side engine validation)                                    |
-| Client impersonates a player   | Prevented (host-bound seat ids)                                            |
-| Client reads another hand      | Prevented (public view carries counts only, hands unicast)                 |
-| Replay / stale messages        | Prevented (message-id LRU + monotonic versions)                            |
-| Oversized / malformed messages | Prevented (64 KiB cap, bounded Zod schemas)                                |
-| XSS                            | Prevented (no raw HTML, sanitised names, CSP)                              |
-| Duplicate connections          | Handled (older channel closed)                                             |
-| Room-code guessing             | Partially mitigated (10^6 codes, short-lived, 6 seats, closed after start) |
-| Flooding by a joined peer      | **Not mitigated** — kick or close the room                                 |
-| Host cheating                  | **Not mitigated** — inherent to a server-free design                       |
-| Relay outage                   | **Not mitigated** — single point of failure, reported honestly in the UI   |
-| Relay operator misbehaving     | **Accepted** — the operator is the room owner running this repo's code     |
-| Room-code squatting            | Bounded — a peer-id claim expires 5 minutes after its socket dies          |
+| Threat                                | Status                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------- |
+| Client forges game state              | Prevented structurally (no such message)                                   |
+| Client sends illegal moves            | Prevented (server-side engine validation)                                  |
+| Client impersonates a player          | Prevented (socket-bound seat ids)                                          |
+| Client reads another hand             | Prevented (public view carries counts only, hands unicast)                 |
+| Replay / stale messages               | Prevented (message-id LRU + monotonic versions)                            |
+| Oversized / malformed messages        | Prevented (64 KiB cap, bounded Zod schemas)                                |
+| XSS                                   | Prevented (no raw HTML, sanitised names, CSP)                              |
+| Duplicate connections                 | Handled (older channel closed)                                             |
+| Room-code guessing                    | Partially mitigated (10^6 codes, short-lived, 6 seats, closed after start) |
+| Flooding by a joined peer             | **Not mitigated** — kick or close the room                                 |
+| A player cheating by inspecting state | **Prevented** — no player's device holds another's cards                   |
+| Room outage                           | **Not mitigated** — single point of failure, reported honestly in the UI   |
+| Operator reading hands                | **Accepted and stated** — see §11; bounded by a 6-hour deletion            |
+| Room-code guessing at creation        | Bounded — a code already in use is refused, and the client draws another   |
 
-## The host's saved room
+## What is written down, and where
 
-The host writes its room down so a reload does not destroy the game. That record contains
-**every player's hand and the order of the draw pile**, which is the same information the host
-already holds in memory — but written down, it outlives the moment.
+Two records, and it is worth being precise about which is where.
 
-The choices that follow from that:
+**On the server**, for the life of the room: the seats, their credentials, and the game —
+every hand, the deck order, the RNG state. Deleted six hours after the last player leaves.
+See §11.
 
-- **`localStorage`, deliberately, with its eyes open.** An earlier revision kept the snapshot
-  in `sessionStorage`, which made a reload recoverable and a closed tab fatal to the whole
-  table. "The game survives anybody dropping, including the host" is a requirement now, so
-  the snapshot persists — and the exposure it creates (everybody's cards on a device that may
-  be shared) is bounded rather than ignored:
-  - **A six-hour ceiling**, validated on every read; an expired or unparseable record is
-    deleted, not restored.
-  - **Erased on intent.** Leaving the room, handing it over, or "start fresh" removes it
-    immediately; only an accident leaves it behind, and only for the ceiling's duration.
-  - The room's relay claim is stored with it, which is what makes the recovery real: it
-    proves ownership of the room code to the relay. It grants nothing else.
-- **Nothing is transmitted.** The record never leaves the device, and neither does the
-  diagnostics log beside it.
+**On each player's device**: one credential — `{roomCode, playerId, resumeToken, displayName,
+savedAt}` — and the local diagnostics ring. That is all. The record that used to sit here was
+very different: the room creator's device held **the entire game, including every player's
+hand**, in `localStorage`, because a reload would otherwise have destroyed the only copy. That
+is gone with the thing that required it.
 
-## Handing the room over
-
-A voluntary handover sends the full state — hands and deck included — to the seat receiving it.
-That player then has exactly the power the host already had, which
-[architecture.md](architecture.md) states plainly and this document has always accepted for a
-private game among people who know each other. Two things bound it:
-
-- It happens only when the host _chooses_ it, so the exposure is a decision rather than a
-  consequence of a bad network.
-- It goes to one named seat, on the channel that seat already holds. There is no continuous
-  distribution of state to anybody, and no seat receives it "just in case".
-
-The thing this deliberately does not attempt is a takeover from a host that has gone silent.
-That would require distributing state before it is needed — putting the deck in somebody else's
-hands for the whole round on the chance the host might vanish — and it still could not
-establish that the successor is not replaying an older state. See the limitation in
-[architecture.md](architecture.md).
+- The credential grants one seat in one room, expires after six hours, and is validated on
+  every read.
+- It is erased on an intentional leave, on being removed, and by "start fresh" in settings.
+- Nothing is transmitted. Neither the credential nor the diagnostics log leaves the device
+  except as part of joining the room it names.

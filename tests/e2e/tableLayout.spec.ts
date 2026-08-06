@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 /**
  * The table has to fit the screen it is on.
@@ -105,9 +105,9 @@ test.describe('the table fits the screen', () => {
     const host = await context.newPage();
     const guest = await context.newPage();
 
-    await openApp(host, `/${BROADCAST}`);
+    await openApp(host, '/');
     const roomCode = await createRoom(host, 'Dana', 2);
-    await openApp(guest, `/${BROADCAST}`);
+    await openApp(guest, '/');
     await joinRoom(guest, 'Eli', roomCode);
     await expect(host.getByText('2 of 2 players')).toBeVisible();
     await host.bringToFront();
@@ -160,9 +160,9 @@ test.describe('the table fits the screen', () => {
     const host = await context.newPage();
     const guest = await context.newPage();
 
-    await openApp(host, `/${BROADCAST}`);
+    await openApp(host, '/');
     const roomCode = await createRoom(host, 'Dana', 2);
-    await openApp(guest, `/${BROADCAST}`);
+    await openApp(guest, '/');
     await joinRoom(guest, 'Eli', roomCode);
     await expect(host.getByText('2 of 2 players')).toBeVisible();
     await host.bringToFront();

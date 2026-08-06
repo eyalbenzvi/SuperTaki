@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 /**
  * What only a browser can answer about motion.
@@ -26,9 +26,9 @@ function seconds(value: string): number {
 const RESTORED_S = 0.05;
 
 async function dealOnce(host: Page, guest: Page): Promise<void> {
-  await openApp(host, `/${BROADCAST}`);
+  await openApp(host, '/');
   const roomCode = await createRoom(host, 'Dana', 2);
-  await openApp(guest, `/${BROADCAST}`);
+  await openApp(guest, '/');
   await joinRoom(guest, 'Eli', roomCode);
   await expect(host.getByText('2 of 2 players')).toBeVisible();
   await host.getByRole('button', { name: 'Start game' }).click();

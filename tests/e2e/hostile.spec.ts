@@ -7,12 +7,12 @@
  * the moment the round ends. Two of these were written after they found bugs.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 async function seat(host: Page, guest: Page): Promise<void> {
-  await openApp(host, `/${BROADCAST}`);
+  await openApp(host, '/');
   const code = await createRoom(host, 'Dana', 2);
-  await openApp(guest, `/${BROADCAST}`);
+  await openApp(guest, '/');
   await joinRoom(guest, 'Eli', code);
   await expect(host.getByText('2 of 2 players')).toBeVisible();
   await host.bringToFront();

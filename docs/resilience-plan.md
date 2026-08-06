@@ -1,5 +1,14 @@
 # Disconnect resilience — plan of record
 
+> **Superseded in part.** This document records the work as it was done, when the game ran in
+> the room creator's browser tab. The game now runs in the room's Durable Object, which
+> deleted a good deal of what is described below — the host snapshot, the room-code reclaim,
+> the handover, and the probe accounting that inferred presence. The _timing rules and their
+> rationales_ are still the contract, and are still the reason the numbers in
+> `network/timing.ts` are what they are. See
+> [server-game-plan.md](server-game-plan.md) and [architecture.md](architecture.md) for where
+> it went.
+
 > **Historical note (2026-08).** This plan was written for the WebRTC/PeerJS architecture,
 > and much of its transport-level reasoning (ICE consent, the public broker's id hold, TURN
 > relays, S2/S5) describes machinery that has since been **removed**: game traffic now flows

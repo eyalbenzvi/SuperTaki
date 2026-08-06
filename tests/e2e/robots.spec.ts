@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { BROADCAST, awaitSettled, createRoom, openApp, takeAnyTurn } from './helpers.ts';
+import { awaitSettled, createRoom, openApp, takeAnyTurn } from './helpers.ts';
 
 /**
  * A robot at the table, driven through the real UI on one page.
@@ -31,7 +31,7 @@ test.describe('a table with a robot in it', () => {
      * about a robot's play depends on the viewport, and this is a long test.
      */
     test.skip(testInfo.project.name !== 'desktop', 'a round of play is viewport-independent');
-    await openApp(page, `/${BROADCAST}`);
+    await openApp(page, '/');
     await createRoom(page, 'Dana', 2);
 
     // One player, and no game to start.
