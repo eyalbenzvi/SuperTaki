@@ -9,6 +9,90 @@
 import { expect, test, type Page } from '@playwright/test';
 import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
+/**
+ * How many passes in a row have to find nothing to do before the table counts as
+ * stuck, and how long to wait between them.
+ *
+ * A pass that clicks nothing is the normal state of a live table, not a stalled
+ * one: a card is in flight, the turn is crossing between two pages, the win hold
+ * is running, the other page has not painted yet. Both round-driving tests used
+ * to leave their loop on the *first* such pass and then assert the standings were
+ * up — so a round that was merely mid-beat failed as a round that never finished.
+ * That is the whole of the `hostile.spec` flake: it failed on desktop and mobile
+ * in one run and passed on another run of the same commit, which is what a
+ * too-eager exit looks like on a busy machine.
+ */
+const IDLE_PASSES_BEFORE_STUCK = 4;
+const IDLE_PAUSE_MS = 400;
+
+/** Whether the standings are up on this page. */
+async function roundFinished(page: Page): Promise<boolean> {
+  return (await page.getByRole('heading', { name: 'Round finished' }).count()) > 0;
+}
+
+/**
+ * Plays a two-player round out through the UI, tapping whatever is legal on
+ * whichever page owes a move. Returns whether the round actually reached its end.
+ *
+ * `budgetMs` is a ceiling, not a cost: the loop leaves the moment the standings
+ * appear, so raising it slows nothing down and only stops a slow machine being
+ * reported as a broken one.
+ */
+async function playRoundOut(host: Page, guest: Page, budgetMs: number): Promise<boolean> {
+  const deadline = Date.now() + budgetMs;
+  let idlePasses = 0;
+
+  while (Date.now() < deadline) {
+    if (await roundFinished(host)) {
+      return true;
+    }
+
+    let acted = false;
+    for (const page of [host, guest]) {
+      await page.bringToFront();
+      await awaitSettled(page);
+      for (const name of [/Last card!/, 'Let it through', 'Close Taki', /^Take \d+ cards?$/]) {
+        const button = page.getByRole('button', { name });
+        if (await button.isVisible().catch(() => false)) {
+          await button.click().catch(() => undefined);
+          acted = true;
+        }
+      }
+      if (!(await onTurn(page))) {
+        continue;
+      }
+      const playable = page.locator('.hand .card--playable').first();
+      if (await playable.count()) {
+        await playable.click().catch(() => undefined);
+        const picker = page.getByRole('dialog');
+        if (await picker.isVisible().catch(() => false)) {
+          await picker.getByRole('button').first().click();
+        }
+        acted = true;
+      } else if (await canDrawFrom(page)) {
+        await page
+          .locator('.pile button.card--back')
+          .click()
+          .catch(() => undefined);
+        acted = true;
+      }
+    }
+
+    if (acted) {
+      idlePasses = 0;
+      continue;
+    }
+    idlePasses += 1;
+    if (idlePasses >= IDLE_PASSES_BEFORE_STUCK) {
+      break;
+    }
+    // Give the table the moment it was in the middle of before looking again.
+    await host.waitForTimeout(IDLE_PAUSE_MS);
+  }
+
+  return await roundFinished(host);
+}
+
 async function seat(host: Page, guest: Page): Promise<void> {
   await openApp(host, '/');
   const code = await createRoom(host, 'Dana', 2);
@@ -159,39 +243,8 @@ test('the winner always reaches the standings', async ({ context }) => {
   await seat(host, guest);
 
   // Drive to the end of the round, bounded well inside the test's own timeout.
-  const deadline = Date.now() + 240_000;
-  while (Date.now() < deadline) {
-    if ((await host.getByRole('heading', { name: 'Round finished' }).count()) > 0) break;
-    let acted = false;
-    for (const page of [host, guest]) {
-      await page.bringToFront();
-      await awaitSettled(page);
-      for (const name of [/Last card!/, 'Let it through', 'Close Taki', /^Take \d+ cards?$/]) {
-        const b = page.getByRole('button', { name });
-        if (await b.isVisible().catch(() => false)) {
-          await b.click().catch(() => undefined);
-          acted = true;
-        }
-      }
-      if (!(await onTurn(page))) continue;
-      const playable = page.locator('.hand .card--playable').first();
-      if (await playable.count()) {
-        await playable.click().catch(() => undefined);
-        const picker = page.getByRole('dialog');
-        if (await picker.isVisible().catch(() => false)) {
-          await picker.getByRole('button').first().click();
-        }
-        acted = true;
-      } else if (await canDrawFrom(page)) {
-        await page
-          .locator('.pile button.card--back')
-          .click()
-          .catch(() => undefined);
-        acted = true;
-      }
-    }
-    if (!acted) break;
-  }
+  const played = await playRoundOut(host, guest, 240_000);
+  expect(played, 'the round never reached its end, so the standings were never due').toBe(true);
 
   // Whoever won, both players end up on the standings — after the hold, not never.
   await expect(host.getByRole('heading', { name: 'Round finished' })).toBeVisible({ timeout: 15_000 });
@@ -274,46 +327,21 @@ test('switching language mid-round does not drag the hand across the screen', as
 });
 
 test('leaving during the win hold does not drag the player to the standings', async ({ context }) => {
-  // Same reason as the standings test above: a full round plus the leave-and-settle
-  // assertions do not fit inside the 45 s default with any margin.
-  test.setTimeout(120_000);
+  /*
+   * Same reason as the standings test above: a full round plus the leave-and-settle
+   * assertions do not fit inside the 45 s default with any margin. The budget for
+   * the round itself used to be a minute — half of this test's whole timeout, and
+   * well under what a long round takes on the mobile viewport, which is where it
+   * failed. It matches the other round test now; the loop still leaves the moment
+   * the standings appear, so the ceiling costs nothing when the round is quick.
+   */
+  test.setTimeout(300_000);
   const host = await context.newPage();
   const guest = await context.newPage();
   await seat(host, guest);
 
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    let acted = false;
-    for (const page of [host, guest]) {
-      await page.bringToFront();
-      await awaitSettled(page);
-      for (const name of [/Last card!/, 'Let it through', 'Close Taki', /^Take \d+ cards?$/]) {
-        const b = page.getByRole('button', { name });
-        if (await b.isVisible().catch(() => false)) {
-          await b.click().catch(() => undefined);
-          acted = true;
-        }
-      }
-      if (!(await onTurn(page))) continue;
-      const playable = page.locator('.hand .card--playable').first();
-      if (await playable.count()) {
-        await playable.click().catch(() => undefined);
-        const picker = page.getByRole('dialog');
-        if (await picker.isVisible().catch(() => false)) {
-          await picker.getByRole('button').first().click();
-        }
-        acted = true;
-      } else if (await canDrawFrom(page)) {
-        await page
-          .locator('.pile button.card--back')
-          .click()
-          .catch(() => undefined);
-        acted = true;
-      }
-    }
-    if ((await host.getByRole('heading', { name: 'Round finished' }).count()) > 0) break;
-    if (!acted) break;
-  }
+  const played = await playRoundOut(host, guest, 240_000);
+  expect(played, 'the round never reached its end, so the win hold was never due').toBe(true);
 
   await expect(host.getByRole('heading', { name: 'Round finished' })).toBeVisible({ timeout: 15_000 });
   // Once the standings are up, going home must stay home.

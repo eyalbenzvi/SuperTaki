@@ -260,9 +260,21 @@ async function run() {
   }
 
   // --- the round is dealt ---
+  /*
+   * Both hands, not one.
+   *
+   * `broadcastGameState` walks the connections and sends each of them a
+   * `publicState` and then a `privateHand`, and a client's hand is filled by its
+   * own `privateHand` and nothing else. Waiting on the creator's `publicState`
+   * and the guest's `privateHand` therefore said nothing about whether the
+   * *creator's* hand had arrived — the two sockets are read independently, and
+   * on a loaded machine the guest's frame is processed first often enough to
+   * matter. That is the whole of `SMOKE FAIL: expected eight cards each, got 0
+   * and 8`: not a deal that went wrong, a check that ran too early.
+   */
   dana.send('roomCommand', { command: { type: 'startGame' } });
   await dana.awaitType('publicState');
-  await yoni.awaitType('privateHand');
+  await Promise.all([dana.awaitType('privateHand'), yoni.awaitType('privateHand')]);
   if (dana.hand.length !== 8 || yoni.hand.length !== 8) {
     fail(`expected eight cards each, got ${dana.hand.length} and ${yoni.hand.length}`);
   }
