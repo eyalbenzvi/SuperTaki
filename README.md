@@ -6,14 +6,14 @@ Super Taki is a mobile-first multiplayer card game for 2–6 players. One person
 room and shares it however suits the room they are in — a link, a six-digit code, or the QR
 code on their screen — and everyone else joins from their own phone, tablet or laptop.
 There is no account, no database and no paid service anywhere in the stack: the site is
-static files on GitHub Pages, and game traffic flows through a tiny WebSocket relay — one
-Durable Object per room on Cloudflare's free plan — that routes frames between the players
-and knows nothing about the game.
+static files on GitHub Pages, and the game itself runs in one Durable Object per room on
+Cloudflare's free plan — which deals the cards, keeps the rules and holds the table
+together while people's phones come and go.
 
 A table can also seat **robot players**, which is what makes one player a game and what keeps a
 round moving when somebody's phone dies: after a long absence — or a long silence — a robot can
 play that seat until its owner comes back, and hands it over the moment they do. Robots run in
-the host's tab and see exactly what a remote player sees, never anybody's hand. See
+the room and see exactly what a player sees, never anybody's hand. See
 [docs/robots.md](docs/robots.md).
 
 The interface is Hebrew by default (right-to-left), with English one tap away in Settings. The deck is the
@@ -37,7 +37,7 @@ if a card's behaviour is not what you expected.
 - [Building](#building)
 - [Deploying to GitHub Pages](#deploying-to-github-pages)
 - [Configuring the base path](#configuring-the-base-path)
-- [The relay](#the-relay-read-this)
+- [The room server](#the-room-server-read-this)
 - [Privacy](#privacy)
 - [Browser compatibility](#browser-compatibility)
 - [Troubleshooting](#troubleshooting)
@@ -50,27 +50,26 @@ if a card's behaviour is not what you expected.
 
 ## Zero-cost architecture
 
-| Concern               | How it is solved                                              | Cost                        |
-| --------------------- | ------------------------------------------------------------- | --------------------------- |
-| Hosting               | Static build on GitHub Pages                                  | Free                        |
-| Multiplayer transport | WebSocket frames routed by the room's relay (`worker/`)       | Free (Cloudflare free plan) |
-| Room registry         | One Durable Object per room code, hibernating between moves   | Free                        |
-| Game state            | Held in the host player's browser tab                         | Free                        |
-| Accounts / identity   | None; a random local id and a display name                    | Free                        |
-| Persistence           | `localStorage` for preferences, a rejoin token, host snapshot | Free                        |
-| Analytics / telemetry | None at all                                                   | Free                        |
+| Concern               | How it is solved                                                        | Cost                        |
+| --------------------- | ----------------------------------------------------------------------- | --------------------------- |
+| Hosting               | Static build on GitHub Pages                                            | Free                        |
+| Multiplayer transport | One WebSocket per player to the room (`worker/`)                        | Free (Cloudflare free plan) |
+| The game itself       | One Durable Object per room code, hibernating between moves             | Free                        |
+| Game state            | The room's own SQLite storage, deleted 6 h after the last player leaves | Free                        |
+| Timers                | The object's single alarm, multiplexed — no polling                     | Free                        |
+| Accounts / identity   | None; a random local id and a display name                              | Free                        |
+| Persistence on device | `localStorage` for preferences and a rejoin token                       | Free                        |
+| Analytics / telemetry | None at all                                                             | Free                        |
 
-The relay is yours: about two hundred lines of TypeScript in `worker/`, deployed to a free
-Cloudflare account with no credit card. A full game evening uses well under one percent of
-the free plan's daily allowance. There is no NAT traversal, no STUN, no TURN and no WebRTC
-anywhere — the failure modes that plagued the earlier peer-to-peer design (networks that
-never connect, iPhones dropping the connection on every screen lock, reconnects that never
-land) are gone with them. What remains is described in [The relay](#the-relay-read-this).
+The server is yours: about 3,400 lines of TypeScript in `worker/`, deployed to a free
+Cloudflare account with no credit card. A full game evening uses well under one percent of the
+free plan's daily allowance — a room wakes only when somebody moves or a deadline comes due,
+and an empty one costs nothing at all until it deletes itself.
 
-**One player is the host.** The room creator's tab owns the only complete copy of the game
-state, validates every move, and sends each player their own hand plus the public table.
-Other players send _intents_ ("play this card"), never state. See
-[docs/architecture.md](docs/architecture.md).
+**Nobody's tab is the game.** Every player, including whoever opened the room, sends _intents_
+("play this card") and renders what the room confirms. Anyone can close their tab, lose their
+phone or vanish for an hour; the table is where they left it, and one tap puts them back in
+their seat. See [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
@@ -81,15 +80,16 @@ npm install
 npm run dev
 ```
 
-Open the printed URL. To try multiplayer on one machine, open a second tab with
-`?transport=broadcast` on **both** tabs — that swaps the relay for a `BroadcastChannel`
-between tabs of the same browser:
+You also need the room running. In a second terminal:
 
-```
-http://localhost:5173/?transport=broadcast
+```bash
+cd worker && npm install && npm run dev
 ```
 
-Create a room in the first tab, copy the room code, and join from the second.
+`npm run dev` in the app points at `ws://127.0.0.1:8787` by default, so the two find each
+other with no configuration. Open the printed URL, create a room in one tab, copy the room
+code, and join from another — two tabs of the same browser are two ordinary players, because
+there is no longer a same-device special case.
 
 Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 
@@ -99,6 +99,7 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 | --------------------------------- | -------------------------------------------------- |
 | `npm run dev`                     | Vite dev server with hot reload                    |
 | `npm run build`                   | Typecheck (`tsc -b`) then produce `dist/`          |
+| `npm run build:e2e`               | The same, pointed at a local `wrangler dev` room   |
 | `npm run preview`                 | Serve the built `dist/` locally on port 4173       |
 | `npm run typecheck`               | TypeScript project references, no emit             |
 | `npm run lint`                    | ESLint (type-aware) over the whole repository      |
@@ -116,16 +117,32 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 - `npm run dev` serves the app with hot reload. Debug logging is on automatically in dev.
 - In a production build, append `?debug=1` to enable the same logging for the tab
   (`?debug=0` turns it off again). Nothing is logged in production otherwise.
-- `?transport=broadcast` switches to the same-browser transport described above. It is
-  also genuinely useful for playing on one device with two windows.
+- Two windows on one device are just two players joining the same room. There used to be a
+  `?transport=broadcast` switch for this, back when a same-device game had no server to
+  connect to; it is gone with the transport it selected.
+- **One caveat, and it is worth knowing before you debug something else.** The seat credential
+  lives in `localStorage`, which is per origin, not per tab — so two windows on one device
+  share one slot and whoever joined last owns it. Both windows keep playing fine, because each
+  holds its own seat in memory. But _reloading_ the first one rejoins as the second one's seat,
+  and the second window is then evicted with "opened in another tab". Two real devices, or two
+  browser profiles, do not have this. The end-to-end suite gives each player its own browser
+  context for exactly this reason — it previously did not, and a reload test was quietly
+  asserting against the wrong player's hand.
 
 ## Running the tests
 
 ```bash
-npm test                # 669 unit + component tests
+npm test                # 797 unit + component tests
 npm run test:coverage   # same, with coverage thresholds enforced
-npm run test:e2e        # 28 scenarios x 2 viewports (needs a Chromium download once)
+npm run test:e2e        # 50 scenarios x 2 viewports (needs a Chromium download once)
+
+cd worker && npm run verify   # 69 room tests, with their own coverage floor
+cd worker && npm run smoke    # a whole round over real sockets against wrangler dev
 ```
+
+**`npm run verify` at the root does not test the room.** It covers the app; the room is a
+separate package with its own `verify`, and both halves are gated separately in CI. Run both
+before pushing anything that touches `worker/`.
 
 Playwright downloads Chromium on first use (`npx playwright install chromium`). If your
 environment already has a Chromium build, point Playwright at it instead:
@@ -134,12 +151,20 @@ environment already has a Chromium build, point Playwright at it instead:
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome npm run test:e2e
 ```
 
-The end-to-end suite drives two real pages through the production bundle over the
-`BroadcastChannel` transport, which keeps CI deterministic. The real network path is
-covered separately: `npm run smoke` inside `worker/` starts the actual relay under
-`wrangler dev` and drives real WebSocket clients through registration, claim arbitration,
-routing, presence and host reclaim. Everything above the transport — the protocol, host
-authority, the engine and the UI — is the same code path in both.
+The end-to-end suite drives two real pages through the production bundle against the **real
+room** under `wrangler dev` — Playwright starts both servers. That is the production path,
+minus the domain name. It used to run over a `BroadcastChannel` stand-in, because there was
+no server to run; there is one now, and it runs locally, so there is no reason to test a
+lookalike.
+
+Use `npm run build:e2e` if you are building by hand: the worker's URL is baked into the
+bundle _and_ into the page's `connect-src`, so a preview built without it has no room to
+talk to.
+
+`npm run smoke` inside `worker/` is the layer below: it starts the same worker and plays a
+whole round over raw WebSockets — create, a room-code collision, a join, a lobby command
+refused from the wrong seat, a deal, a privacy sweep, a replayed request, a drop and resume,
+and a winner.
 
 ## Building
 
@@ -185,9 +210,12 @@ VITE_BASE_PATH=/super-taki/ npm run build
 Routing uses the URL hash (`#/join?room=...`), which GitHub Pages serves correctly without
 rewrite rules. The workflow also copies `index.html` to `404.html` as a safety net.
 
-### Deploying the relay (one-time Cloudflare setup)
+### Deploying the room worker (one-time Cloudflare setup)
 
-The game needs its relay. Setting it up takes about ten minutes, once:
+The game needs its room server. Setting it up takes about ten minutes, once. Everything below
+still says _relay_ — the workflow, the worker's name, the repository variable — because that
+is what it was before the game moved into it, and renaming any of it would break a deployment
+that works. It is the room worker; only the label is historical.
 
 1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com) — no credit
    card required.
@@ -202,56 +230,54 @@ The game needs its relay. Setting it up takes about ten minutes, once:
    `wss://supertaki-relay.<your-subdomain>.workers.dev`, and re-run the Pages deploy.
 
 The Pages build injects `RELAY_URL` into the app (`VITE_RELAY_URL`) and into the Content
-Security Policy, so the deployed page can talk to exactly one relay: yours. Locally, no
-configuration is needed — `npm run dev` in `worker/` serves the relay on
-`ws://127.0.0.1:8787`, which is the dev build's default.
+Security Policy, so the deployed page can talk to exactly one room server: yours. Locally, no
+configuration is needed — `npm run dev` in `worker/` serves it on `ws://127.0.0.1:8787`,
+which is the dev build's default.
 
-## The relay (read this)
+## The room server (read this)
 
 This is the honest part.
 
-- **All game traffic passes through the relay.** A move is a few hundred bytes over a TLS
-  WebSocket to a Cloudflare Durable Object and out to the other players. The relay routes
-  frames by peer id and reads none of them; the host's browser is still the only authority
-  on the game. This replaced WebRTC peer-to-peer wholesale, because in practice WebRTC
-  failed exactly where people play: phones on cellular, iPhones locking their screen,
-  networks that block UDP. A `wss://` connection on port 443 works everywhere the web does.
-- **The relay is a single free-plan worker.** If Cloudflare has an outage, the game has an
+- **The game runs on the server.** A move is a few hundred bytes over a TLS WebSocket to the
+  room's Durable Object, which validates it against the rules and sends the table back out.
+  The object holds every hand, the deck and the random state. Read that sentence twice if you
+  care about privacy — it is the trade the next bullet is about.
+- **The operator can see the cards; no player can.** Whoever holds the Cloudflare account —
+  the person who deployed this — could inspect a room's storage. Every player sees only their
+  own hand. That is a deliberate swap: the game used to run in the room creator's _tab_, so
+  the authority was one of the players, and a determined one could deal themselves a good
+  hand. Hands are deleted six hours after the last player leaves. Full account in
+  [docs/threat-model.md](docs/threat-model.md) §11.
+- **The room is a single free-plan worker.** If Cloudflare has an outage, the game has an
   outage; the app says so and retries with backoff. The free plan's limits are generous
   (100,000 requests a day) and a game evening does not approach them.
-- **The host's tab is the game — and it can always come back.** The host's room, including
-  every hand and the deck, is snapshotted to the host device's local storage, and the room's
-  claim travels with it. Reloading, closing the tab, or a crashed browser all recover the
-  same way: reopen the site, tap "resume", and the relay hands back the _same room code_ —
-  every invite already sent still works, every guest's stored credential still fits, and
-  the guests, who never lost their relay connection, see the host return. The snapshot
-  expires after six hours and is erased the moment the host leaves on purpose. A host who
-  has to go can also hand the room to another player mid-round.
+- **Anybody can vanish, including whoever opened the room.** Close the tab, lose the phone,
+  run out of battery — reopen the site and tap "Rejoin". The table is exactly where you left
+  it. There is nothing to reclaim and nothing for anybody else to do; the room kept playing
+  without you.
 - **A disconnect is a pause, not the end.** A seat is held for five minutes, the table says
   who it is waiting for and counts down, and the game keeps moving around the empty chair
   rather than freezing on it. Any player can ask the table to wait, and a table that cannot
   sensibly continue can agree to end the round with no winner.
-- **A player who refreshes can rejoin.** Their browser keeps a seat id and a rejoin token,
-  and the host restores their hand and the table. If the token is stale, they are offered a
-  fresh join instead.
 - Expect a room to work anywhere a normal website works, including corporate and school
-  networks and cellular — the failure modes of the peer-to-peer era do not apply.
+  networks and cellular. There is no NAT traversal, no STUN, no TURN and no WebRTC anywhere —
+  the failure modes of the peer-to-peer era do not apply.
 
 ## Privacy
 
 - No accounts, no logins, no email, no analytics, no telemetry, no cookies.
-- Game data travels between the players through the room's relay, encrypted in transit by
-  TLS. The relay is code you deploy to your own free Cloudflare account (`worker/`); it
-  routes frames between peer ids without parsing game payloads, and stores nothing but
-  which peer ids belong to a room, forgotten six hours after the room empties.
-- The host's device keeps a snapshot of the running game (including every hand) in its
-  local storage so the game survives a crash; it expires after six hours and is erased on
-  an intentional leave.
-- Your hand is private: the host sends each player only their own cards. Everyone else sees
-  card _counts_.
-- `localStorage` holds only: chosen language, theme, your display name, and — while a room
-  is live — a room code, host peer id, seat id and rejoin token that expire after 6 hours.
-  Nothing else, ever. "Start fresh" on the home screen erases it immediately.
+- Game data travels between each player and the room, encrypted in transit by TLS. The room
+  is code you deploy to your own free Cloudflare account (`worker/`).
+- **The room holds every hand while the game is running**, because it is the thing enforcing
+  the rules. Its storage is deleted six hours after the last player leaves. Whoever runs the
+  Cloudflare account can read it; no player can. See
+  [docs/threat-model.md](docs/threat-model.md) §11.
+- Your hand is private _from the other players_: the room sends each socket only that seat's
+  cards. Everyone else sees card _counts_.
+- Nothing about the game is written to your device. `localStorage` holds only: chosen
+  language, theme, your display name, and — while a room is live — a room code, seat id and
+  rejoin token that expire after 6 hours. Nothing else, ever. "Start fresh" on the home
+  screen erases it immediately.
 - A room code is an invitation, not a password: six digits, so a typo lands nowhere, but
   anyone who has the link or the code can try to join while the room is open. Share it only
   with people you want at the table.
@@ -272,16 +298,16 @@ WebSockets, which is to say everything this decade. iOS Safari 15+ is fine.
 
 ## Troubleshooting
 
-| Symptom                                  | What it means and what to do                                                                                                                             |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "The host could not be reached"          | Wrong room code, or the host has been away too long. Check the code; if the host crashed, they can resume from their own device and everyone reconnects. |
-| "The relay could not be reached"         | The relay is unreachable — check your internet connection and retry. If it persists, check the worker's status in the Cloudflare dashboard.              |
-| "That room code is already taken"        | Rare collision (or you already host a room in another tab). Create a new room.                                                                           |
-| "Create game" spins with no room code    | The relay is not answering. If this is a fresh deployment, make sure `RELAY_URL` is set and the `Deploy relay worker` workflow has run — see above.      |
-| Stuck on "Reconnecting…"                 | The tab may have been suspended. Bring it to the foreground; the app retries with backoff.                                                               |
-| Host's browser crashed or the tab closed | Open the site again on the same device and tap "resume the room" — same code, everyone reconnects. The offer lasts six hours.                            |
-| Blank page after deploying               | Almost always a wrong `base` path — see [docs/deployment.md](docs/deployment.md).                                                                        |
-| Need diagnostics                         | Append `?debug=1` to the URL and open the browser console.                                                                                               |
+| Symptom                                | What it means and what to do                                                                                                                       |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "The room is closed"                   | Wrong room code, or the room has been empty for more than six hours and was deleted. Check the code; otherwise open a new room.                    |
+| "The connection to the room failed"    | Check your internet connection and retry. If it persists, check the worker's status in the Cloudflare dashboard.                                   |
+| "That room code is in use"             | A rare collision. The app draws another code by itself; if it surfaces, just create the room again.                                                |
+| "Create game" spins with no room code  | The room server is not answering. On a fresh deployment, make sure `RELAY_URL` is set and the `Deploy relay worker` workflow has run — see above.  |
+| Stuck on "Reconnecting…"               | The tab may have been suspended. Bring it to the foreground; the app retries with backoff.                                                         |
+| Your browser crashed or the tab closed | Open the site again on the same device and tap "Rejoin" — same seat, same cards. The offer lasts six hours, and the others kept playing meanwhile. |
+| Blank page after deploying             | Almost always a wrong `base` path — see [docs/deployment.md](docs/deployment.md).                                                                  |
+| Need diagnostics                       | Append `?debug=1` to the URL and open the browser console.                                                                                         |
 
 ## Repository layout
 
@@ -291,16 +317,16 @@ src/
   components/              design system: button, icon set, callout, badge, field, modal, segmented
   features/game/
     engine/                pure rules: cards, deck, seeded PRNG, reducer, views
-    network/               protocol schemas, transports, host and client sessions
+    network/               protocol schemas, the room socket, the client session
     state/                 Zustand store, selectors, local persistence
     ui/                    screens and game components
   i18n/                    Hebrew and English dictionaries
   lib/                     ids, sanitising, storage, clipboard, QR encoder, focus trap, logger
   styles/                  tokens, base, components, cards, screens
-worker/                    the room relay: Cloudflare Worker + one Durable Object per room
+worker/                    the room: Cloudflare Worker + one Durable Object per room, and the game
 docs/                      architecture, protocol, rules, QA, UI review, threat model, deployment
 tests/
-  unit/                    engine, protocol, sessions, store, i18n, lib
+  unit/                    engine, protocol, the client session, store, i18n, lib
   component/               React Testing Library screens
   e2e/                     Playwright scenarios
 .github/workflows/         CI and GitHub Pages deployment
@@ -311,11 +337,12 @@ no UI imports, and the UI holds no game rules.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md) — static hosting constraints, host authority, data flow, reconnection, limitations
+- [docs/architecture.md](docs/architecture.md) — static hosting constraints, server authority, data flow, reconnection, limitations
+- [docs/server-game-plan.md](docs/server-game-plan.md) — why the game moved into the room, and what that deleted
 - [docs/protocol.md](docs/protocol.md) — message envelope, every message type, validation, versioning, examples
 - [docs/rules.md](docs/rules.md) — exact deck, exact rules, +2 runs, the King, the +3 breaker window, decisions where editions disagree (bilingual)
 - [docs/robots.md](docs/robots.md) — robot players: what they know, how they play, when one covers a human seat
-- [docs/threat-model.md](docs/threat-model.md) — what a malicious peer can and cannot do
+- [docs/threat-model.md](docs/threat-model.md) — what a malicious client can and cannot do, and what the operator can see
 - [docs/deployment.md](docs/deployment.md) — GitHub Pages step by step
 - [docs/qa-report.md](docs/qa-report.md) — what was tested, coverage, manual checklist, known limitations
 - [docs/review-notes.md](docs/review-notes.md) — findings from the expert review passes and the changes made

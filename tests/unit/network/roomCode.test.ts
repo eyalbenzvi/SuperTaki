@@ -3,8 +3,6 @@ import {
   ROOM_CODE_SPACE,
   buildInviteUrl,
   generateRoomCode,
-  hostPeerIdForRoom,
-  isValidPeerId,
   isValidRoomCode,
   normalizeRoomCode,
   parseInvite,
@@ -64,22 +62,6 @@ describe('room codes', () => {
       expect(isValidRoomCode(input)).toBe(false);
     },
   );
-
-  it('derives a stable, PeerJS-safe host id', () => {
-    expect(hostPeerIdForRoom('482913')).toBe('crush-482913');
-    expect(hostPeerIdForRoom('482 913')).toBe('crush-482913');
-    expect(hostPeerIdForRoom('482913', 1)).toBe('crush-482913-h1');
-    expect(isValidPeerId(hostPeerIdForRoom(generateRoomCode()))).toBe(true);
-  });
-
-  it('validates peer ids', () => {
-    expect(isValidPeerId('crush-482913')).toBe(true);
-    expect(isValidPeerId('abc_123')).toBe(true);
-    expect(isValidPeerId('')).toBe(false);
-    expect(isValidPeerId('has space')).toBe(false);
-    expect(isValidPeerId('bad!char')).toBe(false);
-    expect(isValidPeerId('x'.repeat(65))).toBe(false);
-  });
 });
 
 describe('invite links', () => {
@@ -95,26 +77,16 @@ describe('invite links', () => {
     expect(buildInviteUrl({ roomCode: '482913' }, `${base}?debug=1`)).not.toContain('debug');
   });
 
-  it('keeps the same-browser transport override so the link still works', () => {
-    expect(buildInviteUrl({ roomCode: '482913' }, `${base}?transport=broadcast`)).toBe(
-      'https://example.github.io/color-rush/?transport=broadcast#/join?room=482913',
-    );
-  });
-
-  it('does not carry an unknown transport value', () => {
-    expect(buildInviteUrl({ roomCode: '482913' }, `${base}?transport=wat`)).not.toContain('transport');
-  });
-
-  it('includes a non-derived host id only when needed', () => {
-    expect(buildInviteUrl({ roomCode: '482913', hostPeerId: 'crush-482913' }, base)).not.toContain('host=');
-    expect(buildInviteUrl({ roomCode: '482913', hostPeerId: 'custom-host-1' }, base)).toContain(
-      'host=custom-host-1',
-    );
-  });
-
   it('round trips through parseInvite', () => {
-    const url = buildInviteUrl({ roomCode: '482913', hostPeerId: 'custom-host-1' }, base);
-    expect(parseInvite(url)).toEqual({ roomCode: '482913', hostPeerId: 'custom-host-1' });
+    const url = buildInviteUrl({ roomCode: '482913' }, base);
+    expect(parseInvite(url)).toEqual({ roomCode: '482913' });
+  });
+
+  it('ignores a stale host override left in an old link', () => {
+    // Invites used to be able to name a host peer id, for a room that had moved to
+    // another device. Rooms do not move, so the parameter is read as noise and the
+    // code alone decides where the link goes.
+    expect(parseInvite('#/join?room=482913&host=crush-482913-h2')).toEqual({ roomCode: '482913' });
   });
 
   it('parses a bare hash fragment', () => {
@@ -123,10 +95,6 @@ describe('invite links', () => {
 
   it('parses a pasted room code', () => {
     expect(parseInvite(' 482 913 ')).toEqual({ roomCode: '482913' });
-  });
-
-  it('ignores an invalid host override', () => {
-    expect(parseInvite('#/join?room=482913&host=bad%20id')).toEqual({ roomCode: '482913' });
   });
 
   it.each([

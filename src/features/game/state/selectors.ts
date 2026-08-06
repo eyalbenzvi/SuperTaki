@@ -21,8 +21,25 @@ export interface TableSnapshot {
   readonly lobby: LobbySnapshot | null;
 }
 
-export function isHost(state: { readonly role: 'host' | 'client' | null }): boolean {
-  return state.role === 'host';
+/**
+ * Whether this device holds the lobby buttons.
+ *
+ * Read off the lobby the room sent rather than off a local flag, and that is the
+ * substance of the change rather than a rename. `role === 'host'` was a fact about
+ * *this tab* — it meant "the game is running in here" — so it could not move, could
+ * not be checked against anything, and was still true after the tab had stopped
+ * being able to serve. `creatorPlayerId` is the room's answer, it travels in every
+ * snapshot, and it is the same answer every screen at the table gets.
+ */
+export function amCreator(state: {
+  readonly lobby: LobbySnapshot | null;
+  readonly localPlayerId: string | null;
+}): boolean {
+  return (
+    state.lobby !== null &&
+    state.localPlayerId !== null &&
+    state.lobby.creatorPlayerId === state.localPlayerId
+  );
 }
 
 export function localLobbyPlayer(state: Pick<TableSnapshot, 'lobby' | 'localPlayerId'>): LobbyPlayer | null {
@@ -164,7 +181,7 @@ export interface OpponentView {
   readonly cardCount: number;
   readonly isCurrent: boolean;
   readonly health: LobbyPlayer['health'];
-  readonly isHost: boolean;
+  readonly isCreator: boolean;
   /** Has declared "last card" for the single card they are holding. */
   readonly declaredLastCard: boolean;
   /** Has left the round; their cards are frozen out of play. */
@@ -203,7 +220,7 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
         cardCount: player.cardCount,
         isCurrent: publicState.currentPlayerId === player.id,
         health: lobbyPlayer?.health ?? 'connected',
-        isHost: lobbyPlayer?.isHost ?? false,
+        isCreator: lobbyPlayer?.isCreator ?? false,
         declaredLastCard: publicState.declaredLastCard.includes(player.id),
         left: player.left === true,
         bot: lobbyPlayer?.bot === true,

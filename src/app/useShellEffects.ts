@@ -72,7 +72,7 @@ export function useShellEffects(screen: Screen): void {
       depth.current = landed;
 
       const state = useAppStore.getState();
-      if (state.role !== null && IN_ROOM.has(state.screen)) {
+      if (state.inRoom && IN_ROOM.has(state.screen)) {
         depth.current += 1;
         window.history.pushState({ superTakiDepth: depth.current } satisfies ShellHistoryState, '');
         state.requestLeave();
@@ -115,9 +115,10 @@ export function useShellEffects(screen: Screen): void {
   }, [screen]);
 
   /*
-   * A refresh or a closed tab during play costs the host's room outright, and
-   * costs a guest their turn. The browser's own confirmation is the only hook
-   * available, and it is worth using for exactly this window.
+   * A refresh or a closed tab during play costs nobody the room any more — it is in
+   * the room, not this tab — but it still costs this player the moments it takes to
+   * come back, and the table waits on them meanwhile. The browser's own confirmation
+   * is the only hook available, and it is worth using for exactly this window.
    */
   useEffect(() => {
     if (screen !== 'game') {

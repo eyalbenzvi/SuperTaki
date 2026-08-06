@@ -8,7 +8,7 @@ import { useT } from '../../../../app/useT.ts';
 import { canShare, copyText, shareLink } from '../../../../lib/share.ts';
 import { MAX_PLAYERS, MIN_PLAYERS } from '../../engine/state.ts';
 import type { LobbyPlayer } from '../../network/protocol.ts';
-import { everyoneConnected, isHost, seatedPlayers, standInEnabled } from '../../state/selectors.ts';
+import { amCreator, everyoneConnected, seatedPlayers, standInEnabled } from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 import { HealthBadge } from '../components/TableParts.tsx';
@@ -34,7 +34,7 @@ export function LobbyScreen(): ReactNode {
   const t = useT();
   const state = useAppStore();
   const players = seatedPlayers(state);
-  const host = isHost(state);
+  const host = amCreator(state);
   const allConnected = everyoneConnected(state);
 
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
@@ -177,9 +177,9 @@ export function LobbyScreen(): ReactNode {
                 ) : null}
               </span>
               <span className="sr-only">{t('lobby.seatLabel', { seat: index + 1 })}</span>
-              {player.isHost ? (
+              {player.isCreator ? (
                 <Badge tone="accent" icon="crown">
-                  {t('common.host')}
+                  {t('common.creator')}
                 </Badge>
               ) : null}
               {/* A robot is always here, so a connection badge beside it would be
@@ -189,7 +189,7 @@ export function LobbyScreen(): ReactNode {
               ) : (
                 <HealthBadge health={player.health} t={t} />
               )}
-              {host && !player.isHost ? (
+              {host && !player.isCreator ? (
                 <Button
                   iconOnly
                   icon="remove"

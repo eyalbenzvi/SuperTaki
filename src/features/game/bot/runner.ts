@@ -17,13 +17,14 @@ import type { BotView } from './view.ts';
 /**
  * The driver: everything about robots that is not a decision.
  *
- * It owns exactly one pause at a time, re-decides when that pause is over, and
- * knows how to stop asking for a move the table has already refused. It holds no
- * game state of its own — the state is the host's, and every move goes back
- * through the host's ordinary authoritative path.
+ * It owns exactly one pause at a time, re-decides when that pause is over, and knows
+ * how to stop asking for a move the table has already refused. It holds no game state
+ * of its own — the state is the room's, and every move goes back through the room's
+ * ordinary authoritative path, where it is refused exactly what a player would be.
  *
- * Both timers and randomness are injected, so a test can run a whole round in one
- * synchronous pump and get the same round every time.
+ * Both the pause and the randomness are injected, so a test can run a whole round in
+ * one synchronous pump and get the same round every time — and so the room can arm a
+ * pause as a Durable Object alarm rather than a timer it would not live to see fire.
  */
 
 /** Cancels a pending pause. */
@@ -42,15 +43,22 @@ export interface BotRunnerOptions {
   /** True while nothing may be played: no round, a paused table, a dead session. */
   readonly blocked: () => boolean;
   /**
-   * Applies a move. `false` means the table refused it — the host is the authority
-   * on the moves a robot cannot see the whole of, notably a catch — and the duty is
-   * then dropped until the state moves on, rather than asked for again on a loop.
+   * Applies a move. `false` means the table refused it — the room is the authority on
+   * the moves a robot cannot see the whole of, notably a catch — and the duty is then
+   * dropped until the state moves on, rather than asked for again on a loop.
    */
   readonly submit: (playerId: PlayerId, move: BotMove) => boolean;
   /** Deterministic per-seat randomness; advances that seat's own stream. */
   readonly random: (playerId: PlayerId) => number;
-  /** Timer seam. The default is `setTimeout`; tests pump by hand. */
-  readonly schedule?: (run: () => void, ms: number) => CancelPause;
+  /**
+   * How a pause is armed. Required, and deliberately so.
+   *
+   * There used to be a `setTimeout` default here, for the browser that used to run
+   * this. The only caller is the room now, where a pause is a Durable Object alarm —
+   * so a default that quietly used a timer would be a timer in an object that is
+   * about to be evicted from memory, which is to say a pause that never ends.
+   */
+  readonly schedule: (run: () => void, ms: number) => CancelPause;
   /** Pause override, so a test does not have to wait for a human-shaped delay. */
   readonly pauseMs?: (kind: BotMoveKind, inSequence: boolean) => number;
 }
@@ -96,13 +104,6 @@ function rankOf(duty: Duty): number {
   return KIND_RANK[duty.move.kind];
 }
 
-function defaultSchedule(run: () => void, ms: number): CancelPause {
-  const timer = setTimeout(run, ms);
-  return () => {
-    clearTimeout(timer);
-  };
-}
-
 function keyFor(playerId: PlayerId, version: number, move: BotMove): string {
   const action = move.action;
   const detail =
@@ -122,8 +123,8 @@ export class BotRunner {
   /**
    * One decision per seat per state, kept until the state moves on.
    *
-   * Not an optimisation. `schedule()` runs on every heartbeat and after every
-   * accepted command, and a decision draws from that seat's random stream — so
+   * Not an optimisation. `schedule()` runs after every accepted command and whenever
+   * a seat changes hands, and a decision draws from that seat's random stream — so
    * re-deciding speculatively both *changed* the answer whenever two cards scored
    * alike and advanced a stream the room's determinism is defined by. A robot on a
    * busy table would restart its own pause indefinitely and never reach the end of
@@ -137,8 +138,8 @@ export class BotRunner {
   /**
    * Re-reads the table and arms at most one pause.
    *
-   * Safe to call as often as anything changes — after every accepted command, on
-   * every heartbeat, whenever a seat changes hands. An identical duty that is
+   * Safe to call as often as anything changes — after every accepted command, on any
+   * alarm, whenever a seat changes hands. An identical duty that is
    * already waiting is left alone, so a burst of snapshots does not reset the
    * pause a robot is already in the middle of.
    */
@@ -159,12 +160,11 @@ export class BotRunner {
       return;
     }
     this.cancel();
-    const run = this.options.schedule ?? defaultSchedule;
     const key = duty.key;
     this.pending = {
       key,
-      cancel: run(() => {
-        this.fire();
+      cancel: this.options.schedule(() => {
+        this.pump();
       }, duty.pause),
     };
   }
@@ -190,8 +190,14 @@ export class BotRunner {
    * somebody, answered a +3 or come back to their seat while the robot was
    * "thinking", and a move computed against the older table could be illegal, or
    * legal and wrong.
+   *
+   * Public because the pause is not a closure this object gets to keep. A pause is a
+   * Durable Object alarm, and an alarm wakes an object that may have been evicted from
+   * memory in the meantime — so there is no callback left to call, only a deadline
+   * that has passed and a room to re-read. That is exactly what this does: forget the
+   * pause, look again, act.
    */
-  private fire(): void {
+  pump(): void {
     this.pending = null;
     if (this.destroyed || this.options.blocked()) {
       return;
@@ -201,7 +207,7 @@ export class BotRunner {
       return;
     }
     if (this.options.submit(duty.playerId, duty.move)) {
-      // Accepted: the host re-arms from its own commit path, which knows the new
+      // Accepted: the room re-arms from its own commit path, which knows the new
       // state. Doing it here as well would race that.
       return;
     }

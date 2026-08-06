@@ -1,9 +1,9 @@
 /**
  * The Worker in front of the rooms.
  *
- * Its whole job is routing: `/v1/room/<six digits>` upgrades to a WebSocket and
- * lands on the Durable Object named by that room code. Everything interesting
- * happens in `room.ts`.
+ * Its whole job is addressing: `/v1/room/<six digits>` upgrades to a WebSocket and
+ * lands on the Durable Object named by that room code, which *is* the room — see
+ * `gameRoom.ts`. Everything interesting happens there.
  */
 
 import { ROOM_CODE_PATTERN } from './protocol.ts';
@@ -14,13 +14,25 @@ export interface Env {
   readonly ROOM: DurableObjectNamespace;
   /**
    * Optional comma-separated Origin allowlist (e.g. the GitHub Pages origin).
-   * Unset means any origin may connect — acceptable for a relay that carries
-   * no secrets and lets peers, not the server, authenticate each other.
+   *
+   * Unset means any origin may connect. It is worth being clear about what this does
+   * and does not buy: `Origin` is set by browsers and ignored by everything else, so
+   * this keeps *other websites* from driving a player's session, and does nothing
+   * against a script. What actually protects a room is its six-digit code and, for a
+   * seat, its resume token.
    */
   readonly ALLOWED_ORIGINS?: string;
 }
 
-const ROOM_PATH = /^\/v1\/room\/(\d{6})$/;
+/**
+ * The one path this worker serves, built from the room-code pattern rather than
+ * repeating it.
+ *
+ * Two independent copies of "six digits" is exactly how the `400 bad room code` that
+ * used to sit below became unreachable: the path had already guaranteed what the check
+ * re-tested. One definition, and the check that cannot fire is gone with it.
+ */
+const ROOM_PATH = new RegExp(`^/v1/room/(${ROOM_CODE_PATTERN.source.replace(/[$^]/g, '')})$`);
 
 function originAllowed(request: Request, env: Env): boolean {
   if (env.ALLOWED_ORIGINS === undefined || env.ALLOWED_ORIGINS.length === 0) {
@@ -46,9 +58,6 @@ export default {
       return new Response('not found', { status: 404 });
     }
     const code = match[1] as string;
-    if (!ROOM_CODE_PATTERN.test(code)) {
-      return new Response('bad room code', { status: 400 });
-    }
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('expected a WebSocket upgrade', { status: 426 });
     }

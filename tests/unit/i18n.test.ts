@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LANGUAGE,
@@ -12,8 +15,26 @@ import {
   type TranslationKey,
 } from '../../src/i18n/index.ts';
 import { REJECTION_CODES } from '../../src/features/game/engine/state.ts';
+import { CONNECTION_PHASES, SESSION_CLOSED_REASONS } from '../../src/features/game/network/session.ts';
+import { ROOM_ERROR_CODES } from '../../src/features/game/network/roomTransport.ts';
+import { joinRejectionReasonSchema } from '../../src/features/game/network/protocol.ts';
 
 const keys = Object.keys(en) as TranslationKey[];
+// `import.meta.url` is not a file URL under the jsdom environment these tests run in.
+const rootDir = process.cwd();
+
+/** Every source file that could read a translation key, dictionaries excluded. */
+function sourceFiles(dir: string, found: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      sourceFiles(path, found);
+    } else if (/\.tsx?$/.test(entry.name) && !/i18n[/\\](en|he)\.ts$/.test(path)) {
+      found.push(path);
+    }
+  }
+  return found;
+}
 
 function placeholders(value: string): string[] {
   return [...value.matchAll(/\{(\w+)\}/g)].map((match) => match[1] as string).sort();
@@ -44,6 +65,54 @@ describe('dictionaries', () => {
     }
   });
 
+  /*
+   * The other direction, which nothing checked.
+   *
+   * Deriving the lists above stops a key going *missing*. It says nothing about a key
+   * whose reader has been deleted — and that is the failure that actually happened
+   * twice: `status.initializing` and `status.ready` outlived the session that emitted
+   * them, and a whole pass-and-play mode left eleven `local.*` strings behind when it
+   * went. Fifteen orphans were found by hand; this is so the sixteenth is not.
+   *
+   * A key counts as read if its literal appears anywhere outside the dictionaries, or
+   * if it is half of a plural pair whose sibling is read, or if it is reached through
+   * one of the interpolating helpers that build a key from a value at runtime.
+   */
+  it('has no string that nothing reads', () => {
+    const sources = [...sourceFiles(join(rootDir, 'src')), ...sourceFiles(join(rootDir, 'tests'))];
+    expect(sources.length, 'found some sources to search').toBeGreaterThan(50);
+    const haystack = sources.map((file) => readFileSync(file, 'utf8')).join('\n');
+
+    /* Keys assembled at runtime from a value: `reject.${code}`, `status.${phase}`, and
+       the counted-phrase helper's `${key}.one` / `.other`. Matched by prefix. */
+    const dynamicPrefixes = [
+      'reject.',
+      'status.',
+      'error.',
+      'closed.',
+      'event.',
+      'card.',
+      'color.',
+      // `t(\`language.${code}\`)` and `t(\`theme.${choice}\`)` in the settings controls.
+      'language.',
+      'theme.',
+    ];
+
+    const orphans = keys.filter((key) => {
+      if (haystack.includes(`'${key}'`) || haystack.includes(`"${key}"`) || haystack.includes(`\`${key}\``)) {
+        return false;
+      }
+      if (dynamicPrefixes.some((prefix) => key.startsWith(prefix))) {
+        return false;
+      }
+      // A plural pair is read through `countLabel(t, base, n)`, which never names either half.
+      const base = key.replace(/\.(one|other)$/, '');
+      return base === key ? true : !haystack.includes(`'${base}'`);
+    });
+
+    expect(orphans, `unread translation keys: ${orphans.join(', ')}`).toEqual([]);
+  });
+
   it('has a localised message for every engine rejection code', () => {
     for (const code of REJECTION_CODES) {
       expect(keys).toContain(`reject.${code}`);
@@ -51,58 +120,22 @@ describe('dictionaries', () => {
   });
 
   it('has a localised message for every connection phase', () => {
-    for (const phase of [
-      'idle',
-      'initializing',
-      'ready',
-      'connecting',
-      'connected',
-      'reconnecting',
-      'disconnected',
-      'failed',
-    ]) {
+    for (const phase of CONNECTION_PHASES) {
       expect(keys).toContain(`status.${phase}`);
     }
   });
 
   it('has a localised message for every session error and close reason', () => {
-    for (const code of [
-      'idUnavailable',
-      'peerUnavailable',
-      'signalingUnavailable',
-      'browserUnsupported',
-      'network',
-      'timeout',
-      'closed',
-      'unknown',
-      'roomFull',
-      'gameInProgress',
-      'invalidName',
-      'protocolMismatch',
-      'unknownSeat',
-      'invalidResumeToken',
-      'roomClosed',
-      'transportUnavailable',
-    ]) {
+    // Derived, not copied: a hand-kept list is how `status.initializing` and
+    // `status.ready` outlived the phases that produced them.
+    for (const code of [...ROOM_ERROR_CODES, ...joinRejectionReasonSchema.options]) {
       expect(keys).toContain(`error.${code}`);
     }
-    for (const reason of [
-      'hostLeft',
-      'roomReset',
-      'removedByHost',
-      'duplicateConnection',
-      'leftVoluntarily',
-      'transportFailed',
-      // The two reasons that are not the end of anything, plus the one that ends a
-      // round without ending the room. A player who is told "the host is coming
-      // back" and a player who is told "the host left" need different words, and
-      // the whole point of the distinction is lost if they share a string.
-      'restarting',
-      'handoff',
-      'abandoned',
-    ]) {
+    for (const reason of SESSION_CLOSED_REASONS) {
       expect(keys).toContain(`closed.${reason}`);
     }
+    // And the one that ends a round without ending the room.
+    expect(keys).toContain('closed.abandoned');
   });
 
   it('can describe every event the engine emits', () => {

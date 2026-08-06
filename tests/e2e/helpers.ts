@@ -1,8 +1,5 @@
 import { expect, type Page } from '@playwright/test';
 
-/** Query string that selects the deterministic same-browser transport. */
-export const BROADCAST = '?transport=broadcast';
-
 /** Loads the app and switches the UI to English so assertions read clearly. */
 export async function openApp(page: Page, path = '/'): Promise<void> {
   await page.goto(path);
@@ -115,8 +112,88 @@ export async function takeAnyTurn(page: Page): Promise<boolean> {
     await playAnyLegalCard(page);
     return true;
   }
-  await page.getByRole('button', { name: /Draw pile, \d+ cards/ }).click();
+
+  /*
+   * Bounded, and allowed to fail.
+   *
+   * The pile can stop being clickable between the turn check above and this line: the
+   * turn can move, or — when this test has been slow — a robot can take the seat over,
+   * which disables every control on it. An unbounded `click()` on a disabled control
+   * does not fail, it *waits*, and it waits until the whole test times out. Ten minutes
+   * of a stuck click is also far longer than the ninety seconds after which the room
+   * covers a silent seat, so the block feeds itself: the seat goes quiet because the
+   * click is stuck, a robot takes it, and the click can then never succeed.
+   *
+   * Returning false tells the caller to look at the table again, which is what it does
+   * when it is not our turn anyway. `canDrawFrom` is the check for it — it already knows
+   * why `aria-disabled` rather than `isEnabled()` is the question to ask.
+   */
+  /*
+   * A sequence of our own, with nothing left to add to it.
+   *
+   * The pile is refused while a Taki is open — that is the rule, not a glitch — so a
+   * driver that only knows "play a card or draw" has no move here at all. It is our
+   * turn, so no robot will break the tie either, and the round stops until the budget
+   * runs out. Two of this suite's failures were this state wearing different clothes:
+   * first an unbounded click waiting ten minutes on the disabled pile, then, once that
+   * was guarded, a spin doing nothing for eight.
+   *
+   * Closing it is what a player does, and what the room's own test driver does.
+   */
+  const closeTaki = page.getByRole('button', { name: 'Close Taki' });
+  if (await closeTaki.isVisible().catch(() => false)) {
+    await closeTaki.click({ timeout: 5_000 });
+    return true;
+  }
+
+  if (!(await canDrawFrom(page))) {
+    return false;
+  }
+  try {
+    await page.getByRole('button', { name: /Draw pile, \d+ cards/ }).click({ timeout: 5_000 });
+  } catch {
+    return false;
+  }
   return true;
+}
+
+/**
+ * Clicks a control if it is there, and shrugs if it is not.
+ *
+ * Every tap in a driven round is a check-then-act race against a table that moves on
+ * its own: the button read as visible a tick ago may already have done its job, or the
+ * turn may have passed. A vanished control is the move having landed, not a failure, so
+ * this reports whether it acted and leaves the decision to the caller. Bounded by the
+ * config's `actionTimeout` — without one, a click on a control that is never coming back
+ * waits out the whole test.
+ */
+export async function tapIfPresent(page: Page, name: string | RegExp): Promise<boolean> {
+  const button = page.getByRole('button', { name });
+  if (!(await button.isVisible().catch(() => false))) {
+    return false;
+  }
+  /*
+   * Visible is not pressable. These prompts render disabled while a submitted move is
+   * unanswered and during the catch grace, so a driver that only checked visibility
+   * clicked a `disabled` button and waited — which is what it did.
+   *
+   * `isEnabled()` is right *here* because these buttons carry a real `disabled`
+   * attribute. It is wrong for the draw pile, which refuses with `aria-disabled` so a
+   * blocked tap can explain itself; that is what `canDrawFrom` is for. The two are not
+   * interchangeable and the difference has bitten this suite in both directions.
+   */
+  if (!(await button.isEnabled().catch(() => false))) {
+    return false;
+  }
+  // Chromium stops firing animation frames in a background tab, and Playwright's
+  // actionability check waits on two of them.
+  await page.bringToFront();
+  try {
+    await button.click();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

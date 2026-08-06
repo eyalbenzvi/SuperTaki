@@ -8,7 +8,7 @@ function enterGameOver(patch: Parameters<typeof setState>[0] = {}): void {
   const fixture = gameFixture();
   setState({
     screen: 'over',
-    role: 'host',
+    inRoom: true,
     phase: 'connected',
     localPlayerId: HOST_ID,
     lobby: lobbyFixture({ phase: 'finished' }),
@@ -32,7 +32,7 @@ describe('a round that ended with no winner', () => {
     const fixture = gameFixture();
     setState({
       screen: 'over',
-      role: 'host',
+      inRoom: true,
       phase: 'connected',
       localPlayerId: HOST_ID,
       lobby: lobbyFixture({ phase: 'finished' }),
@@ -139,7 +139,7 @@ describe('end of round', () => {
     const dialog = screen.getByRole('dialog');
     expect(leaveRoom).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
+    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
     expect(leaveRoom).toHaveBeenCalled();
   });
 

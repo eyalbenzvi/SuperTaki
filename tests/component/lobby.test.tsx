@@ -16,11 +16,10 @@ beforeEach(resetStore);
 function enterLobby(patch: Parameters<typeof setState>[0] = {}): void {
   setState({
     screen: 'lobby',
-    role: 'host',
+    inRoom: true,
     phase: 'connected',
     localPlayerId: HOST_ID,
     roomCode: '482913',
-    hostPeerId: 'crush-482913',
     inviteUrl: 'https://example.github.io/color-rush/#/join?room=482913',
     lobby: lobbyFixture(),
     ...patch,
@@ -73,7 +72,7 @@ describe('lobby', () => {
     renderApp();
     const items = screen.getAllByRole('listitem');
     expect(items[0]).toHaveTextContent('דנה');
-    expect(within(items[0] as HTMLElement).getByText('מנחה')).toBeInTheDocument();
+    expect(within(items[0] as HTMLElement).getByText('פתח/ה את החדר')).toBeInTheDocument();
     expect(items[0]).toHaveTextContent('(את/ה)');
     expect(items[1]).toHaveTextContent('אלי');
   });
@@ -88,13 +87,13 @@ describe('lobby', () => {
     enterLobby({
       lobby: lobbyFixture({
         players: [
-          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
-          { id: GUEST_ID, name: 'אלי', isHost: false, health: 'unstable', seat: 1 },
+          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'אלי', isCreator: false, health: 'disconnected', seat: 1 },
         ],
       }),
     });
     renderApp();
-    expect(screen.getByText('לא יציב')).toBeInTheDocument();
+    expect(screen.getByText('מנותק')).toBeInTheDocument();
   });
 
   it('lets the host remove a guest but not themselves, and confirms first', async () => {
@@ -129,7 +128,7 @@ describe('lobby', () => {
   it('nudges a host who is still on their own', () => {
     enterLobby({
       lobby: lobbyFixture({
-        players: [{ id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 }],
+        players: [{ id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 }],
       }),
     });
     renderApp();
@@ -146,14 +145,14 @@ describe('lobby', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('confirms before starting with an unstable player', async () => {
+  it('confirms before starting with a player who is not here', async () => {
     const startGame = vi.fn();
     enterLobby({
       startGame,
       lobby: lobbyFixture({
         players: [
-          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
-          { id: GUEST_ID, name: 'אלי', isHost: false, health: 'unstable', seat: 1 },
+          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'אלי', isCreator: false, health: 'disconnected', seat: 1 },
         ],
       }),
     });
@@ -161,7 +160,7 @@ describe('lobby', () => {
 
     await user.click(screen.getByRole('button', { name: 'התחלת המשחק' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveAccessibleName('להתחיל עם חיבור לא יציב?');
+    expect(dialog).toHaveAccessibleName('להתחיל כשמישהו לא כאן?');
     expect(startGame).not.toHaveBeenCalled();
 
     await user.click(within(dialog).getByRole('button', { name: 'להתחיל בכל זאת' }));
@@ -171,7 +170,7 @@ describe('lobby', () => {
   it('disables the start button below two players', () => {
     enterLobby({
       lobby: lobbyFixture({
-        players: [{ id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 }],
+        players: [{ id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 }],
       }),
     });
     renderApp();
@@ -180,44 +179,32 @@ describe('lobby', () => {
   });
 
   it('hides host controls from guests and tells them what to expect', () => {
-    enterLobby({ role: 'client', localPlayerId: GUEST_ID });
+    enterLobby({ inRoom: true, localPlayerId: GUEST_ID });
     renderApp();
     expect(screen.queryByRole('button', { name: 'התחלת המשחק' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'הסרת אלי' })).not.toBeInTheDocument();
-    expect(statusRegions()[0]).toHaveTextContent('ממתינים שהמנחה יתחיל');
+    expect(statusRegions()[0]).toHaveTextContent('ממתינים שהמשחק יתחיל');
   });
 
-  it('offers the host a handover rather than only closing the room', async () => {
+  it('tells the player who opened the room that the buttons pass on, not that the room closes', async () => {
     /*
-     * This used to assert that a host is told plainly the room closes for
-     * everybody. That was honest and it was also the end of the matter: the only
-     * thing a host who had to leave could do was end somebody else's evening.
-     * With another player present it is now a choice, and closing the room is
-     * still there — just no longer the only option.
+     * This used to assert two things that are no longer true: that leaving as the
+     * host closes the room for everybody, and that the alternative is to negotiate a
+     * handover with another player first. The room is not in anybody's tab, so
+     * leaving is just leaving — and the only thing that changes for the others is
+     * which seat holds the lobby buttons.
      */
     const leaveRoom = vi.fn();
-    const handOver = vi.fn();
-    enterLobby({ leaveRoom, handOver });
+    enterLobby({ leaveRoom });
     const { user } = renderApp();
 
     await user.click(screen.getByRole('button', { name: 'יציאה' }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('יהפוך למנחה והסבב ימשיך');
+    expect(dialog).toHaveTextContent('החדר נשאר פתוח לכל השאר');
+    expect(dialog).toHaveTextContent('עוברים לשחקן הבא');
 
-    await user.click(within(dialog).getByRole('button', { name: 'סגירת החדר לכולם' }));
+    await user.click(within(dialog).getByRole('button', { name: 'יציאה' }));
     expect(leaveRoom).toHaveBeenCalled();
-    expect(handOver).not.toHaveBeenCalled();
-  });
-
-  it('hands the room to the next seated player when the host chooses to', async () => {
-    const handOver = vi.fn();
-    enterLobby({ handOver });
-    const { user } = renderApp();
-
-    await user.click(screen.getByRole('button', { name: 'יציאה' }));
-    const dialog = screen.getByRole('dialog');
-    await user.click(within(dialog).getByRole('button', { name: 'העברה ויציאה' }));
-    expect(handOver).toHaveBeenCalledWith(GUEST_ID);
   });
 
   it('lets the host change the maximum player count', async () => {
@@ -301,15 +288,15 @@ describe('connection notices', () => {
   it('explains a failure honestly and offers a retry to guests', async () => {
     const retryConnection = vi.fn();
     enterLobby({
-      role: 'client',
+      inRoom: true,
       localPlayerId: GUEST_ID,
       phase: 'failed',
-      error: { code: 'signalingUnavailable', retryable: true },
+      error: { code: 'network', retryable: true },
       retryConnection,
     });
     const { user } = renderApp();
 
-    expect(screen.getByText(/לא הצלחנו להגיע לממסר המשחק/)).toBeInTheDocument();
+    expect(screen.getByText(/החיבור לחדר נכשל/)).toBeInTheDocument();
     expect(screen.getByText('למה זה קורה?')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'נסה שוב' }));
     expect(retryConnection).toHaveBeenCalled();
@@ -317,7 +304,7 @@ describe('connection notices', () => {
 
   it('does not offer a retry for a non-retryable failure', () => {
     enterLobby({
-      role: 'client',
+      inRoom: true,
       localPlayerId: GUEST_ID,
       phase: 'failed',
       error: { code: 'gameInProgress', retryable: false },
@@ -328,12 +315,11 @@ describe('connection notices', () => {
     expect(screen.getByRole('button', { name: 'חזרה לדף הבית' })).toBeInTheDocument();
   });
 
-  it('explains why a closed room cannot continue', () => {
-    setState({ screen: 'home', closedReason: 'hostLeft' });
+  it('explains a closed room', () => {
+    setState({ screen: 'home', closedReason: 'roomClosed' });
     renderApp();
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent('המנחה יצא');
-    expect(dialog).toHaveTextContent('לא יכול להמשיך בלי המנחה');
+    expect(dialog).toHaveTextContent('החדר סגור');
     expect(within(dialog).getByRole('button', { name: 'פתיחת חדר חדש' })).toBeInTheDocument();
   });
 
@@ -354,7 +340,7 @@ describe('robots in the lobby', () => {
 
   it('offers nothing of the sort to a guest', () => {
     enterLobby();
-    setState({ role: 'client', localPlayerId: GUEST_ID });
+    setState({ inRoom: true, localPlayerId: GUEST_ID });
     renderApp();
     // A robot is the host's to seat: it lives in the host's tab and plays from there.
     expect(screen.queryByRole('button', { name: 'הוספת רובוט' })).not.toBeInTheDocument();
@@ -365,8 +351,8 @@ describe('robots in the lobby', () => {
       lobby: lobbyFixture({
         maxPlayers: 2,
         players: [
-          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
-          { id: GUEST_ID, name: 'אלי', isHost: false, health: 'connected', seat: 1 },
+          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+          { id: GUEST_ID, name: 'אלי', isCreator: false, health: 'connected', seat: 1 },
         ],
       }),
     });
@@ -379,8 +365,8 @@ describe('robots in the lobby', () => {
     enterLobby({
       lobby: lobbyFixture({
         players: [
-          { id: HOST_ID, name: 'דנה', isHost: true, health: 'connected', seat: 0 },
-          { id: 'p-robot', name: 'רובוט תמר', isHost: false, health: 'connected', seat: 1, bot: true },
+          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+          { id: 'p-robot', name: 'רובוט תמר', isCreator: false, health: 'connected', seat: 1, bot: true },
         ],
       }),
     });

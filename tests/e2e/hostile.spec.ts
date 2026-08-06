@@ -7,12 +7,12 @@
  * the moment the round ends. Two of these were written after they found bugs.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { BROADCAST, awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
 
 async function seat(host: Page, guest: Page): Promise<void> {
-  await openApp(host, `/${BROADCAST}`);
+  await openApp(host, '/');
   const code = await createRoom(host, 'Dana', 2);
-  await openApp(guest, `/${BROADCAST}`);
+  await openApp(guest, '/');
   await joinRoom(guest, 'Eli', code);
   await expect(host.getByText('2 of 2 players')).toBeVisible();
   await host.bringToFront();
@@ -149,14 +149,17 @@ test('the winner always reaches the standings', async ({ context }) => {
   // Driving a whole round to its end plus the post-round assertions can run past
   // the 45 s default; a round's length is nondeterministic, so the headroom has to
   // be generous rather than tuned to the median. QA caught this racing its own
-  // 45 s ceiling.
-  test.setTimeout(120_000);
+  // 45 s ceiling — and then it raced the replacement, on the mobile viewport, on a
+  // machine running the whole suite about a quarter slower than the day the number
+  // was chosen. A round here is a hundred-odd DOM round trips; the budget is now
+  // generous enough that exceeding it means something is stuck rather than slow.
+  test.setTimeout(300_000);
   const host = await context.newPage();
   const guest = await context.newPage();
   await seat(host, guest);
 
   // Drive to the end of the round, bounded well inside the test's own timeout.
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 240_000;
   while (Date.now() < deadline) {
     if ((await host.getByRole('heading', { name: 'Round finished' }).count()) > 0) break;
     let acted = false;

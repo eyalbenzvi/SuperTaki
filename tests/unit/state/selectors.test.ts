@@ -4,7 +4,7 @@ import {
   connectedCount,
   currentPlayerName,
   everyoneConnected,
-  isHost,
+  amCreator,
   isMyTurn,
   isTakiOpenForMe,
   localLobbyPlayer,
@@ -27,16 +27,23 @@ const wild: Card = { id: 'c3', kind: 'colorChange' };
 
 const lobby: LobbySnapshot = {
   roomCode: '482913',
-  hostPeerId: 'crush-482913',
-  hostPlayerId: 'a',
+  creatorPlayerId: 'a',
   maxPlayers: 4,
   phase: 'inGame',
   tableLanguage: 'he',
   players: [
-    { id: 'a', name: 'Ann', isHost: true, health: 'connected', seat: 0 },
-    { id: 'b', name: 'Ben', isHost: false, health: 'unstable', seat: 1 },
-    { id: 'c', name: 'Cat', isHost: false, health: 'disconnected', seat: 2 },
+    { id: 'a', name: 'Ann', isCreator: true, health: 'connected', seat: 0 },
+    { id: 'b', name: 'Ben', isCreator: false, health: 'disconnected', seat: 1 },
+    { id: 'c', name: 'Cat', isCreator: false, health: 'disconnected', seat: 2 },
   ],
+  sentAt: 1_700_000_000_000,
+  seatGraceMs: 300_000,
+  pausedBy: null,
+  waitingFor: null,
+  waitingReason: null,
+  waitingSince: null,
+  abandonVotes: [],
+  standInEnabled: true,
 };
 
 const publicState: PublicGameState = {
@@ -69,11 +76,10 @@ function state(patch: Partial<AppState> = {}): AppState {
     sound: true,
     displayName: 'Ben',
     screen: 'game',
-    role: 'client',
+    inRoom: true,
     phase: 'connected',
     busy: false,
     roomCode: '482913',
-    hostPeerId: 'crush-482913',
     inviteUrl: null,
     localPlayerId: 'b',
     lobby,
@@ -86,7 +92,6 @@ function state(patch: Partial<AppState> = {}): AppState {
     rejection: null,
     closedReason: null,
     resumable: null,
-    hostable: null,
     pausedBy: null,
     nudge: null,
     caught: null,
@@ -98,10 +103,13 @@ function state(patch: Partial<AppState> = {}): AppState {
   };
 }
 
-describe('role and identity selectors', () => {
-  it('reports the host role', () => {
-    expect(isHost(state({ role: 'host' }))).toBe(true);
-    expect(isHost(state())).toBe(false);
+describe('identity selectors', () => {
+  it('reads the lobby buttons off the room rather than off a local flag', () => {
+    // `creatorPlayerId` is the room's answer and it travels in every snapshot, so
+    // every screen at the table agrees about who has the buttons.
+    expect(amCreator(state({ localPlayerId: 'a' }))).toBe(true);
+    expect(amCreator(state())).toBe(false);
+    expect(amCreator(state({ lobby: null }))).toBe(false);
   });
 
   it('finds the local lobby entry', () => {
@@ -167,7 +175,7 @@ describe('opponent ordering', () => {
   it('carries connection health and the current-turn flag', () => {
     const [cat, ann] = opponents(state());
     expect(cat).toMatchObject({ name: 'Cat', cardCount: 7, health: 'disconnected', isCurrent: false });
-    expect(ann).toMatchObject({ name: 'Ann', isHost: true, isCurrent: false });
+    expect(ann).toMatchObject({ name: 'Ann', isCreator: true, isCurrent: false });
     expect(opponents(state({ localPlayerId: 'a' }))[0]).toMatchObject({ isCurrent: true });
   });
 
@@ -201,7 +209,9 @@ describe('standings and health', () => {
   });
 
   it('counts connected players', () => {
-    expect(connectedCount(state())).toBe(2);
+    // Two states, not three: 'unstable' meant "we are inferring and unsure", and the
+    // room is told when a socket closes rather than inferring.
+    expect(connectedCount(state())).toBe(1);
     expect(everyoneConnected(state())).toBe(false);
     const allGood: LobbySnapshot = {
       ...lobby,

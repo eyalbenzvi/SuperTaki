@@ -5,7 +5,7 @@ import { useT } from '../../../../app/useT.ts';
 import { useAppStore } from '../../state/store.ts';
 import {
   absentPlayers,
-  isHost,
+  amCreator,
   playerName,
   standInEnabled,
   standInPlayers,
@@ -22,7 +22,7 @@ function formatDuration(ms: number): string {
 
 interface SeatHoldProps {
   readonly name: string;
-  /** Milliseconds already elapsed when the host built the snapshot. */
+  /** Milliseconds already elapsed when the creator built the snapshot. */
   readonly elapsedWhenSent: number;
   readonly graceMs: number;
   readonly actions: ReactNode;
@@ -31,16 +31,16 @@ interface SeatHoldProps {
 /**
  * One held seat, counting down.
  *
- * The arithmetic spans two clocks and neither is read while rendering. The host
+ * The arithmetic spans two clocks and neither is read while rendering. The creator
  * tells us how long the seat had already been absent when it built the snapshot —
  * both of its readings are on its own clock, so the skew between the two devices
  * cancels — and everything after that is local elapsed time, counted by a ticking
  * integer rather than by asking what time it is.
  *
- * The host's figure is taken **once**, when the callout appears, and the count
+ * The creator's figure is taken **once**, when the callout appears, and the count
  * carries on locally from there. Two rejected alternatives are the reason:
  * re-keying on the snapshot tore the whole callout down several times a minute —
- * the host re-broadcasts on every accepted command — which dropped keyboard focus
+ * the creator re-broadcasts on every accepted command — which dropped keyboard focus
  * to the document mid-interaction and re-announced the callout to a screen reader;
  * re-anchoring inside an effect is a state write during commit that re-renders
  * every seat for a number nobody can see change. What is given up is correction
@@ -92,12 +92,13 @@ export function WaitingNotice(): ReactNode {
   const t = useT();
   const lobby = useAppStore((state) => state.lobby);
   const publicState = useAppStore((state) => state.publicState);
-  const role = useAppStore((state) => state.role);
+
   const pausedBy = useAppStore((state) => state.pausedBy);
   const localPlayerId = useAppStore((state) => state.localPlayerId);
   const skipAbsentTurn = useAppStore((state) => state.skipAbsentTurn);
   const removeFromRound = useAppStore((state) => state.removeFromRound);
   const standInNow = useAppStore((state) => state.standInNow);
+  const creator = useAppStore(amCreator);
   const stopStandIn = useAppStore((state) => state.stopStandIn);
   const announce = useAppStore((state) => state.announce);
 
@@ -131,8 +132,6 @@ export function WaitingNotice(): ReactNode {
     );
   }
 
-  const host = isHost({ role });
-
   if (absent.length === 0 && standIns.length === 0) {
     return null;
   }
@@ -156,7 +155,7 @@ export function WaitingNotice(): ReactNode {
           title={t('robot.playingFor', { name: player.name })}
           role="status"
           actions={
-            host ? (
+            creator ? (
               <>
                 <Button
                   variant="ghost"
@@ -169,7 +168,7 @@ export function WaitingNotice(): ReactNode {
                 {/*
                   A covered seat is not listed as held, so this is the only place the
                   table can still take an absent player out of the round. Without it,
-                  a robot covering somebody whose phone is dead left the host with the
+                  a robot covering somebody whose phone is dead left the creator with the
                   abandon vote as their one way out.
                 */}
                 <Button
@@ -197,7 +196,7 @@ export function WaitingNotice(): ReactNode {
             elapsedWhenSent={sentAt !== undefined ? Math.max(sentAt - player.absentSince, 0) : 0}
             graceMs={graceMs}
             actions={
-              host && isWaitingOnThem ? (
+              creator && isWaitingOnThem ? (
                 <>
                   <Button
                     variant="ghost"

@@ -14,7 +14,7 @@ Three problems, one mechanism:
 
 ## What a robot is, exactly
 
-A **host-side policy**, and nothing else. There is no robot in the engine, none on the wire,
+A **room-side policy**, and nothing else. There is no robot in the engine, none on the wire,
 and none in any client.
 
 - The engine stays pure and knows nothing about robots. Every robot move is an ordinary
@@ -22,20 +22,22 @@ and none in any client.
 - A robot has no privileged path. It cannot express anything a remote player cannot express:
   its decisions are typed as the wire's `GameAction`, so `skipTurn`, `leaveGame` and
   `abandonRound` are unreachable from it by construction.
-- Robots live in the host's tab because the authoritative state does. A host that leaves takes
-  its robots with it, exactly as it takes the room.
+- Robots live in the room because the authoritative state does. They used to live in the room
+  creator's tab, which meant that player leaving took the robots with them — along with the
+  game. Neither goes anywhere now.
 
 ```
 src/features/game/bot/
   view.ts     what a robot may know          (the only file that may see a GameState)
   policy.ts   what it decides                (pure; no clocks, no Math.random)
-  runner.ts   when it decides                (one pause at a time; timers injected)
+  runner.ts   when it decides                (one pause at a time; the pause is injected —
+                                              on the server it is a Durable Object alarm)
   names.ts    what it is called
 ```
 
 ## A robot cannot see your hand
 
-This is structural, not a promise. The host holds every hand in memory, so a policy that read
+This is structural, not a promise. The room holds every hand, so a policy that read
 `GameState` would be reading its opponents' cards. Instead `botViewFor()` builds a `BotView`
 out of the same projections a remote client is sent:
 
@@ -51,7 +53,7 @@ serialised view; the same decision comes out however the _other_ hands are rearr
 `view.ts` is the only file in the package that imports a `GameState`.
 
 The last two rows are the one place this is subtler than "only what a client is sent". Who
-holds a +3 Breaker is host-private, and a client infers whether _it_ may answer from its own
+holds a +3 Breaker is private to the room, and a client infers whether _it_ may answer from its own
 hand — which is right almost always, and wrong in the state that matters: a seat caught on its
 last card draws four cards mid-window, and a breaker among them is not one the engine is
 waiting for. So a robot is told the single bit about **its own seat** — am I being waited for —
@@ -67,7 +69,7 @@ recipient in the public state — worth doing, and not part of this.)
 
 Legality is never re-implemented: every candidate goes through the same `isCardPlayable` the
 table's own UI highlights with, so a robot cannot drift from the rules or propose a move the
-host would refuse.
+room would refuse.
 
 **Priority.** Answer an open +3 → play a card that ends the round → declare a last card →
 take the turn → call somebody out. The order is deliberate: a +3 freezes every seat; the
@@ -124,19 +126,19 @@ All in `network/timing.ts`, all jittered from a per-seat seeded stream.
 | `BOT_DECLARE_MIN_MS` … `MAX`  | 0.9–2.0 s   | before declaring its own last card             |
 | `BOT_CATCH_MIN_MS` … `MAX`    | 2.2–4.0 s   | before calling somebody out                    |
 | `BOT_ANSWER_MIN_MS` … `MAX`   | 0.5–1.2 s   | before answering an open +3                    |
-| `BOT_STALL_MS`                | 15 s        | before the host passes a robot's own seat      |
+| `BOT_STALL_MS`                | 15 s        | before the room passes a robot's own seat      |
 | `STAND_IN_ABSENT_MS`          | 45 s        | absence before a robot may play a human's seat |
 | `STAND_IN_IDLE_MS`            | 90 s        | silence, while present, before the same        |
 
 `BOT_STALL_MS` is the one that is not about pacing. A robot cannot be absent, so no grace,
 hold or vacate would ever rescue a table stuck on one — a suspended tab, a throttled timer or
 a bug in the driver would stop the round with nothing on screen to explain it. Past the
-deadline the host passes the seat itself, and records that it had to.
+deadline the room passes the seat itself, and logs that it had to.
 
 ## Standing in for a human
 
 `standInEnabled` is a table setting, on by default, visible to every player in the lobby
-snapshot and changeable by the host. When it is off, absence behaves exactly as it did before
+snapshot and changeable by the seat holding the lobby buttons. When it is off, absence behaves exactly as it did before
 robots existed.
 
 A stand-in is **layered on top of** the free skip, never in place of it:
@@ -161,19 +163,19 @@ Never stood in for:
 - a seat the table has already **stopped a robot on**, for the kind of cover it stopped: a
   refusal about somebody's silence says nothing about what should happen when their phone
   actually dies, and it is spent as soon as they say anything;
-- a seat that is **here and answering**: the host's "let a robot play" needs the table to have
+- a seat that is **here and answering**: "let a robot play" needs the table to have
   actually been waiting on that player, or one mis-tap takes a hand off somebody mid-turn;
 - anybody, while the table is **paused**.
 
-The host keeps both ways out while a robot is playing: **stop the robot**, which is honoured
-rather than undone by the next heartbeat, and **remove from the round** — the covered seat is
+The table keeps both ways out while a robot is playing: **stop the robot**, which is remembered
+rather than undone by the next sweep, and **remove from the round** — the covered seat is
 deliberately not listed as a held one, so those live on the robot's own notice.
 
 Release is keyed on `lastIntentAt` — the last thing that seat actually _asked for_ — and never
 on a heartbeat. A phone in a pocket answers every probe perfectly, so keying it on the wire
 would have released every stand-in five seconds after it began.
 
-The host's own seat is covered too: their own tap is an intent like any other, so a host who
+The room creator's own seat is covered too: their own tap is an intent like any other, so somebody who
 puts the phone down does not stop the round, and picking it up takes the seat straight back.
 
 ## What the table sees
@@ -183,7 +185,7 @@ puts the phone down does not stop the round, and picking it up takes the seat st
 - A seat a robot is standing in for keeps its owner's name and gains a notice every player
   sees: _"a robot is playing for Noa"_. The seat-hold countdown is suppressed while it lasts,
   because the table is not waiting for anybody.
-- The host can start a stand-in early, or stop one, from that notice.
+- The seat holding the lobby buttons can start a stand-in early, or stop one, from that notice.
 
 Nothing about robot-ness is hidden, and nothing about it is inferred from a name: a human may
 of course call themselves "Robot Fern", and the badge comes from the seat, not the string.
@@ -205,7 +207,7 @@ is ready.
 An open +3 has its own deadline for the same reason. While one is open the seat on turn is the
 player who _played_ it, so a seat that answers every heartbeat and taps nothing would freeze
 the whole table with nothing on any screen to explain it. Past `STAND_IN_IDLE_MS` a robot takes
-that seat and answers — or, if the table has robots switched off, the host declines for it.
+that seat and answers — or, if the table has robots switched off, the room declines for it.
 
 ## What a robot does not need
 
@@ -217,18 +219,18 @@ network between a robot and the state it plays against.
 
 ## Wire and storage
 
-Three optional fields, no protocol bump — an older reader drops what it does not know and
-loses a badge rather than the game:
+Three fields in the lobby snapshot: `lobbyPlayer.bot` and `lobbyPlayer.standIn` per seat, both
+optional, and `lobbySnapshot.standInEnabled`, which is required as of protocol 6 — every table
+has an answer to "may a robot cover a seat", so a snapshot that omits it is a snapshot with a
+hole in it rather than an older one.
 
-- `lobbyPlayer.bot`, `lobbyPlayer.standIn`, `lobbySnapshot.standInEnabled`.
-
-The host snapshot carries `bot` per seat and the table setting, so a reload or a handover keeps
-its robots. A robot is never offered the room in a handover: there is no device behind it.
-
-**Known limitation.** The handover snapshot is validated by the _receiving_ build. A successor
-running a build without the `bot` field would strip it, and those seats would arrive as human
-seats with nobody behind them — skipped each orbit until the table removes them or agrees to
-stop. Same-build handovers, which is every handover after this ships, carry robots correctly.
+The room's stored record carries `bot` per seat and the table setting, so a hibernation keeps
+its robots. This is the whole of the durability story now, and it used to be the interesting
+part of this section: a robot lived in the room creator's tab, so a handover had to carry it to
+another device in a snapshot the _receiving_ build validated — and a successor on a build
+without the `bot` field would have stripped it and left the seats human, with nobody behind
+them. There is no handover, no snapshot and no successor. The room holds its robots because the
+room holds everything.
 
 ## Not implemented, on purpose
 
@@ -236,5 +238,5 @@ stop. Same-build handovers, which is every handover after this ships, carry robo
   the injected randomness.
 - **No robots added mid-round.** A round is dealt to the seats it starts with; a stand-in is
   the mid-round mechanism.
-- **No client-side robots.** A robot needs the authoritative state, and that is the host's.
+- **No client-side robots.** A robot needs the authoritative state, and that is the room's.
 - **No personality, no chat.** It plays cards.

@@ -2,17 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   MessageDeduplicator,
   clientMessage,
-  hostMessage,
+  roomMessage,
 } from '../../../src/features/game/network/envelope.ts';
 import {
   PROTOCOL_VERSION,
   parseClientMessage,
-  parseHostMessage,
+  parseRoomMessage,
 } from '../../../src/features/game/network/protocol.ts';
 
 const context = {
   roomId: '482913',
-  senderPeerId: 'crush-482913',
+  senderPeerId: 'room',
   now: () => 1_700_000_000_000,
 };
 
@@ -24,9 +24,9 @@ describe('envelope builders', () => {
     expect(parseClientMessage(message).ok).toBe(true);
   });
 
-  it('produces schema-valid host messages', () => {
-    const message = hostMessage(context, 'ping', { nonce: 'abcd' });
-    expect(parseHostMessage(message).ok).toBe(true);
+  it('produces schema-valid room messages', () => {
+    const message = roomMessage(context, 'nudged', { fromPlayerId: 'pl_abcd0000' });
+    expect(parseRoomMessage(message).ok).toBe(true);
   });
 
   it('gives every message a distinct id', () => {

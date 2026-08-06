@@ -14,10 +14,10 @@ const NONE = { seats: '', served: false } as const;
  * rule, rendered.
  *
  * Timed from the moment *this* client first saw the seat come down to one card,
- * which is the host's moment plus however long the snapshot took to arrive. That
- * only ever makes the button appear later than the host would allow, never
+ * which is the room's moment plus however long the snapshot took to arrive. That
+ * only ever makes the button appear later than the room would allow, never
  * earlier, so the two can disagree about the exact instant without a player ever
- * meeting a refusal. Measuring anything sharper would need the host's clock on
+ * meeting a refusal. Measuring anything sharper would need the room's clock on
  * the wire, for the sliver of a social rule this window is.
  *
  * The window is held for the whole set of exposed seats rather than one each, and

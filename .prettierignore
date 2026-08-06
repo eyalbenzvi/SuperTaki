@@ -1,5 +1,7 @@
 dist
 coverage
+# `wrangler dev` writes a bundled copy of the worker here on every start.
+worker/.wrangler
 node_modules
 playwright-report
 test-results

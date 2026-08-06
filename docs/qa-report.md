@@ -1,5 +1,10 @@
 # QA report
 
+> **Records an earlier architecture.** The findings below were made when the game ran in the
+> room creator's browser tab. The game now runs in the room's Durable Object; see
+> [server-game-plan.md](server-game-plan.md). Everything here about the _rules_, the UI and
+> the engine still holds — what has moved is where the authority lives.
+
 > **Note.** This document records the review of the pre-rebrand version of this app, when
 > it was called Color Rush and shipped a 110-card deck and an in-app rules page. The rebrand
 > to Super Taki added the +2, King, +3 and +3 Breaker cards, dropped the rules page, and
@@ -161,6 +166,12 @@ mobile (Pixel 5) sizes.
 deterministic and would make CI flaky, hiding real regressions. Everything above the transport
 — protocol, validation, host authority, engine, store, UI — is the production code path. Real
 WebRTC is covered by the manual checklist below.
+
+> **No longer true, and worth saying where it was claimed.** There is no WebRTC, no
+> BroadcastChannel transport and no host authority left. The end-to-end suite now drives two
+> real browser pages against the real room under `wrangler dev`, which is the production path
+> without the domain name — so the limitation this paragraph documented has been closed rather
+> than restated. See [server-game-plan.md](server-game-plan.md).
 
 ## Manual test checklist
 

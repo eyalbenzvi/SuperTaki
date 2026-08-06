@@ -3,7 +3,7 @@ import {
   MAX_MESSAGE_BYTES,
   PROTOCOL_VERSION,
   parseClientMessage,
-  parseHostMessage,
+  parseRoomMessage,
   privateHandSchema,
   publicGameStateSchema,
 } from '../../../src/features/game/network/protocol.ts';
@@ -113,7 +113,7 @@ describe('client message validation', () => {
 
   it('strips unknown extra payload keys instead of trusting them', () => {
     const result = parseClientMessage(
-      envelope('joinRequest', { displayName: 'Dana', isHost: true, hand: ['red:1'] }),
+      envelope('joinRequest', { displayName: 'Dana', isCreator: true, hand: ['red:1'] }),
     );
     if (!result.ok) {
       throw new Error('expected success');
@@ -143,14 +143,14 @@ describe('host message validation', () => {
 
   it('accepts a real public state snapshot', () => {
     expect(publicGameStateSchema.safeParse(publicState).success).toBe(true);
-    const result = parseHostMessage(envelope('publicState', { state: publicState }));
+    const result = parseRoomMessage(envelope('publicState', { state: publicState }));
     expect(result.ok).toBe(true);
   });
 
   it('accepts a real private hand', () => {
     const hand = toPrivateHandView(started.state, 'p-alice');
     expect(privateHandSchema.safeParse(hand).success).toBe(true);
-    expect(parseHostMessage(envelope('privateHand', { hand })).ok).toBe(true);
+    expect(parseRoomMessage(envelope('privateHand', { hand })).ok).toBe(true);
   });
 
   it('accepts every engine event shape', () => {
@@ -178,11 +178,11 @@ describe('host message validation', () => {
       { type: 'drawPileExhausted' },
       { type: 'playerWon', playerId: 'p-alice' },
     ];
-    expect(parseHostMessage(envelope('gameEvents', { version: 3, events })).ok).toBe(true);
+    expect(parseRoomMessage(envelope('gameEvents', { version: 3, events })).ok).toBe(true);
   });
 
   it('rejects a rejection code that is not part of the engine', () => {
-    expect(parseHostMessage(envelope('actionRejected', { code: 'because' }))).toMatchObject({
+    expect(parseRoomMessage(envelope('actionRejected', { code: 'because' }))).toMatchObject({
       ok: false,
       error: 'invalidPayload',
     });
@@ -192,19 +192,19 @@ describe('host message validation', () => {
     const lobby = {
       roomCode: ROOM,
       hostPeerId: 'crush-482913',
-      hostPlayerId: 'pl_1',
+      creatorPlayerId: 'pl_1',
       maxPlayers: 6,
       phase: 'lobby',
       tableLanguage: 'he',
       players: Array.from({ length: 7 }, (_, index) => ({
         id: `pl_${index}`,
         name: `P${index}`,
-        isHost: index === 0,
+        isCreator: index === 0,
         health: 'connected',
         seat: Math.min(index, 5),
       })),
     };
-    expect(parseHostMessage(envelope('lobbyState', { lobby }))).toMatchObject({
+    expect(parseRoomMessage(envelope('lobbyState', { lobby }))).toMatchObject({
       ok: false,
       error: 'invalidPayload',
     });
@@ -212,14 +212,14 @@ describe('host message validation', () => {
 
   it('rejects a public state with a single player', () => {
     const broken = { ...publicState, players: [publicState.players[0]] };
-    expect(parseHostMessage(envelope('publicState', { state: broken }))).toMatchObject({
+    expect(parseRoomMessage(envelope('publicState', { state: broken }))).toMatchObject({
       ok: false,
       error: 'invalidPayload',
     });
   });
 
   it('rejects a client-only message on the client inbound path', () => {
-    expect(parseHostMessage(envelope('joinRequest', { displayName: 'Dana' }))).toMatchObject({
+    expect(parseRoomMessage(envelope('joinRequest', { displayName: 'Dana' }))).toMatchObject({
       ok: false,
       error: 'unknownType',
     });

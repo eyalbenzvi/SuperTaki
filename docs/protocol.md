@@ -1,25 +1,34 @@
 # Wire protocol
 
-Version: **5** sent, **5 only** accepted (`PROTOCOL_VERSION` and
+Version: **6** sent, **6 only** accepted (`PROTOCOL_VERSION` and
 `SUPPORTED_PROTOCOL_VERSIONS` in `src/features/game/network/protocol.ts`)
 
-Every message is JSON, travels over the room relay as a routed frame, and
-is validated with Zod **before it can influence any state**. Schemas are the single source of
+Every message is JSON, travels directly over a player's WebSocket to their room, and is
+validated with Zod **before it can influence any state**. Schemas are the single source of
 truth; this document describes them.
+
+There is one protocol now. Until version 5 there were two stacked on the same socket: this
+one, and a relay protocol underneath it that routed frames between named peers. Routing had
+nothing left to decide once the room became the authority — there is one destination — so
+the lower layer is gone and the socket _is_ the session. What remains of `worker/src/protocol.ts`
+is the room-code pattern, a frame-size ceiling, and the bare `ping`/`pong` strings the
+Cloudflare runtime answers without waking the room.
 
 ## Design rules
 
 1. **Clients send intents, never state.** There is no message that carries a game state from
    a client. The vocabulary makes an illegitimate claim inexpressible.
-2. **Clients do not name themselves.** No client→host message carries a player id (except
-   `resumeRequest`, which must prove a token). The host binds a seat to the connection at
-   join time and injects that id server-side.
+2. **Clients do not name themselves.** No client→room message carries a player id as an
+   assertion of identity (`resumeRequest` names one, but must prove a token for it, and
+   `roomCommand` names a _target_). The room binds a seat to the socket when a join is
+   accepted and injects that id server-side.
 3. **Validate first, then act.** Envelope → protocol version → room id → duplicate id →
    payload schema. Only then does a handler run.
 4. **Unknown fields are dropped, not trusted.** Zod objects strip anything not in the schema,
-   so an extra `{isHost: true}` cannot smuggle privilege.
+   so an extra `{isCreator: true}` cannot smuggle privilege.
 5. **Bounded everything.** Strings, arrays and numbers have maxima; a whole message is capped
-   at 64 KiB.
+   at 64 Ki UTF-16 code units — the check counts units rather than bytes, so the true byte
+   ceiling is up to three times that. It is a memory bound, not a budget.
 
 ## Envelope
 
@@ -30,7 +39,7 @@ Every message is a flat object with these fields plus a `type` and a `payload`:
 | `protocolVersion` | integer        | 0–1000     | Compatibility gate                            |
 | `id`              | string         | 1–64 chars | Message id, used for de-duplication           |
 | `roomId`          | string         | 3–32 chars | Room code; mismatches are ignored             |
-| `senderPeerId`    | string         | 1–64 chars | Transport-level id, for diagnostics only      |
+| `senderPeerId`    | string         | 1–64 chars | Connection label, for the log only            |
 | `timestamp`       | integer        | ≥ 0        | `Date.now()` at send; never used for ordering |
 | `type`            | string literal | —          | Discriminator                                 |
 | `payload`         | object         | per type   | Contents                                      |
@@ -38,14 +47,20 @@ Every message is a flat object with these fields plus a `type` and a `payload`:
 `timestamp` is deliberately **not** used to order anything — clocks on separate devices are
 not comparable. Ordering comes from `GameState.version`.
 
-De-duplication uses a bounded LRU of the last 512 message ids per connection. Relay
-channels are reliable and ordered, so duplicates are rare in practice; the guard exists for
-resends after a reconnect and for deliberate replay by a hostile peer.
+`senderPeerId` used to be a routable peer id — the relay addressed frames by it. Nothing is
+routed now, so it is a label: clients stamp a per-tab id, the room stamps `'room'`.
+
+De-duplication uses a bounded LRU of the last 512 message ids per connection. A WebSocket is
+reliable and ordered, so duplicates are rare in practice; the guard exists for deliberate
+replay by a hostile client. It is **not** what makes a move idempotent — an envelope id is
+minted fresh on every send, so a deliberate re-send of the same intent has a new one. That is
+`requestId`'s job, and it lives on the seat rather than on the connection, so it survives the
+reconnect it exists for.
 
 ## Validation pipeline
 
 ```
-parseClientMessage(raw) / parseHostMessage(raw)
+parseClientMessage(raw) / parseRoomMessage(raw)
   1. not an object / array / null            -> { ok:false, error:'notAnObject' }
   2. JSON longer than 64 KiB or cyclic       -> { ok:false, error:'tooLarge' }
   3. envelope shape invalid                  -> { ok:false, error:'malformedEnvelope' }
@@ -56,31 +71,63 @@ parseClientMessage(raw) / parseHostMessage(raw)
 ```
 
 The two entry points are directional: `parseClientMessage` accepts only messages a client may
-send, and `parseHostMessage` only messages a host may send. A client that sends `publicState`
-to the host is rejected as `unknownType` — the host has no code path that could accept it.
+send, and `parseRoomMessage` only messages the room may send. A client that sends
+`publicState` to the room is rejected as `unknownType` — the room has no code path that could
+accept it.
 
 Reaction to a failure:
 
-| Failure                                                                         | Host reaction                                      | Client reaction           |
+| Failure                                                                         | Room reaction                                      | Client reaction           |
 | ------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
 | `notAnObject`, `malformedEnvelope`, `invalidPayload`, `unknownType`, `tooLarge` | log and ignore                                     | log and ignore            |
 | `protocolMismatch`                                                              | reply `joinRejected(protocolMismatch)`, then close | surface a localised error |
 | wrong `roomId`                                                                  | ignore                                             | ignore                    |
 | duplicate `id`                                                                  | ignore                                             | ignore                    |
 
-Ignoring is deliberate: a peer that sends nonsense must not be able to make the host log
+Ignoring is deliberate: a client that sends nonsense must not be able to make the room log
 loudly, allocate memory or tear down the room.
 
-## Client → host messages
+## Client → room messages
 
-| Type            | Payload                          | Notes                                                                                                            |
-| --------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `joinRequest`   | `{displayName, wantsSpectator?}` | Name is 1–16 chars; the host sanitises and de-duplicates it. `wantsSpectator` is reserved and currently ignored. |
-| `resumeRequest` | `{playerId, resumeToken}`        | Retakes an existing seat after a refresh. Token is 8–64 chars.                                                   |
-| `action`        | `{action}`                       | The only way to affect the game. See below.                                                                      |
-| `playAgainVote` | `{agree}`                        | Only meaningful once a round has finished.                                                                       |
-| `leave`         | `{}`                             | Voluntary departure.                                                                                             |
-| `ping` / `pong` | `{nonce}`                        | Heartbeat.                                                                                                       |
+| Type            | Payload                            | Notes                                                                                                                 |
+| --------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `joinRequest`   | `{displayName, create?}`           | Name is 1–16 chars; the room sanitises and de-duplicates it. `create` opens the room, and is refused if it has seats. |
+| `resumeRequest` | `{playerId, resumeToken}`          | Retakes an existing seat after a refresh. Token is 8–64 chars. Works for **every** seat, the creator's included.      |
+| `action`        | `{action, requestId?, turnToken?}` | The only way to affect the game. See below.                                                                           |
+| `roomCommand`   | `{command}`                        | A lobby power. Honoured only from the seat named by `creatorPlayerId`. See below.                                     |
+| `playAgainVote` | `{agree}`                          | Only meaningful once a round has finished.                                                                            |
+| `pauseRequest`  | `{paused}`                         | Asks the table to hold, out loud.                                                                                     |
+| `abandonVote`   | `{agree}`                          | Ends a round by unanimous agreement of the players present.                                                           |
+| `nudge`         | `{targetPlayerId}`                 | Nudges a seat that is connected and not looking.                                                                      |
+| `leave`         | `{}`                               | Voluntary departure.                                                                                                  |
+
+There is no `ping` message. Liveness is a bare `ping`/`pong` string on the socket, answered by
+the Cloudflare runtime's auto-responder while the room stays hibernated — a `ping` _message_
+would wake the room, on a cadence, for every player, for as long as the room lived.
+
+### `roomCommand` payloads
+
+```ts
+| { type: 'startGame' }
+| { type: 'setMaxPlayers'; maxPlayers: number }
+| { type: 'setTableLanguage'; language: 'he' | 'en' }
+| { type: 'kickPlayer'; playerId: string }
+| { type: 'addBot' }
+| { type: 'setStandInEnabled'; enabled: boolean }
+| { type: 'standInNow'; playerId: string }
+| { type: 'stopStandIn'; playerId: string }
+| { type: 'skipAbsentTurn'; playerId: string }
+| { type: 'removeFromRound'; playerId: string }
+```
+
+All ten used to be method calls on a local `HostSession`, which is why they were never on the
+wire: the person with the buttons was, by construction, the person running the game. They are
+messages now, and the room authorises each against `creatorPlayerId` — so the buttons follow a
+credential rather than whichever device happens to be serving. One message type rather than
+ten keeps that check in exactly one place.
+
+If the creator's seat leaves the room entirely, the powers pass to the lowest-numbered
+remaining seat, so a table can always be started.
 
 ### `action` payloads
 
@@ -108,25 +155,33 @@ unconditional on the turn: both are accepted from any seat at any moment, includ
 (`nothingToDeclare`) and has not already declared it (`alreadyDeclared`), and changes nothing
 but `declaredLastCard`. `catchLastCard` requires that `targetId` is somebody else who is on a
 single undeclared card (`nothingToCatch`), and makes them draw the penalty. Two further
-conditions on a catch are the host's rather than the engine's, and answer with the same
-code: the target must be **connected**, and their hand must have been down to one card for
-at least `LAST_CARD_GRACE_MS` by the **host's** clock. See `docs/rules.md`.
+conditions on a catch are the room's rather than the engine's, and answer with the same
+code: the target must be **connected**, and their hand must have been down to one card for at
+least `LAST_CARD_GRACE_MS` by the **room's** clock. See `docs/rules.md`.
 
-## Host → client messages
+## Room → client messages
 
-| Type             | Payload                                       | Notes                                                                                                                     |
-| ---------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `joinAccepted`   | `{playerId, resumeToken, displayName, lobby}` | The assigned seat and its rejoin secret. `displayName` may differ from the requested one after sanitising/de-duplication. |
-| `joinRejected`   | `{reason}`                                    | `roomFull \| gameInProgress \| invalidName \| protocolMismatch \| unknownSeat \| invalidResumeToken \| roomClosed`        |
-| `lobbyState`     | `{lobby}`                                     | On any seat or health change, and once when a turn passes the nudge threshold.                                            |
-| `publicState`    | `{state}`                                     | The whole table, minus every hand.                                                                                        |
-| `privateHand`    | `{hand}`                                      | **Unicast.** Only the owner's cards.                                                                                      |
-| `gameEvents`     | `{version, events}`                           | Log lines; max 64 per message.                                                                                            |
-| `actionRejected` | `{code, requestId?}`                          | **Unicast**, an engine `RejectionCode`.                                                                                   |
-| `playAgainState` | `{agreed, required}`                          | Vote progress for the next round.                                                                                         |
-| `kicked`         | `{reason}`                                    | `removedByHost \| duplicateConnection`                                                                                    |
-| `hostClosed`     | `{reason, generation?}`                       | `hostLeft \| roomReset \| restarting \| handoff` — only the first two are terminal; see below.                            |
-| `ping` / `pong`  | `{nonce}`                                     | Heartbeat.                                                                                                                |
+| Type             | Payload                                       | Notes                                                                                                                           |
+| ---------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `joinAccepted`   | `{playerId, resumeToken, displayName, lobby}` | The assigned seat and its rejoin secret. `displayName` may differ from the requested one after sanitising/de-duplication.       |
+| `joinRejected`   | `{reason}`                                    | `roomFull \| gameInProgress \| invalidName \| protocolMismatch \| unknownSeat \| invalidResumeToken \| roomClosed \| roomTaken` |
+| `lobbyState`     | `{lobby}`                                     | On any seat or health change, and once when a turn passes the nudge threshold.                                                  |
+| `publicState`    | `{state}`                                     | The whole table, minus every hand.                                                                                              |
+| `privateHand`    | `{hand}`                                      | **Unicast.** Only the owner's cards, on the socket bound to that seat.                                                          |
+| `gameEvents`     | `{version, events}`                           | Log lines; max 64 per message.                                                                                                  |
+| `actionAccepted` | `{requestId, version}`                        | **Unicast.** The only trustworthy acknowledgement — see below.                                                                  |
+| `actionRejected` | `{code, requestId?}`                          | **Unicast**, an engine `RejectionCode`.                                                                                         |
+| `playAgainState` | `{agreed, required}`                          | Vote progress for the next round.                                                                                               |
+| `paused`         | `{pausedBy}`                                  | Somebody asked the table to wait.                                                                                               |
+| `nudged`         | `{fromPlayerId}`                              | **Unicast.** It is your turn and somebody is waiting.                                                                           |
+| `kicked`         | `{reason}`                                    | `removedByCreator \| duplicateConnection`                                                                                       |
+| `roomClosed`     | `{reason}`                                    | `roomClosed`. Terminal. Sent to a socket that woke from a hibernation into a room whose record no longer parses.                |
+
+`actionAccepted` cannot be inferred from the state moving forward, because in this game other
+players legally act out of turn: a new snapshot may have nothing to do with my move, and
+treating it as proof is how a lost action comes to look like a delivered one. It is sent
+_after_ the new table, so a client's move lock is never released while its turn counter is
+still one behind.
 
 ## Snapshot / event model
 
@@ -160,15 +215,15 @@ deal does not restart at 1.
   offer the choice by looking at the hand it already has.
 - `privateHand` is only ever sent with `connection.send` to one connection, never broadcast.
 - A client additionally checks `hand.playerId === myPlayerId` and ignores a hand that is not
-  its own, so even a buggy host cannot make a client render someone else's cards.
+  its own, so even a buggy room cannot make a client render someone else's cards.
 
 ## Example messages
 
-Join request (client → host):
+Join request (client → room):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "9f2c1a7b4e0d8c33",
   "roomId": "482913",
   "senderPeerId": "abc123def456",
@@ -178,14 +233,14 @@ Join request (client → host):
 }
 ```
 
-Join accepted (host → client):
+Join accepted (room → client):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "1b7e4c2a9d5f0e81",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000000120,
   "type": "joinAccepted",
   "payload": {
@@ -194,25 +249,24 @@ Join accepted (host → client):
     "displayName": "Dana",
     "lobby": {
       "roomCode": "482913",
-      "hostPeerId": "crush-482913",
-      "hostPlayerId": "pl_7c1e33a90b2d4f68",
+      "creatorPlayerId": "pl_7c1e33a90b2d4f68",
       "maxPlayers": 4,
       "phase": "lobby",
       "tableLanguage": "he",
       "players": [
-        { "id": "pl_7c1e33a90b2d4f68", "name": "Noa", "isHost": true, "health": "connected", "seat": 0 },
-        { "id": "pl_4f8fc9480f6e569d", "name": "Dana", "isHost": false, "health": "connected", "seat": 1 }
+        { "id": "pl_7c1e33a90b2d4f68", "name": "Noa", "isCreator": true, "health": "connected", "seat": 0 },
+        { "id": "pl_4f8fc9480f6e569d", "name": "Dana", "isCreator": false, "health": "connected", "seat": 1 }
       ]
     }
   }
 }
 ```
 
-An action (client → host) — note there is no player id anywhere:
+An action (client → room) — note there is no player id anywhere:
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "5c8a2e1d7b3f9046",
   "roomId": "482913",
   "senderPeerId": "abc123def456",
@@ -222,14 +276,14 @@ An action (client → host) — note there is no player id anywhere:
 }
 ```
 
-Public state (host → all) — card counts only:
+Public state (room → all) — card counts only:
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "aa10bb20cc30dd40",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042100,
   "type": "publicState",
   "payload": {
@@ -263,14 +317,14 @@ Public state (host → all) — card counts only:
 }
 ```
 
-Private hand (host → one client only):
+Private hand (room → one client only):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "bb11cc22dd33ee44",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042110,
   "type": "privateHand",
   "payload": {
@@ -286,14 +340,14 @@ Private hand (host → one client only):
 }
 ```
 
-Events (host → all):
+Events (room → all):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "cc12dd34ee56ff78",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042120,
   "type": "gameEvents",
   "payload": {
@@ -311,14 +365,14 @@ Events (host → all):
 }
 ```
 
-A rejection (host → one client):
+A rejection (room → one client):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "dd13ee24ff35aa46",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042130,
   "type": "actionRejected",
   "payload": { "code": "wrongTakiColor" }
@@ -341,66 +395,63 @@ Produced by the engine and mapped to localised strings by key `reject.<code>`:
 A test asserts every code has a Hebrew and an English message, so an unlocalised rejection
 cannot reach a player.
 
-`mustPlayAfterPlus` is retired: a Plus obligation may now be paid from the draw pile, so no
-host emits it any more. It stays in the vocabulary because an older host on a mixed table
-still does, and dropping a value from the enum would fail that message's schema — locking
-the receiving player's table instead of telling them about a rule they no longer have.
+`mustPlayAfterPlus` is retired: a Plus obligation may be paid from the draw pile, so nothing
+emits it any more. It stays in the vocabulary because a rejection code is part of a schema,
+and removing a value costs more than leaving one unused — a client built against a shorter
+enum would fail to parse a message from a room that still knew the longer one.
 
-## Version 4: what resilience added
+## Version 6: what moving the game to the room changed
 
-Every field below is **optional**, and that is load-bearing rather than lazy. The site is
-static and cached per browser, so the player who reloads — the very thing this work exists to
-make survivable — fetches the new bundle while everybody else keeps the old one. If a version
-were required to match exactly, that reload would answer `protocolMismatch` to the whole table
-and end the game on the way in. A mixed table loses the new behaviour, not the game.
+Version 5 and earlier had two versions in play at once — a table could be mixed, so every
+field added in 4 was optional and a version-3 reader simply lost the behaviour. That
+concession belonged to the topology: both sides of a table were browsers loading a static,
+per-browser-cached site, so a reload fetched a new bundle while everybody else kept the old.
 
-### New fields on existing messages
+There is one server now, always the newer of the two, so `SUPPORTED_PROTOCOL_VERSIONS` holds
+exactly one entry and will keep doing so. A stale tab is told to reload, which is the honest
+answer and the one the gate exists to give.
 
-| Message / object              | Field                                         | Meaning                                                                                                                                                                                                      |
-| ----------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `publicState.state`           | `turnSeq`                                     | Counts turn handovers, not commands. `version` moves for the out-of-turn declarations and catches that are legal at any moment, so it cannot answer "is my move still meant for the table I was looking at?" |
-| `publicState.state`           | `endReason`                                   | `won`, or `abandoned` for a round that ran out of players or was stopped by agreement.                                                                                                                       |
-| `publicState.state.players[]` | `left`                                        | The seat has left the round. Marked, never removed — which is why this array never falls below the two players the schema requires.                                                                          |
-| `lobbyState.lobby`            | `sentAt`                                      | The host's clock when the snapshot was built, so a client can cancel the skew between the two devices once.                                                                                                  |
-| `lobbyState.lobby`            | `seatGraceMs`                                 | How long the host will hold an absent seat. On the wire because there must be exactly one authority for it; the client _derives_ its own give-up deadline by subtraction.                                    |
-| `lobbyState.lobby`            | `pausedBy`                                    | Who asked the table to wait, or `null`.                                                                                                                                                                      |
-| `lobbyState.lobby`            | `waitingFor`, `waitingReason`, `waitingSince` | Who the table is waiting for and why (`turn`, `absent`, `breaker`, `paused`), so no screen has to infer it.                                                                                                  |
-| `lobbyState.lobby`            | `abandonVotes`                                | Seats that have agreed to end the round.                                                                                                                                                                     |
-| `lobbyState.lobby`            | `generation`                                  | Host generation, so a client can follow a handover.                                                                                                                                                          |
-| `lobbyState.lobby`            | `standInEnabled`                              | Whether this table lets a robot play a seat nobody is answering for. On the wire because it is a fact about the room every player is entitled to know, not only the host who set it.                         |
-| `lobbyState.lobby.players[]`  | `absentSince`                                 | When the seat went quiet, on the host's clock, paired with `sentAt`. A duration would be stale on arrival and would force a broadcast per heartbeat.                                                         |
-| `lobbyState.lobby.players[]`  | `left`                                        | As above.                                                                                                                                                                                                    |
-| `lobbyState.lobby.players[]`  | `bot`                                         | A robot seat: there is no device behind it, so no health, hold or vacate applies to it. See [robots.md](robots.md).                                                                                          |
-| `lobbyState.lobby.players[]`  | `standIn`                                     | A robot is playing this **human's** seat for as long as nobody answers for it. The seat, the name and the credential stay theirs; the flag is what lets every screen say so rather than imply it.            |
-| `action`                      | `requestId`                                   | Identifies one _intent_, stable across re-sends. Not the envelope id, which is regenerated on every send and so cannot match a replay.                                                                       |
-| `action`                      | `turnToken`                                   | `{currentPlayerId, turnSeq}` as the client understood them. Checked by the host only for `playCard` in turn, `drawCard` and `closeTaki`.                                                                     |
-| `hostClosed`                  | `generation`                                  | Where the room went, for a handover.                                                                                                                                                                         |
+### Removed
 
-### New messages
+| What                                | Why                                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `lobby.hostPeerId`                  | There is no host peer to address.                                                                       |
+| `lobby.generation`                  | Host generations existed only so a client could follow a handover.                                      |
+| `handoffOffer`, `handoffAccepted`   | The room does not move, so there is nothing to hand over.                                               |
+| `hostClosed(restarting \| handoff)` | Both meant "this is not the end" — a distinction only a host needed. A room that says it is closed, is. |
+| `ping` / `pong` messages            | Liveness is a bare socket frame the runtime answers without waking the room.                            |
+| `ConnectionHealth`'s `'unstable'`   | It meant "we are counting missed probes and are not sure". The runtime reports a closed socket.         |
+| `joinRequest.wantsSpectator`        | Reserved for years, never implemented, and no clearer for having been kept.                             |
 
-| Direction     | Type              | Purpose                                                                                                                                                                                            |
-| ------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| host → client | `actionAccepted`  | `{requestId, version}`. An acknowledgement cannot be inferred from the state moving forward, because other players legally act out of turn here — so a lost action would otherwise look delivered. |
-| host → client | `paused`          | Somebody asked the table to hold.                                                                                                                                                                  |
-| host → client | `nudged`          | It is your turn and another player is waiting.                                                                                                                                                     |
-| host → client | `handoffOffer`    | `{generation, snapshot}`, sent once to the named successor at the moment of a voluntary handover — never continuously.                                                                             |
-| client → host | `pauseRequest`    | Ask the table to wait, or let it carry on.                                                                                                                                                         |
-| client → host | `abandonVote`     | Agree to end a round with no winner.                                                                                                                                                               |
-| client → host | `nudge`           | Nudge the player the table is waiting on.                                                                                                                                                          |
-| client → host | `handoffAccepted` | The successor confirms it is serving, which is what lets the old host step down.                                                                                                                   |
+### Renamed and narrowed
 
-### New `hostClosed` reasons
+| Before                  | After                      | Note                                                                          |
+| ----------------------- | -------------------------- | ----------------------------------------------------------------------------- |
+| `hostPlayerId`          | `creatorPlayerId`          | Names the seat with the lobby buttons, not the device running the game.       |
+| `player.isHost`         | `player.isCreator`         | The same narrowing, per seat.                                                 |
+| `hostClosed`            | `roomClosed`               | One reason, `roomClosed`, and terminal.                                       |
+| `kicked(removedByHost)` | `kicked(removedByCreator)` | Whoever holds the lobby buttons, not an authority.                            |
+| `parseHostMessage`      | `parseRoomMessage`         | And `hostMessageSchema` → `roomMessageSchema`, `HostMessage` → `RoomMessage`. |
 
-`restarting` and `handoff` are the two that are **not** the end of anything. Before them a
-client had no way to tell a goodbye from a see-you-in-a-moment and treated both as fatal,
-which made a host returning impossible to build.
+Several `lobby` fields that were optional purely so an older reader could ignore them are now
+**required**: `sentAt`, `seatGraceMs`, `pausedBy`, `waitingFor`, `waitingReason`,
+`waitingSince`, `abandonVotes`, `standInEnabled`. Optionality that is genuinely "absent means
+false" — `player.left`, `bot`, `standIn`, `robotPlayed`, `absentSince` — stays.
 
-| Reason       | Terminal? | Meaning                                                                                                                                                                           |
-| ------------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hostLeft`   | yes       | The host closed the room.                                                                                                                                                         |
-| `roomReset`  | yes       | The host reset the room.                                                                                                                                                          |
-| `restarting` | **no**    | The host is reloading. Hold the seat and keep trying. Sent from `pagehide`, the only hook that fires reliably on a phone.                                                         |
-| `handoff`    | **no**    | Another player is taking over at `generation`. Its peer id is _derived_ from the room code and that number, so nothing has to be told an address and the room code never changes. |
+### Added
+
+| Direction     | What                      | Purpose                                                                                                                           |
+| ------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| client → room | `joinRequest.create`      | `{maxPlayers, tableLanguage}`, accepted only while the room has no seats. Replaces claiming a peer id derived from the room code. |
+| client → room | `roomCommand`             | The ten lobby powers, authorised against `creatorPlayerId`. See above.                                                            |
+| room → client | `joinRejected(roomTaken)` | The code is already a room. The client draws another, as it did when the relay refused an id claim.                               |
+
+### What survived unchanged, and why that mattered
+
+The whole snapshot/event model, the envelope, `requestId`, `turnToken`, `actionAccepted`, the
+rejection vocabulary, and both projections (`PublicGameState`, `PrivateHandView`). Reusing
+them is why `clientSession.ts` kept its shape through a change that deleted the class opposite
+it — the reasoning is recorded in [server-game-plan.md](server-game-plan.md) §2.
 
 ### Turn-scoped and out-of-turn intents
 
@@ -417,12 +468,12 @@ or its meaning.
 - The version is read in a **loose first pass**, before the strict schema. A peer running a
   different version therefore gets a clear `protocolMismatch` rather than a confusing
   validation error.
-- The host replies `joinRejected(protocolMismatch)` and closes; the client shows "the other
-  player is running a different version — both sides should reload the page".
-- There is no negotiation and no backwards compatibility shim. Both peers load the same
-  static site from the same URL, so a mismatch only happens when one has an old tab open. A
-  reload fixes it, which is a better outcome than maintaining translation layers between
-  versions of a private game.
+- The room replies `joinRejected(protocolMismatch)` and closes; the client shows "this page is
+  running an older version of the game — reload to get the current one".
+- There is no negotiation and no backwards compatibility shim. Every client loads the same
+  static site from the same URL and talks to one deployed worker, so a mismatch only happens
+  when a tab has been open across a release. A reload fixes it, which is a better outcome than
+  maintaining translation layers between versions of a private game.
 - Additive, optional fields do **not** need a bump: unknown fields are stripped, and an older
   peer simply ignores them. `wantsSpectator` is an example of a field reserved this way.
 - A **rule** change does need one, and it cannot be softened by accepting the older version

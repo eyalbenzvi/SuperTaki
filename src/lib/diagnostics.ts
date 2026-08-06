@@ -26,35 +26,18 @@ const STORAGE_KEY = 'superTaki:diagnostics';
 
 export type DiagnosticKind =
   | 'phase'
-  | 'transportError'
-  | 'signalling'
   | 'connectAttempt'
   | 'connectFailed'
   | 'channelClosed'
   | 'channelUnstable'
-  /** What kind of network path was actually in use, sampled while it existed. */
-  | 'path'
   | 'wake'
   | 'sleep'
   | 'suspicion'
   | 'reachability'
-  | 'hostSnapshot'
-  | 'hostRestart'
-  | 'handover'
-  | 'seatAbsent'
-  | 'seatReturned'
-  | 'turnSkipped'
   | 'note';
 
 /** Kinds that must never be evicted to make room for routine chatter. */
-const NEVER_EVICT: ReadonlySet<DiagnosticKind> = new Set<DiagnosticKind>([
-  'transportError',
-  'connectFailed',
-  'path',
-  'hostRestart',
-  'handover',
-  'suspicion',
-]);
+const NEVER_EVICT: ReadonlySet<DiagnosticKind> = new Set<DiagnosticKind>(['connectFailed', 'suspicion']);
 
 export interface DiagnosticEntry {
   /** Wall clock, so an entry can be read against a real time of day. */

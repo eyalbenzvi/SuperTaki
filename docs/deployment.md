@@ -137,10 +137,10 @@ HTTPS matters beyond good practice: `getRandomValues`, the Clipboard API and sec
 WebSockets all require or expect a secure context. `github.io` and a custom domain with
 HTTPS enforced both qualify.
 
-## The relay: one-time Cloudflare setup
+## The room server: one-time Cloudflare setup
 
-The game's multiplayer runs through the relay in `worker/` — a Cloudflare Worker with one
-Durable Object per room, on the free plan (no credit card). Deploying it once:
+The game itself runs in `worker/` — a Cloudflare Worker with one Durable Object per room,
+on the free plan (no credit card). Deploying it once:
 
 1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com).
 2. Copy the **Account ID** from the dashboard's overview page.
@@ -157,14 +157,21 @@ Durable Object per room, on the free plan (no credit card). Deploying it once:
 7. Re-run the Pages deploy (push anything, or dispatch it manually). The build injects the
    URL into the app and into the Content Security Policy — no manual CSP edit is needed.
 
+The variable is still called `RELAY_URL`, and the worker is still called
+`supertaki-relay`. Both names are historical — the worker stopped being a relay when the
+game moved into it — and both are kept deliberately: renaming them would break the deploy
+workflow, the repository variable and every page already built against them, in exchange
+for a better word.
+
 Without `RELAY_URL`, a production build only knows how to reach a local `wrangler dev` on
 `127.0.0.1:8787`, which is the right default for development and the wrong one for a
 deployed site.
 
-The relay redeploys automatically whenever `worker/**` changes on the default branch. To
-restrict which sites may use your relay, set an `ALLOWED_ORIGINS` variable on the worker in
-the Cloudflare dashboard (comma-separated origins); unset, any origin may connect, which is
-acceptable for a relay that carries no secrets and stores no game state.
+The worker redeploys automatically whenever `worker/**` changes on the default branch. To
+restrict which sites may use your room server, set an `ALLOWED_ORIGINS` variable on the
+worker in the Cloudflare dashboard (comma-separated origins). Unset, any origin may
+connect; a room is protected by its six-digit code rather than by its caller's origin, and
+joining one still requires that code.
 
 ## Verifying a deployment
 
@@ -174,8 +181,8 @@ acceptable for a relay that carries no secrets and stores no game state.
 4. Open the invite link on a second device and join. Both should show "2 of N players".
 5. Start the game. Each player sees eight cards, and only their own.
 
-For a quick single-device check that skips the relay, append `?transport=broadcast` to the URL
-in two tabs.
+For a single-device check, open the invite link in a second tab of the same browser — two
+tabs are two ordinary players. There is no same-device special case any more.
 
 ## Troubleshooting
 

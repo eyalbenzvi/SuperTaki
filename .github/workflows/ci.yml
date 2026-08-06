@@ -52,8 +52,8 @@ jobs:
           path: coverage
           retention-days: 7
 
-  relay:
-    name: Relay worker - typecheck, tests, smoke
+  room:
+    name: Room worker - typecheck, tests, smoke
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,11 +70,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The worker typechecks the engine, the robots and the wire protocol as well
+      # as its own code — they are the app's, borrowed by relative import — so a
+      # rules change that breaks the room fails here as well as in the app's job.
       - name: Typecheck and unit tests
         run: npm run verify
 
-      # Real WebSocket clients against the real worker under `wrangler dev`:
-      # registration, claim arbitration, routing, presence, host reclaim.
+      # A whole round over real WebSockets against real workerd: create, collision,
+      # join, authorisation, deal, privacy, replay dedup, a drop and resume, a winner.
       - name: Smoke test against workerd
         run: npm run smoke
 
@@ -109,11 +112,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The e2e suite runs against the real room under `wrangler dev`, so the
+      # worker's own dependencies have to be here too.
+      - name: Install the worker's dependencies
+        run: npm ci
+        working-directory: worker
+
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
 
-      - name: Build
-        run: npm run build
+      # Built with the local worker's URL, which is baked into both the bundle and
+      # the page's `connect-src`. A preview built without it has no room to talk to.
+      - name: Build against the local room worker
+        run: npm run build:e2e
 
       - name: Run Playwright tests
         run: npm run test:e2e

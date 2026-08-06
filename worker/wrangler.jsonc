@@ -1,8 +1,14 @@
 {
-  // The relay that replaces both the PeerJS broker and WebRTC itself: game
-  // traffic flows through one Durable Object per room, over plain WebSockets.
+  // One Durable Object per room code, and the object is the game: it holds every
+  // hand, runs the rules and keeps every deadline on its single alarm.
+  //
+  // `name` and the `ROOM` binding are deliberately unchanged from when this was a
+  // relay. The deployed URL, the `RELAY_URL` repository variable and every page
+  // already built against it all point at `supertaki-relay`; renaming would break
+  // the lot in exchange for a better word.
+  //
   // Free plan throughout — Durable Objects here are SQLite-backed, which is the
-  // variant the free tier includes.
+  // variant the free tier includes, and hibernation is what keeps an idle room free.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "supertaki-relay",
   "main": "src/index.ts",

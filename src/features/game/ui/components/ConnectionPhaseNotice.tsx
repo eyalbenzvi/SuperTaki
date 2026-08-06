@@ -24,7 +24,7 @@ export function ConnectionPhaseNotice(): ReactNode {
   const t = useT();
   const phase = useAppStore((state) => state.phase);
   const error = useAppStore((state) => state.error);
-  const role = useAppStore((state) => state.role);
+  const inRoom = useAppStore((state) => state.inRoom);
   const online = useAppStore((state) => state.online);
   const retryConnection = useAppStore((state) => state.retryConnection);
   const leaveRoom = useAppStore((state) => state.leaveRoom);
@@ -64,7 +64,7 @@ export function ConnectionPhaseNotice(): ReactNode {
       role="status"
       actions={
         <>
-          {error?.retryable && role === 'client' ? (
+          {error?.retryable && inRoom ? (
             <Button icon="clockwise" onClick={retryConnection}>
               {t('common.retry')}
             </Button>

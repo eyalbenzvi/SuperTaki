@@ -7,7 +7,7 @@ import { useT } from './useT.ts';
 const VISIBLE_MS = 5000;
 
 /**
- * Explains a rejected move. Rejections are the host's answer to an illegal
+ * Explains a rejected move. Rejections are the room's answer to an illegal
  * action, so they must be shown rather than swallowed — and they interrupt,
  * because the player believes the move happened.
  *

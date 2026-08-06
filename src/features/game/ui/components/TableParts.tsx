@@ -114,8 +114,12 @@ export function DirectionIndicator({
 /**
  * A player's link quality.
  *
- * A healthy connection is the normal case and says so with a dot alone; anything
- * worse spells the word out, because that is the state a player has to act on.
+ * A healthy connection is the normal case and says so with a dot alone; the other
+ * spells the word out, because that is the state a player has to act on.
+ *
+ * Two states rather than three. There used to be an "unstable" one, which meant the
+ * authority was another browser counting unanswered pings and had not made up its
+ * mind. The room is told when a socket closes, so it never has to guess.
  */
 export function HealthBadge({
   health,
@@ -126,7 +130,6 @@ export function HealthBadge({
 }): ReactNode {
   const labels = {
     connected: t('health.connected'),
-    unstable: t('health.unstable'),
     disconnected: t('health.disconnected'),
   } as const;
   return (
