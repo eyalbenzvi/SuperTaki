@@ -501,7 +501,7 @@ describe('robots at the table', () => {
       patch: {
         players: [
           { id: HOST_ID, name: 'דנה', cardCount: 2 },
-          { id: GUEST_ID, name: 'רובוט תמר', cardCount: 5 },
+          { id: GUEST_ID, name: 'רובוט 1', cardCount: 5 },
         ],
       },
     });
@@ -510,12 +510,12 @@ describe('robots at the table', () => {
         phase: 'inGame',
         players: [
           { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
-          { id: GUEST_ID, name: 'רובוט תמר', isCreator: false, health: 'connected', seat: 1, bot: true },
+          { id: GUEST_ID, name: 'רובוט 1', isCreator: false, health: 'connected', seat: 1, bot: true },
         ],
       }),
     });
     renderApp();
-    const seat = screen.getByText('רובוט תמר').closest('li');
+    const seat = screen.getByText('רובוט 1').closest('li');
     expect(seat).not.toBeNull();
     expect(within(seat as HTMLElement).getByText('רובוט')).toBeInTheDocument();
   });

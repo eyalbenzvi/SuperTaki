@@ -5,6 +5,7 @@ import type { BotMove } from '../../../src/features/game/bot/policy.ts';
 import { createRng, nextFloat } from '../../../src/features/game/engine/prng.ts';
 import type { GameState } from '../../../src/features/game/engine/state.ts';
 import { cards, makeState, players } from '../helpers/engineFixtures.ts';
+import { PLAY_REMOTE_MS } from '../../../src/features/game/ui/choreograph.ts';
 import {
   BOT_ANSWER_MAX_MS,
   BOT_ANSWER_MIN_MS,
@@ -407,8 +408,15 @@ describe('how long a robot thinks', () => {
     expect(box.pauses[0]?.ms).toBe(0);
   });
 
-  it('rattles through a Taki sequence rather than pausing between every card', () => {
-    // At a real table those cards go down in one movement; the decision is already made.
+  it('plays a Taki sequence briskly, but never faster than the cards can be seen', () => {
+    /*
+     * Two bounds, and the sequence pause is the one number that has to satisfy both.
+     * Below: a card played by somebody else flies for `PLAY_REMOTE_MS` (240 ms), so
+     * anything near that put the next card in the air as the last one landed and the
+     * run read as a blur. Above: the decision was made when the sequence opened, so
+     * a card inside one must not cost what a fresh think costs — its whole range
+     * stays under the middle of the think range.
+     */
     const box = harness(
       makeState({
         players: players('Ann', 'Ben'),
@@ -425,7 +433,8 @@ describe('how long a robot thinks', () => {
     const pause = box.pauses[0]?.ms ?? 0;
     expect(pause).toBeGreaterThanOrEqual(BOT_SEQUENCE_MIN_MS);
     expect(pause).toBeLessThanOrEqual(BOT_SEQUENCE_MAX_MS);
-    expect(pause).toBeLessThan(BOT_THINK_MIN_MS);
+    expect(BOT_SEQUENCE_MIN_MS).toBeGreaterThan(2 * PLAY_REMOTE_MS);
+    expect(BOT_SEQUENCE_MAX_MS).toBeLessThan((BOT_THINK_MIN_MS + BOT_THINK_MAX_MS) / 2);
   });
 
   it('owes nothing for a seat with no view of the table', () => {

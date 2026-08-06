@@ -307,6 +307,9 @@ export const en = {
   'robot.add': 'Add a robot',
   'robot.addHint': 'A robot takes a seat and plays like anybody else. Two seats is a game.',
   'robot.roomFull': 'The table is full. Raise the limit to add a robot.',
+  'robot.remove': 'Remove',
+  'robot.removeLabel': 'Remove {name}',
+  'robot.removeHint': 'Robots can be added and removed until the game starts.',
   'robot.standInLabel': 'Let a robot play for a missing player',
   'robot.standInHint':
     'When somebody stops answering, a robot plays their hand so the round keeps moving. They get their seat back the moment they come back.',

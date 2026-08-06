@@ -50,6 +50,25 @@ describe('card matching', () => {
     expect(isCardPlayable(card('blue:4'), ctx)).toBe(false);
   });
 
+  it('takes a Super Taki as a Taki, in both directions', () => {
+    /*
+     * The reported bug, exactly: a Super Taki closed on top, the colour it left
+     * behind red, and a yellow Taki in hand that the table refused. The card says
+     * TAKI on both sides of that comparison.
+     */
+    const onSuper = context({ topCard: card('superTaki'), activeColor: 'red' });
+    expect(isCardPlayable(card('yellow:taki'), onSuper)).toBe(true);
+    expect(isCardPlayable(card('red:taki'), onSuper)).toBe(true);
+    // Nothing else about the Super Taki became a symbol match: it repaints nothing,
+    // so a yellow anything-else is still refused on a red table.
+    expect(isCardPlayable(card('yellow:stop'), onSuper)).toBe(false);
+    expect(isCardPlayable(card('yellow:4'), onSuper)).toBe(false);
+
+    // And the other way round, which held already because a Super Taki is wild.
+    const onTaki = context({ topCard: card('yellow:taki'), activeColor: 'yellow' });
+    expect(isCardPlayable(card('superTaki'), onTaki)).toBe(true);
+  });
+
   it('uses the chosen colour after a wild card, with no symbol match available', () => {
     const ctx = context({ topCard: card('colorChange'), activeColor: 'green' });
     expect(isCardPlayable(card('green:1'), ctx)).toBe(true);

@@ -330,6 +330,24 @@ describe('connection notices', () => {
   });
 });
 
+/** A table of the host plus one robot, which is what seating one leaves behind. */
+function withRobot(): ReturnType<typeof lobbyFixture> {
+  return lobbyFixture({
+    players: [
+      { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
+      { id: 'p-robot', name: 'רובוט 1', isCreator: false, health: 'connected', seat: 1, bot: true },
+    ],
+  });
+}
+
+function robotSeat(): HTMLElement {
+  const row = screen.getAllByRole('listitem').find((item) => item.textContent?.includes('רובוט 1'));
+  if (!row) {
+    throw new Error('no robot seat on screen');
+  }
+  return row;
+}
+
 describe('robots in the lobby', () => {
   it('offers the host a robot, and says what one is for', () => {
     enterLobby();
@@ -362,22 +380,42 @@ describe('robots in the lobby', () => {
   });
 
   it('marks a robot seat as one, and shows no connection badge for it', () => {
-    enterLobby({
-      lobby: lobbyFixture({
-        players: [
-          { id: HOST_ID, name: 'דנה', isCreator: true, health: 'connected', seat: 0 },
-          { id: 'p-robot', name: 'רובוט תמר', isCreator: false, health: 'connected', seat: 1, bot: true },
-        ],
-      }),
-    });
+    enterLobby({ lobby: withRobot() });
     renderApp();
-    const items = screen.getAllByRole('listitem');
-    const robotRow = items.find((item) => item.textContent?.includes('רובוט תמר'));
-    expect(robotRow).toBeDefined();
-    expect(within(robotRow as HTMLElement).getByText('רובוט')).toBeInTheDocument();
+    const robotRow = robotSeat();
+    expect(within(robotRow).getByText('רובוט')).toBeInTheDocument();
     // There is no connection behind a robot, so a connection badge would be a claim
     // about something that does not exist.
-    expect(within(robotRow as HTMLElement).queryByText('לא מחובר')).not.toBeInTheDocument();
+    expect(within(robotRow).queryByText('לא מחובר')).not.toBeInTheDocument();
+  });
+
+  it('lets the host take a robot back off the table, in words and in one tap', async () => {
+    const removePlayer = vi.fn();
+    enterLobby({ lobby: withRobot() });
+    setState({ removePlayer });
+    const { user } = renderApp();
+
+    // Removing a person asks first; a robot is a chair the host put there a tap ago,
+    // so it says what it does and does it. A glyph beside a badge was not findable.
+    const remove = within(robotSeat()).getByRole('button', { name: 'הסרה של רובוט 1' });
+    expect(remove).toHaveTextContent('הסרה');
+    await user.click(remove);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(removePlayer).toHaveBeenCalledWith('p-robot');
+  });
+
+  it('says removal is open until the deal, while there is a robot to remove', () => {
+    enterLobby({ lobby: withRobot() });
+    renderApp();
+    expect(screen.getByText(/עד תחילת המשחק/)).toBeInTheDocument();
+  });
+
+  it('offers a guest no way to remove a robot', () => {
+    enterLobby({ lobby: withRobot() });
+    setState({ inRoom: true, localPlayerId: GUEST_ID });
+    renderApp();
+    expect(within(robotSeat()).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('lets the host say whether a robot may cover a missing player', async () => {

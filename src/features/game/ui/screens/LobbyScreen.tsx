@@ -189,7 +189,29 @@ export function LobbyScreen(): ReactNode {
               ) : (
                 <HealthBadge health={player.health} t={t} />
               )}
-              {host && !player.isCreator ? (
+              {/*
+                Two removals, deliberately not one control.
+
+                Taking a person out of the room ends something they are part of, so it
+                is an icon that asks first. A robot is a chair the host put there a tap
+                ago and can put back with another tap: it says "Remove" in words, it
+                does it immediately, and it is legible as an offer rather than hidden
+                behind a glyph beside a badge. Both are the lobby's alone — once the
+                round is dealt the seats are the round's, and this screen is gone.
+              */}
+              {host && player.bot ? (
+                <Button
+                  icon="remove"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t('robot.removeLabel', { name: player.name })}
+                  onClick={() => {
+                    state.removePlayer(player.id);
+                  }}
+                >
+                  {t('robot.remove')}
+                </Button>
+              ) : host && !player.isCreator ? (
                 <Button
                   iconOnly
                   icon="remove"
@@ -211,7 +233,13 @@ export function LobbyScreen(): ReactNode {
               {t('robot.add')}
             </Button>
             <span className="field__hint">
-              {players.length >= roomLimit ? t('robot.roomFull') : t('robot.addHint')}
+              {players.length >= roomLimit
+                ? t('robot.roomFull')
+                : players.some((player) => player.bot === true)
+                  ? // Says the deadline out loud while there is still a robot to remove:
+                    // the control beside the seat is only here until the deal.
+                    t('robot.removeHint')
+                  : t('robot.addHint')}
             </span>
           </div>
         ) : null}
