@@ -124,10 +124,17 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 ## Running the tests
 
 ```bash
-npm test                # 798 unit + component tests
+npm test                # 797 unit + component tests
 npm run test:coverage   # same, with coverage thresholds enforced
 npm run test:e2e        # 50 scenarios x 2 viewports (needs a Chromium download once)
+
+cd worker && npm run verify   # 69 room tests, with their own coverage floor
+cd worker && npm run smoke    # a whole round over real sockets against wrangler dev
 ```
+
+**`npm run verify` at the root does not test the room.** It covers the app; the room is a
+separate package with its own `verify`, and both halves are gated separately in CI. Run both
+before pushing anything that touches `worker/`.
 
 Playwright downloads Chromium on first use (`npx playwright install chromium`). If your
 environment already has a Chromium build, point Playwright at it instead:
