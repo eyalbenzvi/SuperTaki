@@ -119,9 +119,18 @@ export function cardColor(card: Card): CardColor | null {
 /**
  * Stable identifier used for "same symbol" matching. Two cards match by symbol
  * when this value is equal (e.g. any `stop` matches any other `stop`).
+ *
+ * A Super Taki answers to `taki`, because that is what is printed on it: it is a
+ * Taki that carries no colour of its own, and once played it *is* the leading
+ * colour's Taki. Keeping it a symbol of its own made a coloured Taki illegal on
+ * top of one — the table showed TAKI, the hand held TAKI, and the move was
+ * refused — which is the one reading nobody at a table would arrive at.
  */
 export function cardSymbol(card: Card): string {
-  return isNumberCard(card) ? `number:${card.value}` : card.kind;
+  if (isNumberCard(card)) {
+    return `number:${card.value}`;
+  }
+  return card.kind === 'superTaki' ? 'taki' : card.kind;
 }
 
 export function isCardColor(value: unknown): value is CardColor {

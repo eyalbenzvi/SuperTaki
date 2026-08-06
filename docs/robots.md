@@ -119,16 +119,16 @@ otherwise paid in full.
 
 All in `network/timing.ts`, all jittered from a per-seat seeded stream.
 
-| Constant                      | Value       | What it is                                     |
-| ----------------------------- | ----------- | ---------------------------------------------- |
-| `BOT_THINK_MIN_MS` … `MAX`    | 0.7–1.7 s   | before an ordinary move                        |
-| `BOT_SEQUENCE_MIN_MS` … `MAX` | 0.26–0.52 s | between cards inside a Taki sequence           |
-| `BOT_DECLARE_MIN_MS` … `MAX`  | 0.9–2.0 s   | before declaring its own last card             |
-| `BOT_CATCH_MIN_MS` … `MAX`    | 2.2–4.0 s   | before calling somebody out                    |
-| `BOT_ANSWER_MIN_MS` … `MAX`   | 0.5–1.2 s   | before answering an open +3                    |
-| `BOT_STALL_MS`                | 15 s        | before the room passes a robot's own seat      |
-| `STAND_IN_ABSENT_MS`          | 45 s        | absence before a robot may play a human's seat |
-| `STAND_IN_IDLE_MS`            | 90 s        | silence, while present, before the same        |
+| Constant                      | Value      | What it is                                     |
+| ----------------------------- | ---------- | ---------------------------------------------- |
+| `BOT_THINK_MIN_MS` … `MAX`    | 0.7–1.7 s  | before an ordinary move                        |
+| `BOT_SEQUENCE_MIN_MS` … `MAX` | 0.62–0.9 s | between cards inside a Taki sequence           |
+| `BOT_DECLARE_MIN_MS` … `MAX`  | 0.9–2.0 s  | before declaring its own last card             |
+| `BOT_CATCH_MIN_MS` … `MAX`    | 2.2–4.0 s  | before calling somebody out                    |
+| `BOT_ANSWER_MIN_MS` … `MAX`   | 0.5–1.2 s  | before answering an open +3                    |
+| `BOT_STALL_MS`                | 15 s       | before the room passes a robot's own seat      |
+| `STAND_IN_ABSENT_MS`          | 45 s       | absence before a robot may play a human's seat |
+| `STAND_IN_IDLE_MS`            | 90 s       | silence, while present, before the same        |
 
 `BOT_STALL_MS` is the one that is not about pacing. A robot cannot be absent, so no grace,
 hold or vacate would ever rescue a table stuck on one — a suspended tab, a throttled timer or
@@ -186,9 +186,16 @@ puts the phone down does not stop the round, and picking it up takes the seat st
   sees: _"a robot is playing for Noa"_. The seat-hold countdown is suppressed while it lasts,
   because the table is not waiting for anybody.
 - The seat holding the lobby buttons can start a stand-in early, or stop one, from that notice.
+- A robot is called **"Robot 1"**, "Robot 2" and so on, in the table's language, numbered from
+  the lowest number the table is not using — so removing one and adding another reuses its
+  number rather than climbing. Human first names were tried and were the wrong call: the one
+  thing a player needs to know about a seat is whether a person is behind it.
+- The creator can **take a robot off the table** from the seat's own row, right up to the deal.
+  Unlike removing a person it asks nothing first, because nothing is lost: a robot removed by
+  mistake is one tap away from coming back.
 
 Nothing about robot-ness is hidden, and nothing about it is inferred from a name: a human may
-of course call themselves "Robot Fern", and the badge comes from the seat, not the string.
+of course call themselves "Robot 1", and the badge comes from the seat, not the string.
 
 ## Votes
 

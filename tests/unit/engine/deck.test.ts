@@ -75,7 +75,13 @@ describe('deck composition', () => {
   it('derives comparable symbols', () => {
     expect(cardSymbol({ id: 'x', kind: 'number', color: 'red', value: 7 })).toBe('number:7');
     expect(cardSymbol({ id: 'y', kind: 'stop', color: 'blue' })).toBe('stop');
-    expect(cardSymbol({ id: 'z', kind: 'superTaki' })).toBe('superTaki');
+    // A Super Taki prints TAKI, so it compares as one. That is what makes a coloured
+    // Taki legal on top of it.
+    expect(cardSymbol({ id: 'z', kind: 'superTaki' })).toBe('taki');
+    expect(cardSymbol({ id: 'w', kind: 'taki', color: 'yellow' })).toBe('taki');
+    // Every other colourless card stays a symbol of its own.
+    expect(cardSymbol({ id: 'v', kind: 'king' })).toBe('king');
+    expect(cardSymbol({ id: 'u', kind: 'colorChange' })).toBe('colorChange');
   });
 
   it('validates colour strings', () => {

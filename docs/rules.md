@@ -74,6 +74,11 @@ three cards it would have sent back are drawn by the player who spent it. See be
 Note the consequence of symbol matching: a Blue Stop is legal on a Red Stop, because the
 _symbols_ match even though the colours do not. The same is what lets any +2 answer any +2.
 
+**A Super Taki is a Taki for the purpose of matching.** It prints TAKI and it has no colour
+of its own, so a Taki of any colour is legal on top of one — the symbols match — and a Taki
+of any colour may equally be answered by the Super Taki. Anything else would leave a table
+showing TAKI refusing a hand holding TAKI.
+
 **Drawing ends your turn.** A card you just drew may not be played in the same turn, even
 if it is legal. (Chosen for clarity; some variants allow it.)
 
@@ -230,6 +235,9 @@ Super Taki is a colourless Taki that takes the colour already in play:
    colourless cards, explicit close, last-card effect on closing.
 4. If you close the sequence with the Super Taki still the top card, the turn simply passes
    and the colour is unchanged.
+5. It matches as a Taki. Once it is the top card, a coloured Taki from anybody's hand is a
+   plain symbol match on it, sequence closed — the next player is not made to hunt for the
+   leading colour just because the card that set it happens to be colourless.
 
 ### Effect order when a card is played
 
@@ -429,6 +437,10 @@ opened it in. One turn is one sequence, and one colour.
 
 מהתאמת הסמלים נובע שעצור כחול חוקי על עצור אדום, וגם שכל קח 2 עונה לכל קח 2.
 
+**סופר טאקי נחשב טאקי לצורך ההתאמה.** מודפס עליו טאקי ואין לו צבע משלו, ולכן טאקי בכל צבע
+חוקי עליו — הסמלים מתאימים — וגם ההפך: סופר טאקי חוקי על כל טאקי. כל קריאה אחרת הייתה
+משאירה שולחן שמראה טאקי ודוחה יד שמחזיקה טאקי.
+
 **משיכה מסיימת את התור.** קלף שנמשך עכשיו לא נכנס לשולחן באותו תור, גם אם הוא חוקי.
 
 **הנחת הקלף האחרון מנצחת בסבב**, עם הכרזה או בלעדיה. מה שקלף אחרון בלי הכרזה מסכן הוא
@@ -566,6 +578,9 @@ opened it in. One turn is one sequence, and one colour.
 3. משם הרצף מתנהג בדיוק כמו רצף טאקי: רק אותו צבע, בלי קלפים ללא צבע, סגירה מפורשת,
    והשפעת הקלף האחרון בסגירה.
 4. אם סוגרים כשהסופר טאקי עדיין הקלף העליון, התור פשוט עובר והצבע לא משתנה.
+5. הוא מתאים כטאקי. ברגע שהוא הקלף העליון, טאקי צבעוני מכל יד הוא התאמת סמל רגילה עליו,
+   אחרי שהרצף נסגר — אין סיבה שהשחקן הבא יחפש דווקא את הצבע המוביל רק מפני שהקלף שקבע אותו
+   הוא חסר צבע.
 
 ### סדר ההשפעות בהנחת קלף
 

@@ -168,10 +168,18 @@ export const BOT_THINK_MAX_MS = 1_700;
  *
  * A six-card sequence at full thinking pace is ten seconds of watching somebody
  * else's hand empty. At a real table those cards go down in a rattle, and the
- * decision has already been made.
+ * decision has already been made — so this stays well under a think.
+ *
+ * It has a floor it may not go under, and 260 ms was below it. A card played by
+ * somebody else flies for `PLAY_REMOTE_MS` (240 ms), so a pause that short put
+ * the next card in the air as the previous one landed: the run read as one
+ * blur, and past `CATCH_UP_LAG` beats the view gave up describing it at all.
+ * The lower bound is now the flight plus enough still air to see what landed,
+ * which is the whole point of pausing between cards rather than sending the
+ * sequence in one message.
  */
-export const BOT_SEQUENCE_MIN_MS = 260;
-export const BOT_SEQUENCE_MAX_MS = 520;
+export const BOT_SEQUENCE_MIN_MS = 620;
+export const BOT_SEQUENCE_MAX_MS = 900;
 
 /**
  * Before a robot declares its own last card.

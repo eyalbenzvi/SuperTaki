@@ -40,18 +40,15 @@ test.describe('a table with a robot in it', () => {
     await page.getByRole('button', { name: 'Add a robot' }).click();
     await expect(page.getByText('2 of 2 players')).toBeVisible();
     const roster = page.locator('.player-list__item').nth(1);
-    await expect(roster).toContainText('Robot');
+    // Numbered, not given a first name: the seat says what it is.
+    await expect(roster).toContainText('Robot 1');
     await expect(roster.getByText('Robot', { exact: true })).toBeVisible();
     // The table is full, so the offer is withdrawn rather than left to fail.
     await expect(page.getByRole('button', { name: 'Add a robot' })).toBeDisabled();
 
-    // It can be taken off the table as easily as it was put on.
-    await page
-      .locator('.player-list__item')
-      .nth(1)
-      .getByRole('button', { name: /Remove/ })
-      .click();
-    await page.getByRole('button', { name: 'Remove player' }).click();
+    // It can be taken off the table as easily as it was put on: one tap, no
+    // confirmation, because nothing is lost — the next tap puts one back.
+    await roster.getByRole('button', { name: 'Remove Robot 1' }).click();
     await expect(page.getByText('1 of 2 players')).toBeVisible();
 
     await page.getByRole('button', { name: 'Add a robot' }).click();

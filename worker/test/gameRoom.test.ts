@@ -1232,19 +1232,54 @@ describe('standing in for a human', () => {
     expect(small.room.snapshotForTests().room?.seats.length).toBe(2);
   });
 
-  it('gives a second robot a different name, and keeps both across a hibernation', () => {
+  it('numbers robots, and gives a second one a different number, across a hibernation', () => {
     const table = new Harness();
     const creator = table.join('Dana', CREATE);
     creator.client.say('roomCommand', { command: { type: 'addBot' } });
     creator.client.say('roomCommand', { command: { type: 'addBot' } });
 
     const names = (table.room.snapshotForTests().room?.seats ?? []).filter((s) => s.bot).map((s) => s.name);
-    expect(names.length).toBe(2);
-    expect(new Set(names).size).toBe(2);
+    // A number, not a first name: what a seat is matters more than that it reads as
+    // somebody, and the number tells two robots apart in the feed just as well.
+    expect(names).toEqual(['רובוט 1', 'רובוט 2']);
 
     table.hibernate();
     const back = (table.room.snapshotForTests().room?.seats ?? []).filter((s) => s.bot);
     expect(back.map((s) => s.name)).toEqual(names);
+  });
+
+  it('takes a robot back off the table until the cards are dealt, and not after', () => {
+    /*
+     * The other half of seating one. A robot is the only seat the creator both puts
+     * there and can take away with nothing lost — nobody is disconnected, nobody has
+     * to be invited back — and the deal is the line, exactly as it is for a person.
+     */
+    const table = new Harness();
+    const creator = table.join('Dana', CREATE);
+    creator.client.say('roomCommand', { command: { type: 'addBot' } });
+    creator.client.say('roomCommand', { command: { type: 'addBot' } });
+
+    const first = (table.room.snapshotForTests().room?.seats ?? []).find((s) => s.bot);
+    creator.client.say('roomCommand', { command: { type: 'kickPlayer', playerId: first?.playerId ?? '' } });
+
+    const left = table.room.snapshotForTests().room?.seats ?? [];
+    expect(left.map((s) => s.name)).toEqual(['Dana', 'רובוט 2']);
+    // Seats close up behind it, and the room forgets the stream that fed it.
+    expect(left.map((s) => s.seat)).toEqual([0, 1]);
+    expect(Object.keys(table.room.snapshotForTests().room?.botRng ?? {})).not.toContain(first?.playerId);
+
+    // The number it gave back is the number the next robot takes.
+    creator.client.say('roomCommand', { command: { type: 'addBot' } });
+    expect((table.room.snapshotForTests().room?.seats ?? []).map((s) => s.name)).toEqual([
+      'Dana',
+      'רובוט 2',
+      'רובוט 1',
+    ]);
+
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+    const dealt = (table.room.snapshotForTests().room?.seats ?? []).find((s) => s.bot);
+    creator.client.say('roomCommand', { command: { type: 'kickPlayer', playerId: dealt?.playerId ?? '' } });
+    expect(table.room.snapshotForTests().room?.seats.length).toBe(3);
   });
 
   it('passes a robot’s own seat if the robot does not move', () => {

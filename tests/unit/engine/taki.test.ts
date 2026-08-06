@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { applyCommand, currentPlayer, topCard } from '../../../src/features/game/engine/engine.ts';
+import {
+  applyCommand,
+  currentPlayer,
+  playContextFromState,
+  topCard,
+} from '../../../src/features/game/engine/engine.ts';
 import { getPlayableCardIds } from '../../../src/features/game/engine/rules.ts';
 import {
   cards,
@@ -350,6 +355,33 @@ describe('super taki', () => {
     expectRejected(play(state, 'p-alice', 'blue:3'), 'wrongTakiColor');
     state = expectOk(play(state, 'p-alice', 'green:stop')).state;
     expect(state.takiMode?.cardsPlayed).toBe(3);
+  });
+
+  it('accepts a coloured Taki from the next player once it is the top card', () => {
+    /*
+     * The whole reported sequence, played out: Bob opens with a Super Taki on a red
+     * table, closes it straight away, and Alice — holding a yellow Taki and nothing
+     * red — is told she has no legal card. She has: the pile says TAKI.
+     */
+    let state = makeState({
+      hands: { 'p-alice': cards('yellow:taki', 'blue:stop'), 'p-bob': cards('superTaki', 'red:1') },
+      discardPile: cards('red:9'),
+      currentPlayerIndex: 1,
+    });
+    state = expectOk(play(state, 'p-bob', 'superTaki')).state;
+    state = expectOk(applyCommand(state, { type: 'closeTaki', playerId: 'p-bob' })).state;
+
+    expect(currentPlayer(state)?.id).toBe('p-alice');
+    expect(state.activeColor).toBe('red');
+    const yellowTaki = (state.hands['p-alice'] ?? []).find((card) => card.kind === 'taki');
+    expect(getPlayableCardIds(state.hands['p-alice'] ?? [], playContextFromState(state))).toEqual([
+      yellowTaki?.id,
+    ]);
+
+    // And it plays: a Taki is a Taki, so it opens a yellow sequence of her own.
+    const played = expectOk(play(state, 'p-alice', 'yellow:taki'));
+    expect(played.state.activeColor).toBe('yellow');
+    expect(played.state.takiMode).toMatchObject({ color: 'yellow', playerId: 'p-alice' });
   });
 
   it('is playable when the sequence stays a single card', () => {
