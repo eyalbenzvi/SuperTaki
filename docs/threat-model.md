@@ -229,6 +229,12 @@ timestamp.
 - `localStorage` is **not** encrypted and is readable by any script on the same origin. Since
   the origin serves only this app and loads no third-party scripts, the practical exposure is
   another person using the same browser profile.
+- There is **one credential slot per origin, not per tab.** Two windows of the same browser in
+  the same room therefore share it, and whoever joined last owns it: reloading the other window
+  presents that credential and takes over that seat, evicting the window that held it. Nothing
+  is disclosed — you can only take over a seat this browser was already holding — but on a
+  shared device it means one person's reload can land on another person's seat, if they were
+  playing in the same browser profile. Two devices, or two profiles, do not have this.
 - The rejoin token expires after 6 hours, and stored values are validated on read (shape, room
   code format, seat id format, token length, timestamp sanity); anything suspect is deleted
   rather than used.

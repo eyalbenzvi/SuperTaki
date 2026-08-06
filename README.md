@@ -120,6 +120,14 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 - Two windows on one device are just two players joining the same room. There used to be a
   `?transport=broadcast` switch for this, back when a same-device game had no server to
   connect to; it is gone with the transport it selected.
+- **One caveat, and it is worth knowing before you debug something else.** The seat credential
+  lives in `localStorage`, which is per origin, not per tab — so two windows on one device
+  share one slot and whoever joined last owns it. Both windows keep playing fine, because each
+  holds its own seat in memory. But _reloading_ the first one rejoins as the second one's seat,
+  and the second window is then evicted with "opened in another tab". Two real devices, or two
+  browser profiles, do not have this. The end-to-end suite gives each player its own browser
+  context for exactly this reason — it previously did not, and a reload test was quietly
+  asserting against the wrong player's hand.
 
 ## Running the tests
 

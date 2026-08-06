@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { createRoom, joinRoom, openApp, openSettings, switchToEnglish } from './helpers.ts';
 
 /**
@@ -9,7 +9,35 @@ import { createRoom, joinRoom, openApp, openSettings, switchToEnglish } from './
  * disappearance: a resume card, a room-code reclaim, a handover to another player.
  * None of that exists any more, and what is left is much smaller to say and much
  * stronger to have: any player can reload, and their seat is where they left it.
+ *
+ * The reload tests give each player their own browser context, and that is not tidiness.
+ * A resume reads the seat credential out of `localStorage`, which is per origin — so two
+ * pages in one context are two players sharing one credential slot, and whoever joined
+ * last owns it. Reloading the *first* page then rejoined as the *second* player's seat,
+ * and the test passed on the strength of finding eight cards there. It only surfaced when
+ * the room started telling a superseded socket why it had been closed, which turned the
+ * loser's silent reconnect into the terminal answer it should always have been.
  */
+
+/** Two players on two devices: separate contexts, so separate credential storage. */
+async function seatTwoDevices(
+  browser: Browser,
+): Promise<{ creator: Page; guest: Page; roomCode: string; close: () => Promise<void> }> {
+  const creatorContext = await browser.newContext();
+  const guestContext = await browser.newContext();
+  const creator = await creatorContext.newPage();
+  const guest = await guestContext.newPage();
+  const roomCode = await seatTwoPlayers(creator, guest);
+  return {
+    creator,
+    guest,
+    roomCode,
+    close: async (): Promise<void> => {
+      await creatorContext.close();
+      await guestContext.close();
+    },
+  };
+}
 async function seatTwoPlayers(creator: Page, guest: Page): Promise<string> {
   await openApp(creator, '/');
   const roomCode = await createRoom(creator, 'Dana', 2);
@@ -23,10 +51,8 @@ async function seatTwoPlayers(creator: Page, guest: Page): Promise<string> {
 }
 
 test.describe('a player that reloads mid-round', () => {
-  test('comes straight back to the same seat, with the same hand', async ({ context }) => {
-    const creator = await context.newPage();
-    const guest = await context.newPage();
-    await seatTwoPlayers(creator, guest);
+  test('comes straight back to the same seat, with the same hand', async ({ browser }) => {
+    const { creator, guest, close } = await seatTwoDevices(browser);
 
     await creator.getByRole('button', { name: 'Start game' }).click();
     await expect(creator.locator('.hand .card')).toHaveCount(8);
@@ -44,10 +70,11 @@ test.describe('a player that reloads mid-round', () => {
     await guest.getByRole('button', { name: 'Rejoin' }).click();
     await expect(guest.locator('.hand .card')).toHaveCount(8);
     await expect(creator.locator('.hand .card')).toHaveCount(8);
+    await close();
   });
 
   test('holds the table for the player who opened the room, exactly like anybody else', async ({
-    context,
+    browser,
   }) => {
     /*
      * The whole point of moving the game to the server, in one test.
@@ -58,9 +85,7 @@ test.describe('a player that reloads mid-round', () => {
      * eight-attempt retry ladder — existed so that a player could press a button and
      * hope. There is no button now, because there is nothing to reclaim.
      */
-    const creator = await context.newPage();
-    const guest = await context.newPage();
-    const roomCode = await seatTwoPlayers(creator, guest);
+    const { creator, guest, roomCode, close } = await seatTwoDevices(browser);
 
     await creator.getByRole('button', { name: 'Start game' }).click();
     await expect(creator.locator('.hand .card')).toHaveCount(8);
@@ -76,6 +101,7 @@ test.describe('a player that reloads mid-round', () => {
     await expect(guest.locator('.hand .card')).toHaveCount(8);
     await openSettings(creator);
     await expect(creator.getByText(new RegExp(roomCode)).first()).toBeVisible();
+    await close();
   });
 
   test('leaves the others playing while one seat is away', async ({ context }) => {
