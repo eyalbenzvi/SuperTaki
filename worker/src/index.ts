@@ -1,9 +1,9 @@
 /**
  * The Worker in front of the rooms.
  *
- * Its whole job is routing: `/v1/room/<six digits>` upgrades to a WebSocket and
- * lands on the Durable Object named by that room code. Everything interesting
- * happens in `room.ts`.
+ * Its whole job is addressing: `/v1/room/<six digits>` upgrades to a WebSocket and
+ * lands on the Durable Object named by that room code, which *is* the room — see
+ * `gameRoom.ts`. Everything interesting happens there.
  */
 
 import { ROOM_CODE_PATTERN } from './protocol.ts';
@@ -14,8 +14,12 @@ export interface Env {
   readonly ROOM: DurableObjectNamespace;
   /**
    * Optional comma-separated Origin allowlist (e.g. the GitHub Pages origin).
-   * Unset means any origin may connect — acceptable for a relay that carries
-   * no secrets and lets peers, not the server, authenticate each other.
+   *
+   * Unset means any origin may connect. It is worth being clear about what this does
+   * and does not buy: `Origin` is set by browsers and ignored by everything else, so
+   * this keeps *other websites* from driving a player's session, and does nothing
+   * against a script. What actually protects a room is its six-digit code and, for a
+   * seat, its resume token.
    */
   readonly ALLOWED_ORIGINS?: string;
 }
