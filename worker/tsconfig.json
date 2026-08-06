@@ -7,11 +7,36 @@
     "types": ["@cloudflare/workers-types"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
+    /*
+     * The app compiles with this off, and the shared modules below are the app's.
+     * Turning it on here would hold borrowed code to a stricter contract than the
+     * code that owns it, and the first thing it would reject is the app's habit of
+     * spreading conditional fields — `...(x ? { k: x } : {})` — which is how every
+     * optional field in the wire protocol is built.
+     */
+    "exactOptionalPropertyTypes": false,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  /*
+   * The engine, the robots and the wire protocol are the app's, borrowed by
+   * relative import rather than copied — see `docs/server-game-plan.md` §3. They
+   * are listed here so this project typechecks them too: a change to the rules
+   * that breaks the room fails `cd worker && npm run verify` as well as the app's
+   * own `npm run typecheck`, which is the whole point of sharing the source
+   * instead of a copy.
+   */
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "../src/features/game/engine/**/*.ts",
+    "../src/features/game/bot/**/*.ts",
+    "../src/features/game/network/protocol.ts",
+    "../src/features/game/network/envelope.ts",
+    "../src/features/game/network/timing.ts",
+    "../src/lib/id.ts",
+    "../src/lib/sanitize.ts"
+  ]
 }

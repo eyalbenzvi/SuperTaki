@@ -164,7 +164,7 @@ export class BotRunner {
     this.pending = {
       key,
       cancel: run(() => {
-        this.fire();
+        this.pump();
       }, duty.pause),
     };
   }
@@ -190,8 +190,15 @@ export class BotRunner {
    * somebody, answered a +3 or come back to their seat while the robot was
    * "thinking", and a move computed against the older table could be illegal, or
    * legal and wrong.
+   *
+   * Public because the pause is not always a closure this object gets to keep. In
+   * the browser it is a `setTimeout` and `schedule()`'s own callback lands here; on
+   * the server the pause is a Durable Object alarm, which wakes an object that may
+   * have been evicted from memory in the meantime — so there is no callback left to
+   * call, only a deadline that has passed and a room to re-read. Both cases want
+   * exactly this: forget the pause, look again, act.
    */
-  private fire(): void {
+  pump(): void {
     this.pending = null;
     if (this.destroyed || this.options.blocked()) {
       return;
