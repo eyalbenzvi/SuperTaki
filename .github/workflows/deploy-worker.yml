@@ -6,7 +6,22 @@ name: Deploy relay worker
 on:
   push:
     branches: ['**']
-    paths: ['worker/**', '.github/workflows/deploy-worker.yml']
+    # `src/**` belongs here as much as `worker/**` does, and leaving it out was a
+    # silent staleness bug rather than a tidy filter. The room compiles the game
+    # itself out of the app's source — `gameRoom.ts` imports the engine, the bot
+    # policy, the robot names and every timing constant from `../../src/features`
+    # — so a change there changes what the deployed room *does* while touching
+    # nothing under `worker/`. That is exactly what happened: the rules fix, the
+    # robot pacing and the robot names all landed on main, Pages published the
+    # client, and the room went on dealing human-named robots because no push had
+    # matched this list. Anything the worker can compile has to be able to
+    # redeploy it; docs, tests and the root README still cannot.
+    paths:
+      - 'worker/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-worker.yml'
   workflow_dispatch:
 
 permissions:
