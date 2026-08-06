@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { awaitSettled, createRoom, openApp, takeAnyTurn } from './helpers.ts';
+import { awaitSettled, createRoom, openApp, takeAnyTurn, tapIfPresent } from './helpers.ts';
 
 /**
  * A robot at the table, driven through the real UI on one page.
@@ -102,14 +102,16 @@ test.describe('a table with a robot in it', () => {
       }
       // A hand of one has to be declared, or the robot calls it out and it is four
       // cards back.
-      const declare = page.getByRole('button', { name: /Last card!/ });
-      if (await declare.isVisible().catch(() => false)) {
-        await declare.click();
+      /*
+       * Tolerantly, because each of these is a race this test cannot win by looking
+       * harder: the table moves on its own, so a button seen a tick ago may already
+       * have done its job. A vanished button is the move having landed, not a failure —
+       * so the click is allowed to miss and the loop looks again.
+       */
+      if (await tapIfPresent(page, /Last card!/)) {
         continue;
       }
-      const breakIt = page.getByRole('button', { name: 'Let it through' });
-      if (await breakIt.isVisible().catch(() => false)) {
-        await breakIt.click();
+      if (await tapIfPresent(page, 'Let it through')) {
         continue;
       }
       if (await takeAnyTurn(page)) {

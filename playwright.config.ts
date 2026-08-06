@@ -39,6 +39,21 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: 'on-first-retry',
     video: 'off',
+    /*
+     * A ceiling on one action, because Playwright's default is *no* ceiling.
+     *
+     * An unbounded `click()` does not fail when its target is disabled or gone — it
+     * waits, and with no action timeout it waits until the whole test's budget is
+     * spent. Every check-then-act in this suite is racing a table that moves on its
+     * own: a button read as visible can be gone a tick later because the move landed,
+     * a robot took the seat, or the turn passed. Three separate ten-minute timeouts in
+     * this suite were that, each one reported as "test timeout exceeded" with no clue
+     * which button, when the truthful answer is "this one, and it was never coming
+     * back". Fifteen seconds is far longer than any interaction here legitimately
+     * takes, so exceeding it means gone rather than slow — and it says so in seconds
+     * instead of minutes.
+     */
+    actionTimeout: 15_000,
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], launchOptions } },

@@ -158,6 +158,29 @@ export async function takeAnyTurn(page: Page): Promise<boolean> {
 }
 
 /**
+ * Clicks a control if it is there, and shrugs if it is not.
+ *
+ * Every tap in a driven round is a check-then-act race against a table that moves on
+ * its own: the button read as visible a tick ago may already have done its job, or the
+ * turn may have passed. A vanished control is the move having landed, not a failure, so
+ * this reports whether it acted and leaves the decision to the caller. Bounded by the
+ * config's `actionTimeout` — without one, a click on a control that is never coming back
+ * waits out the whole test.
+ */
+export async function tapIfPresent(page: Page, name: string | RegExp): Promise<boolean> {
+  const button = page.getByRole('button', { name });
+  if (!(await button.isVisible().catch(() => false))) {
+    return false;
+  }
+  try {
+    await button.click();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Plays one legal card, choosing a colour when the card turns out to be a wild.
  *
  * The colour button is looked up *inside the dialog* and matched exactly: a
