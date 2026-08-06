@@ -23,11 +23,14 @@
 
 import { AlarmMux, type AlarmPlatform, type AlarmStore } from './alarms.ts';
 import { PROBE_REQUEST, PROBE_RESPONSE } from './protocol.ts';
+import { JOIN_TIMEOUT_MS } from '../../src/features/game/network/timing.ts';
 import { GameRoom, type RoomSocket } from './gameRoom.ts';
 import type { RoomStore } from './storage.ts';
 
 interface Attachment {
   readonly playerId?: string;
+  /** When this socket was accepted, so one that never joins can be reaped. */
+  readonly since?: number;
 }
 
 /** The room record and the game state, over the object's SQLite storage. */
@@ -100,6 +103,9 @@ export class RoomDO implements DurableObject {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
+    // Stamped now so `reapUnjoined` can tell a socket that is mid-handshake from one
+    // that opened and never said anything. Replaced by the seat id once a join lands.
+    server.serializeAttachment({ since: Date.now() } satisfies Attachment);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -182,7 +188,7 @@ export class RoomDO implements DurableObject {
     if (after !== before && after !== null) {
       // Written when the join is accepted: this is what survives hibernation and lets
       // `ensureRoom` re-bind the socket to its seat.
-      ws.serializeAttachment({ playerId: after } satisfies Attachment);
+      ws.serializeAttachment({ playerId: after, since: Date.now() } satisfies Attachment);
     }
   }
 
@@ -194,8 +200,34 @@ export class RoomDO implements DurableObject {
     this.webSocketClose(ws);
   }
 
+  /**
+   * Closes sockets that connected and never joined.
+   *
+   * Accepting an upgrade costs nothing per second — that is what hibernation buys — but
+   * a socket the room has never heard from occupies a slot in `getWebSockets()` for
+   * ever, and every wake iterates them. Nothing else would ever close one: the room
+   * only learns a socket exists when a frame arrives on it, so a silent one is
+   * invisible to every deadline the room keeps.
+   *
+   * Done on wakes the object already takes rather than on an alarm of its own, because
+   * an alarm to police an idle socket would cost more wakes than the sockets do.
+   */
+  private reapUnjoined(): void {
+    const cutoff = Date.now() - JOIN_TIMEOUT_MS;
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as Attachment | null;
+      if (attachment?.playerId !== undefined) {
+        continue;
+      }
+      if (attachment?.since === undefined || attachment.since < cutoff) {
+        ws.close(4008, 'no join');
+      }
+    }
+  }
+
   async alarm(): Promise<void> {
     const room = this.ensureRoom();
+    this.reapUnjoined();
     if (room.handleAlarm()) {
       // The room asked to be forgotten: nobody has been here for the whole idle TTL.
       // Deleting storage is the platform's business, which is why the room reports

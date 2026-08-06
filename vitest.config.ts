@@ -74,7 +74,11 @@ export default defineConfig({
          * visible at the moment it is introduced rather than in an audit.
          *
          * There is one session now. The host half of this entry did not shrink — it
-         * moved, and it is gated where it landed, by the worker's own tests.
+         * moved into `worker/src/gameRoom.ts` and grew, and it is gated where it landed:
+         * `worker/vitest.config.ts` carries its own floor, and CI runs it. That sentence
+         * was written here before the floor existed, which reproduced on a bigger file
+         * exactly the gap the paragraph above describes — two alarm loops lived for a
+         * while in lines the tests executed and never asserted about.
          */
         'src/features/game/network/clientSession.ts': {
           statements: 75,

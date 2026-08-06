@@ -167,8 +167,8 @@ Never stood in for:
   actually been waiting on that player, or one mis-tap takes a hand off somebody mid-turn;
 - anybody, while the table is **paused**.
 
-The table keeps both ways out while a robot is playing: **stop the robot**, which is honoured
-rather than undone by the next heartbeat, and **remove from the round** — the covered seat is
+The table keeps both ways out while a robot is playing: **stop the robot**, which is remembered
+rather than undone by the next sweep, and **remove from the round** — the covered seat is
 deliberately not listed as a held one, so those live on the robot's own notice.
 
 Release is keyed on `lastIntentAt` — the last thing that seat actually _asked for_ — and never
@@ -219,18 +219,18 @@ network between a robot and the state it plays against.
 
 ## Wire and storage
 
-Three optional fields, no protocol bump — an older reader drops what it does not know and
-loses a badge rather than the game:
-
-- `lobbyPlayer.bot`, `lobbyPlayer.standIn`, `lobbySnapshot.standInEnabled`.
+Three fields in the lobby snapshot: `lobbyPlayer.bot` and `lobbyPlayer.standIn` per seat, both
+optional, and `lobbySnapshot.standInEnabled`, which is required as of protocol 6 — every table
+has an answer to "may a robot cover a seat", so a snapshot that omits it is a snapshot with a
+hole in it rather than an older one.
 
 The room's stored record carries `bot` per seat and the table setting, so a hibernation keeps
-its robots. A robot is never offered the room in a handover: there is no device behind it.
-
-**Known limitation.** The handover snapshot is validated by the _receiving_ build. A successor
-running a build without the `bot` field would strip it, and those seats would arrive as human
-seats with nobody behind them — skipped each orbit until the table removes them or agrees to
-stop. Same-build handovers, which is every handover after this ships, carry robots correctly.
+its robots. This is the whole of the durability story now, and it used to be the interesting
+part of this section: a robot lived in the room creator's tab, so a handover had to carry it to
+another device in a snapshot the _receiving_ build validated — and a successor on a build
+without the `bot` field would have stripped it and left the seats human, with nobody behind
+them. There is no handover, no snapshot and no successor. The room holds its robots because the
+room holds everything.
 
 ## Not implemented, on purpose
 

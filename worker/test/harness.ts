@@ -10,7 +10,7 @@
  * whatever the room booked, exactly as the platform would.
  */
 
-import { AlarmMux, type AlarmPlatform, type AlarmStore } from '../src/alarms.ts';
+import { AlarmMux, memoryAlarms } from '../src/alarms.ts';
 import { GameRoom, type RoomSocket } from '../src/gameRoom.ts';
 import { memoryStore, type RoomStore } from '../src/storage.ts';
 import { clientMessage } from '../../src/features/game/network/envelope.ts';
@@ -118,6 +118,17 @@ export class TestClient implements RoomSocket {
   }
 
   /**
+   * How many intents this client has sent, ever.
+   *
+   * Counted separately from anything `forget()` clears, and that is the whole reason it
+   * exists. The default request id used to be derived from `received.length`, so a test
+   * that called `forget()` between moves restarted the numbering — and the room, quite
+   * correctly, answered every move after the first as a replay of one it had already
+   * applied. The table stopped moving and the test carried on looking at it.
+   */
+  private intents = 0;
+
+  /**
    * Makes one legal move, the way the real UI would.
    *
    * Legality comes from the engine's own `rules.ts` against the same public
@@ -125,7 +136,7 @@ export class TestClient implements RoomSocket {
    * make a move the room would refuse, and a round driven by it terminates for the
    * same reason a real one does.
    */
-  takeTurn(requestId = `rq-${this.label}-${String(this.received.length)}`): void {
+  takeTurn(requestId = `rq-${this.label}-${String((this.intents += 1))}`): void {
     const state = this.state;
     if (state === null) {
       throw new Error(`${this.label} has no table to play against`);
@@ -184,30 +195,6 @@ export class TestClient implements RoomSocket {
   }
 }
 
-interface AlarmBox extends AlarmStore, AlarmPlatform {
-  armedAt: number | null;
-}
-
-function alarmBox(): AlarmBox {
-  const rows = new Map<string, number>();
-  return {
-    armedAt: null,
-    entries: () => [...rows].map(([kind, at]) => ({ kind, at })),
-    put(kind, at) {
-      rows.set(kind, at);
-    },
-    delete(kind) {
-      rows.delete(kind);
-    },
-    setAlarm(atMs) {
-      this.armedAt = atMs;
-    },
-    deleteAlarm() {
-      this.armedAt = null;
-    },
-  };
-}
-
 export interface HarnessOptions {
   readonly roomCode?: string;
   readonly startAt?: number;
@@ -224,14 +211,14 @@ export class Harness {
   readonly store: RoomStore;
   readonly logs: string[] = [];
   private clock: number;
-  private readonly alarms: AlarmBox;
+  private readonly alarms: ReturnType<typeof memoryAlarms>;
   room: GameRoom;
 
   constructor(private readonly options: HarnessOptions = {}) {
     this.roomCode = options.roomCode ?? '123456';
     this.clock = options.startAt ?? 1_000_000;
     this.store = options.store ?? memoryStore();
-    this.alarms = alarmBox();
+    this.alarms = memoryAlarms();
     this.room = this.build();
   }
 
@@ -310,8 +297,20 @@ export class Harness {
    */
   forgotten = false;
 
+  /**
+   * How many times the platform alarm has fired.
+   *
+   * On Cloudflare one wake is one billed request, so this is the number the zero-cost
+   * claim rests on and a test is allowed to assert an exact bound on it. It also
+   * catches the failure `advance`'s runaway guard only catches at the extreme: a
+   * deadline that is recomputed to a moment already past is re-booked at the alarm
+   * floor for ever, which is a 1 Hz loop rather than a tight one.
+   */
+  wakes = 0;
+
   /** Fires the alarm now, whatever it was set for. */
   fire(): void {
+    this.wakes += 1;
     if (this.room.handleAlarm()) {
       this.forgotten = true;
       // What the adapter does next: the object's storage goes, and with it the room.

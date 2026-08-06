@@ -560,6 +560,12 @@ Unchanged and non-negotiable:
 - SQLite-backed Durable Objects, hibernation, and alarms are all on the
   Cloudflare free plan. The change _reduces_ wake-ups: the host's 5 s heartbeat
   becomes a handful of exact alarms per round.
+  **Only while no deadline is ever re-booked into the past.** `book()` floors the
+  past at one second, so a handler that changes nothing plus a deadline that stops
+  moving is 1 Hz for the life of the room — worse than the heartbeat it replaced.
+  Written here because it is the sentence above that made it worth writing: the
+  first implementation did exactly this on two deadlines, and the claim in this
+  section was false for as long as it did. `worker/test/` now bounds the wake count.
 
 Free-plan limits worth stating: 100,000 requests/day and 13 million ms/day of DO
 compute. A six-player round is a few hundred messages. The 1 GB SQLite ceiling

@@ -108,6 +108,17 @@ export const roomRecordSchema = z.object({
   pausedBy: playerId.nullable(),
   /** When the table started waiting for the seat on turn. */
   waitingSince: z.number().int().min(0).nullable(),
+  /**
+   * When the last player's socket closed, or `null` while anybody is here.
+   *
+   * The room's deletion deadline is measured from this, and it is stored rather than
+   * re-derived because re-deriving it from `now` on every write meant *any* frame
+   * pushed the deletion out — including a frame from a socket the room had just
+   * refused. A mistyped room code, or anything walking the six-digit space, would keep
+   * every hand in storage indefinitely, and a mechanical six-hour deletion is the one
+   * thing the threat model offers in exchange for the room holding the cards at all.
+   */
+  emptySince: z.number().int().min(0).nullable(),
   playAgainVotes: z.array(playerId).max(6),
   abandonVotes: z.array(playerId).max(6),
   /**
@@ -140,11 +151,18 @@ const rngStateSchema = z.object({ seed: z.number().int() });
  * The authoritative game state, as stored.
  *
  * Mirrors `GameState` field for field. It is a second declaration of a shape the
- * engine already owns, and the `satisfies` check below is what stops the two from
- * drifting: if the engine grows a field this schema does not know, the assignment
- * stops compiling. Worth the duplication, because this is the boundary where bytes
- * written by a previous deployment come back — and half-parsing those is how a
- * table reaches a state the engine has no transition out of.
+ * engine already owns, and the assignment below is what stops the two from drifting:
+ * if the engine grows a field this schema does not know, it stops compiling. Worth
+ * the duplication, because this is the boundary where bytes written by a previous
+ * deployment come back — and half-parsing those is how a table reaches a state the
+ * engine has no transition out of. What it would actually do is worse than
+ * half-parsing: `z.object` *strips* what it does not know, so the field would be
+ * silently dropped from every live round on the next wake, and `applyCommand` would
+ * find `undefined` where it expected a value.
+ *
+ * It has to be an assignment with no cast to mean anything. `gameStateSchema as
+ * z.ZodType<GameState>` compiles whatever the two shapes are, which is exactly the
+ * check this claims to be and is the one way to write it that proves nothing.
  */
 export const gameStateSchema = z.object({
   version: z.number().int().nonnegative(),
@@ -185,7 +203,7 @@ export const gameStateSchema = z.object({
  * One direction only, and deliberately: what this catches is the engine gaining or
  * changing a field that storage would silently drop on the next round trip.
  */
-const _storedStateMatchesEngine: z.ZodType<GameState> = gameStateSchema as z.ZodType<GameState>;
+const _storedStateMatchesEngine: z.ZodType<GameState> = gameStateSchema;
 void _storedStateMatchesEngine;
 
 /** What a read found, and — when it found nothing usable — whether that was corruption. */
@@ -216,7 +234,7 @@ export function writeRoom(store: RoomStore, record: RoomRecord): void {
 }
 
 export function readGame(store: RoomStore): ReadResult<GameState> {
-  return read(store, GAME_KEY, gameStateSchema as z.ZodType<GameState>);
+  return read(store, GAME_KEY, gameStateSchema);
 }
 
 export function writeGame(store: RoomStore, state: GameState): void {

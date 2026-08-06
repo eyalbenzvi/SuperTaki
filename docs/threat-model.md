@@ -124,20 +124,34 @@ Tested: a replayed `requestId` is answered once and moves the state once; a repe
 A player who is already in the room can be a nuisance, and in a private game with no accounts
 there is no way to prevent that entirely. What is bounded:
 
-- Frames larger than 128 KiB are refused by the socket, and messages larger than 64 KiB are
-  dropped before parsing.
+- Frames are refused by the socket above 128 Ki _UTF-16 code units_ — up to three bytes each,
+  so the true byte ceiling is higher than the name suggests. It is a memory bound rather than a
+  budget, and it is checked on the raw string precisely so a megabyte of garbage is never
+  parsed. The decoded message is then held to 64 Ki units by the protocol.
 - Every string, array and number in every schema has a maximum, so a hostile payload cannot
   allocate unbounded memory.
 - A second accepted connection for a seat closes the first, so nobody can accumulate sockets.
-- Invalid messages are dropped silently and cheaply — no logging storm, no state change.
+- Invalid messages change no state, and cost a parse and a log line. The log line is a
+  deliberate choice over silence — a room refusing frames is worth being able to see — and it
+  is one line per frame with no payload in it.
 - The seat holding the lobby buttons can remove any player before the game starts; leaving is
   just leaving, and the room stays open for everybody else.
 
-**Not mitigated, honestly:** a player in the room can flood valid-but-useless messages and
-consume the object's CPU. There is no rate limiter. The blast radius is one room — Durable
-Objects are isolated per room code, so the worst case is that the flooder spoils their own
-table. In a private game with at most six invited players, kicking is a proportionate
-response, and a rate limiter would add complexity for a threat that barely exists here.
+- A socket that opens and never sends a `joinRequest` is closed on the room's next wake,
+  once past the join timeout. It is not free to leave one open: the room never learns a
+  silent socket exists, so no deadline it keeps would ever have noticed.
+
+**Not mitigated, honestly:** there is no rate limiter anywhere. A player in the room can flood
+valid-but-useless messages and consume the object's CPU, and anything can open sockets to a
+room code faster than the reaper closes them. Two things bound it. The blast radius is one
+room — Durable Objects are isolated per room code, so a flooder spoils the table they are at
+and no other. And a room code has to be found before it can be attacked, which is §9.
+
+What is _not_ bounded is a script walking the six-digit space: each distinct code instantiates
+an object and bills a request. Nothing in this design prevents that, and no free-plan
+deployment of anything prevents it; it is stated here rather than left for somebody to
+discover. In a private game among friends, the proportionate response to a player being a
+nuisance is to kick them, and to a room being found is to make a new one.
 
 Equally, joining a room requires only the room code, so anyone with the invite link can occupy
 a seat until the game starts. Treat the link like an invitation to your living room.

@@ -59,7 +59,7 @@ reconnect it exists for.
 ## Validation pipeline
 
 ```
-parseClientMessage(raw) / parseHostMessage(raw)
+parseClientMessage(raw) / parseRoomMessage(raw)
   1. not an object / array / null            -> { ok:false, error:'notAnObject' }
   2. JSON longer than 64 KiB or cyclic       -> { ok:false, error:'tooLarge' }
   3. envelope shape invalid                  -> { ok:false, error:'malformedEnvelope' }
@@ -174,7 +174,7 @@ least `LAST_CARD_GRACE_MS` by the **room's** clock. See `docs/rules.md`.
 | `paused`         | `{pausedBy}`                                  | Somebody asked the table to wait.                                                                                               |
 | `nudged`         | `{fromPlayerId}`                              | **Unicast.** It is your turn and somebody is waiting.                                                                           |
 | `kicked`         | `{reason}`                                    | `removedByCreator \| duplicateConnection`                                                                                       |
-| `roomClosed`     | `{reason}`                                    | `roomClosed \| roomReset`. Both terminal — see below.                                                                           |
+| `roomClosed`     | `{reason}`                                    | `roomClosed`. Terminal. Sent to a socket that woke from a hibernation into a room whose record no longer parses.                |
 
 `actionAccepted` cannot be inferred from the state moving forward, because in this game other
 players legally act out of turn: a new snapshot may have nothing to do with my move, and

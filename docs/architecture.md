@@ -231,7 +231,7 @@ Coverage of the room comes from three directions:
    - wrong protocol version -> joinRejected(protocolMismatch), so the tab reloads
    - wrong room id          -> ignored
    - duplicate message id   -> ignored
-   - malformed              -> ignored
+   - malformed JSON         -> the socket is closed, and the seat marked away
 6. Room resolves the seat bound to that socket, and:
    - a repeated requestId is answered from the seat, not applied again
    - a turn-scoped intent whose turnToken is stale is rejected as notYourTurn
@@ -417,7 +417,7 @@ re-hosted anywhere that offers a socket, a key-value store and a timer.
 
 | Resource               | Free plan / day | A six-player evening                         |
 | ---------------------- | --------------- | -------------------------------------------- |
-| Worker requests        | 100,000         | one per socket opened, so tens               |
+| Worker requests        | 100,000         | one per socket opened and one per alarm wake |
 | Durable Object compute | 13,000,000 ms   | a few seconds of actual work                 |
 | Durable Object storage | 1 GB            | two JSON blobs per live room, deleted at TTL |
 
@@ -425,3 +425,12 @@ The shape that keeps this true is hibernation: between messages the object is ev
 costs nothing, liveness probes are answered by the runtime without waking it, and the room's
 own deadlines are exact alarms rather than a poll. A room with nobody in it does nothing at
 all until its six-hour TTL fires and deletes it.
+
+One rule holds the whole column up, and it is easy to break by accident: **a deadline that has
+already passed must never be re-booked.** `book()` floors a past deadline at one second out, so
+a handler that changes nothing plus a deadline recomputed from an unmoving clock is a room that
+wakes every second until the TTL kills it — 86,400 requests a day from a single table, which is
+most of the allowance above. That is not hypothetical: the `idleNudge` and mid-round `seatGrace`
+deadlines both did it, on the commonest paths in the game, and an audit found them rather than a
+bill. Two tests now assert an exact bound on the number of wakes, because "it looks like it
+settles" is not something a reader of `reschedule` can check by eye.

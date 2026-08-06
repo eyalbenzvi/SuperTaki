@@ -175,6 +175,18 @@ const TURN_SCOPED: ReadonlySet<GameAction['type']> = new Set<GameAction['type']>
  */
 const ALARM_FLOOR_MS = 1_000;
 
+/**
+ * How long a seat is held, by what the table is doing.
+ *
+ * A lobby seat is cheap to lose and worth more to somebody who is here, so it goes in
+ * half a minute. Once cards have been dealt the seat is somebody's game, and it is held
+ * for the full grace — including at the standings, where their credential is still live
+ * and the next round is theirs to agree to.
+ */
+function graceFor(phase: RoomRecord['phase']): number {
+  return phase === 'lobby' ? LOBBY_GRACE_MS : SEAT_GRACE_MS;
+}
+
 function freshSeat(
   overrides: Partial<SeatRecord> & Pick<SeatRecord, 'playerId' | 'name' | 'seat'>,
 ): SeatRecord {
@@ -260,6 +272,21 @@ export class GameRoom {
         dedup: new MessageDeduplicator(),
       });
     }
+    /*
+     * Sockets that came back from a hibernation to a room that no longer reads.
+     *
+     * They are seated as far as they know, and every move they make from here would be
+     * ignored with nothing on screen to explain it — a table that has quietly stopped
+     * being a table. So they are told, which is what the comment above has always
+     * claimed happened and, until this, did not.
+     */
+    if (this.record === null) {
+      for (const socket of [...this.connections.keys()]) {
+        this.send(socket, 'roomClosed', { reason: 'roomClosed' });
+        socket.close(CLOSE_REJECTED, 'roomClosed');
+      }
+      this.connections.clear();
+    }
     this.reconcilePresence();
 
     this.bots = new BotRunner({
@@ -313,11 +340,6 @@ export class GameRoom {
 
   // --------------------------------------------------------------- lifecycle
 
-  /** Whether this room has ever been created. Used by the adapter's TTL sweep. */
-  get exists(): boolean {
-    return this.record !== null;
-  }
-
   /** Live seats, for the adapter's emptiness check. */
   get liveConnectionCount(): number {
     let count = 0;
@@ -336,6 +358,13 @@ export class GameRoom {
    * one message is one write however many things it touched.
    */
   flush(): void {
+    /*
+     * Settled before the writes, not after: `reschedule` is the one place that knows
+     * whether anybody is still connected, so it is where the room records the moment it
+     * emptied — and that reading has to reach storage in this same write rather than
+     * waiting for whatever happens to flush next.
+     */
+    this.reschedule();
     if (this.roomDirty && this.record !== null) {
       writeRoom(this.store, this.record);
     }
@@ -348,7 +377,6 @@ export class GameRoom {
     }
     this.roomDirty = false;
     this.gameDirty = false;
-    this.reschedule();
   }
 
   // ---------------------------------------------------------------- messaging
@@ -564,11 +592,6 @@ export class GameRoom {
 
   // --------------------------------------------------------------- connections
 
-  /** A socket that survived a hibernation, re-bound from its saved seat. */
-  restore(socket: RoomSocket, playerId: string): void {
-    this.connections.set(socket, { socket, playerId, dedup: new MessageDeduplicator() });
-  }
-
   /** The seat a socket has proved it owns, once its join has been accepted. */
   identityOf(socket: RoomSocket): string | null {
     return this.connections.get(socket)?.playerId ?? null;
@@ -608,8 +631,23 @@ export class GameRoom {
 
   private reject(socket: RoomSocket, reason: JoinRejectionReason): void {
     this.send(socket, 'joinRejected', { reason });
-    socket.close(CLOSE_REJECTED, reason);
-    this.connections.delete(socket);
+    this.dropSocket(socket, CLOSE_REJECTED, reason);
+  }
+
+  /**
+   * Closes a socket, and does the departure bookkeeping for whoever was on it.
+   *
+   * Every path that hangs up goes through here rather than deleting the map entry
+   * itself. Deleting it directly looked equivalent and was not: the runtime's close
+   * event then reached `handleClose` with nothing left to find, so the seat was never
+   * marked absent. No countdown on anybody's screen, no lobby broadcast telling the
+   * others, no grace sweep, no robot to cover the seat, and `maybeStartNextRound`
+   * holding it for ever — until a full eviction happened to repair it. A bad frame is
+   * exactly as much of a departure as a dead radio.
+   */
+  private dropSocket(socket: RoomSocket, code: number, reason: string): void {
+    socket.close(code, reason);
+    this.handleClose(socket);
   }
 
   // ----------------------------------------------------------------- messages
@@ -619,16 +657,14 @@ export class GameRoom {
     if (raw.length > MAX_FRAME_BYTES) {
       // Dropped without being parsed: this is a memory bound, and honouring it means
       // not allocating the thing it is bounding.
-      socket.close(CLOSE_BAD_FRAME, 'frame too large');
-      this.connections.delete(socket);
+      this.dropSocket(socket, CLOSE_BAD_FRAME, 'frame too large');
       return;
     }
     let value: unknown;
     try {
       value = JSON.parse(raw);
     } catch {
-      socket.close(CLOSE_BAD_FRAME, 'malformed frame');
-      this.connections.delete(socket);
+      this.dropSocket(socket, CLOSE_BAD_FRAME, 'malformed frame');
       return;
     }
     const parsed = parseClientMessage(value);
@@ -823,6 +859,7 @@ export class GameRoom {
       standInEnabled: true,
       pausedBy: null,
       waitingSince: null,
+      emptySince: null,
       playAgainVotes: [],
       abandonVotes: [],
       lastCardSince: {},
@@ -830,6 +867,14 @@ export class GameRoom {
       seats: [seat],
     };
     this.game = null;
+    /*
+     * A new room must not inherit a previous one's cards. Marked dirty so `flush`
+     * actually deletes the row: without it a `game` blob written before this code
+     * could outlive the room that owned it and come back on the next wake as a round
+     * belonging to a lobby, which is a state the engine has no transition out of —
+     * and, more plainly, hands kept past the retention this room promises.
+     */
+    this.gameDirty = true;
     connection.playerId = seat.playerId;
     this.roomDirty = true;
     this.log('room created', { by: seat.name });
@@ -891,7 +936,15 @@ export class GameRoom {
        * The same seat on a fresh socket: a reload, or a network handover where the old
        * connection has not died yet. The new one wins — it is the one with a person
        * behind it.
+       *
+       * The loser is *told*, and that is not a nicety. A bare close is indistinguishable
+       * from a dropped connection, so the loser reconnects — with the same credential,
+       * from the same `localStorage` — supersedes the winner, and the two take turns
+       * evicting each other at socket-establishment speed for as long as both tabs are
+       * open. Duplicating a tab is an ordinary thing to do; the room has to say which
+       * kind of close this was so the client can stop instead of retrying.
        */
+      this.send(existing.socket, 'kicked', { reason: 'duplicateConnection' });
       existing.playerId = null;
       existing.socket.close(CLOSE_SUPERSEDED, 'superseded by a newer connection');
       this.connections.delete(existing.socket);
@@ -924,10 +977,17 @@ export class GameRoom {
     const record = this.record;
     if (playerId !== null && record !== null) {
       const index = record.seats.findIndex((seat) => seat.playerId === playerId);
-      if (index >= 0 && record.phase === 'lobby') {
+      /*
+       * A goodbye retires the seat outright whenever no cards are in play — the lobby,
+       * and the standings. Marking it merely absent at the standings was how a table
+       * bricked itself: nothing else drops a seat in that phase, so the round could
+       * never be dealt again and nobody could join to make up the numbers.
+       */
+      if (index >= 0 && record.phase !== 'inGame') {
         record.seats.splice(index, 1);
         this.resequenceSeats();
         delete record.botRng[playerId];
+        this.lobbyIfNotATable();
       } else if (index >= 0) {
         const seat = record.seats[index] as SeatRecord;
         // Saying goodbye is an intent like any other, so a robot standing in for their
@@ -1407,6 +1467,7 @@ export class GameRoom {
     this.resequenceSeats();
     if (record.seats.length < MIN_PLAYERS) {
       this.roomDirty = true;
+      this.lobbyIfNotATable();
       return;
     }
     record.playAgainVotes = [];
@@ -1525,10 +1586,22 @@ export class GameRoom {
     return applied;
   }
 
-  /** Takes a player out of the round, keeping their cards out of play. */
+  /**
+   * Takes a player out of the round, keeping their cards out of play.
+   *
+   * Only a seat that is not answering for itself, which is the same line `standInNow`
+   * draws and for the same reason: this is offered from a notice about somebody the
+   * table is waiting for, and without the check one mis-tap ends a connected player's
+   * round mid-turn — at two players, ends the round outright. The UI only shows the
+   * button for an absent seat, and the UI is a courtesy; this is the rule.
+   */
   private removeFromRound(playerId: string): boolean {
     const seat = this.seatFor(playerId);
     if (seat === undefined || seat.left) {
+      return false;
+    }
+    if (this.present(seat) && !this.robotControls(seat)) {
+      this.log('refused to remove a seat that is here and answering', { seat: seat.seat });
       return false;
     }
     const applied = this.applyRoomCommand({ type: 'leaveGame', playerId });
@@ -1808,9 +1881,20 @@ export class GameRoom {
      */
     const watched = this.liveConnectionCount > 0;
     if (!watched) {
-      // A returning player cancels this by saying hello; the alarm firing means
-      // nobody did for the whole TTL.
-      this.book('ttl', now + ROOM_IDLE_TTL_MS);
+      /*
+       * A returning player cancels this by saying hello; the alarm firing means nobody
+       * did for the whole TTL.
+       *
+       * Measured from `emptySince` — the moment the last seated socket closed — rather
+       * than from `now`. From `now` it was not a deletion deadline at all: every frame
+       * reset it, and a frame the room *refuses* is still a frame, so one poller on a
+       * room code it cannot join kept the hands alive for ever.
+       */
+      if (record.emptySince === null) {
+        record.emptySince = now;
+        this.roomDirty = true;
+      }
+      this.book('ttl', record.emptySince + ROOM_IDLE_TTL_MS);
       for (const kind of [
         'absentTurn',
         'botStall',
@@ -1824,17 +1908,35 @@ export class GameRoom {
       }
       return;
     }
+    if (record.emptySince !== null) {
+      record.emptySince = null;
+      this.roomDirty = true;
+    }
     this.alarms.clear('ttl');
 
-    // --- seats being held
-    const graceMs = record.phase === 'lobby' ? LOBBY_GRACE_MS : SEAT_GRACE_MS;
+    /*
+     * --- seats being held
+     *
+     * Booked when the sweep can actually do something, which is when no cards are in
+     * play: the lobby, and the standings. Mid-round `sweepSeatGrace` deliberately does
+     * nothing — the seat's hand is in the round, so its hold expiring changes only that
+     * it becomes droppable when the round ends, and `maybeStartNextRound` decides that
+     * for itself at the moment it matters.
+     *
+     * Booking it mid-round anyway was a wake that changed nothing, on a deadline that
+     * stops moving once it is past. `book` floors the past at `now + ALARM_FLOOR_MS`,
+     * so "nothing to do, book the same past moment again" is a room that wakes every
+     * second from five minutes after somebody's phone died until the TTL kills it.
+     */
     let earliestGrace: number | null = null;
-    for (const seat of record.seats) {
-      if (seat.bot || this.present(seat) || seat.absentSince === null) {
-        continue;
+    if (record.phase !== 'inGame') {
+      for (const seat of record.seats) {
+        if (seat.bot || this.present(seat) || seat.absentSince === null) {
+          continue;
+        }
+        const at = seat.absentSince + graceFor(record.phase);
+        earliestGrace = earliestGrace === null ? at : Math.min(earliestGrace, at);
       }
-      const at = seat.absentSince + graceMs;
-      earliestGrace = earliestGrace === null ? at : Math.min(earliestGrace, at);
     }
     if (earliestGrace === null) {
       this.alarms.clear('seatGrace');
@@ -1947,9 +2049,22 @@ export class GameRoom {
       return;
     }
     if (this.present(seat)) {
-      // A present player thinking. Offer the others the nudge once it has been a while.
-      if (record.waitingSince !== null) {
-        this.book('idleNudge', record.waitingSince + IDLE_TURN_NUDGE_MS);
+      /*
+       * A present player thinking. Offer the others the nudge once it has been a
+       * while — *once*, hence the `> now`.
+       *
+       * The threshold is a fixed moment and `waitingSince` does not move again until
+       * somebody plays, so recomputing this deadline after it has passed yields a
+       * moment in the past. `book` floors the past at `now + ALARM_FLOOR_MS`, so
+       * booking it unconditionally means the handler wakes the room, broadcasts a
+       * lobby snapshot to every player, re-books one second out, and does it again —
+       * for as long as somebody thinks about a card. That is 3,600 wakes an hour and
+       * a full re-render per second on every phone at the table, on the deadline that
+       * fires in almost every round.
+       */
+      const at = record.waitingSince === null ? null : record.waitingSince + IDLE_TURN_NUDGE_MS;
+      if (at !== null && at > now) {
+        this.book('idleNudge', at);
       }
       return;
     }
@@ -2265,22 +2380,46 @@ export class GameRoom {
    */
   private sweepSeatGrace(now: number): void {
     const record = this.record;
-    if (record === null || record.phase !== 'lobby') {
+    if (record === null || record.phase === 'inGame') {
       return;
     }
+    const grace = graceFor(record.phase);
     const before = record.seats.length;
     record.seats = record.seats.filter(
-      (seat) =>
-        seat.bot ||
-        this.present(seat) ||
-        seat.absentSince === null ||
-        now - seat.absentSince <= LOBBY_GRACE_MS,
+      (seat) => seat.bot || this.present(seat) || seat.absentSince === null || now - seat.absentSince < grace,
     );
     if (record.seats.length !== before) {
       this.resequenceSeats();
       this.roomDirty = true;
       this.emitLobby();
     }
+    this.lobbyIfNotATable();
+  }
+
+  /**
+   * Puts a finished table back in the lobby when there is nobody left to deal to.
+   *
+   * Without this a room could finish a round, lose a player for good, and sit on the
+   * standings for six hours saying "1 of 1 agreed": `phase: 'finished'` has no exit
+   * except a round starting, a round needs two seats, and every join was answered
+   * `gameInProgress` — so the one person still there could neither deal, nor drop the
+   * empty seat, nor invite anybody to fill it. The round is over and no cards are in
+   * play, so the honest state for one person at an empty table is the one they began
+   * from.
+   */
+  private lobbyIfNotATable(): void {
+    const record = this.record;
+    if (record === null || record.phase !== 'finished' || record.seats.length >= MIN_PLAYERS) {
+      return;
+    }
+    record.phase = 'lobby';
+    record.playAgainVotes = [];
+    record.abandonVotes = [];
+    this.game = null;
+    this.gameDirty = true;
+    this.roomDirty = true;
+    this.log('not enough players left to deal again; back to the lobby');
+    this.emitLobby();
   }
 
   // ------------------------------------------------------------- test seams
@@ -2312,11 +2451,18 @@ export class GameRoom {
   }
 
   /** Test seam: opens a breaker window that is waiting on one seat. */
-  forcePlusThreeForTests(byPlayerId: string, awaitedPlayerId: string): void {
+  forcePlusThreeForTests(byPlayerId: string, ...awaiting: readonly string[]): void {
     if (this.game === null) {
       return;
     }
-    this.mutateForTests({ plusThree: { playerId: byPlayerId, awaiting: [awaitedPlayerId] } });
+    // Several awaited seats, because one is the case that cannot exercise the thing the
+    // window is hard about: a deadline per seat, and only the earliest may be booked.
+    this.mutateForTests({ plusThree: { playerId: byPlayerId, awaiting: [...awaiting] } });
+  }
+
+  /** Test seam: what the alarm queue holds for one kind, or `null`. */
+  alarmAtForTests(kind: AlarmKind): number | null {
+    return this.alarms.at(kind);
   }
 
   /**
@@ -2332,6 +2478,15 @@ export class GameRoom {
       return;
     }
     this.commit({ ...this.game, ...patch, version: this.game.version + 1 }, []);
+    /*
+     * And settled, like every real entry point. `commit` relies on its caller to flush —
+     * every real one is a message handler that does — so a seam that skipped it left the
+     * room holding deadlines computed against the state *before* the mutation. A test
+     * would then be asserting about the situation it thought it had set up only if
+     * something else happened to flush afterwards, which is a test that passes for the
+     * wrong reason.
+     */
+    this.flush();
   }
 
   /** Test and diagnostic seam: the room as stored. */
