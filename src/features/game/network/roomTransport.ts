@@ -36,9 +36,17 @@ const PROBE_RESPONSE = 'pong';
 /** Consecutive unanswered probes before the socket is declared half-open. */
 const PROBE_MISSES_FATAL = 2;
 
-export type RoomErrorCode =
-  /** No relay is configured for this build. */
-  'notConfigured' | 'browserUnsupported' | 'network' | 'timeout' | 'closed' | 'unknown';
+export const ROOM_ERROR_CODES = [
+  /** No room worker is configured for this build. */
+  'notConfigured',
+  'browserUnsupported',
+  'network',
+  'timeout',
+  'closed',
+  'unknown',
+] as const;
+
+export type RoomErrorCode = (typeof ROOM_ERROR_CODES)[number];
 
 export class RoomError extends Error {
   constructor(
@@ -52,13 +60,6 @@ export class RoomError extends Error {
 
 export interface RoomChannel {
   readonly open: boolean;
-  /**
-   * Bytes queued locally and not yet handed to the network.
-   *
-   * `open` staying true while this climbs is the signature of a path that has
-   * stopped working without anybody being told.
-   */
-  readonly bufferedAmount: number;
   /** Sends a JSON-serialisable value. Never throws; a dead socket simply drops it. */
   send(data: unknown): void;
   onData(handler: (data: unknown) => void): () => void;
@@ -138,10 +139,6 @@ class WebSocketChannel implements RoomChannel {
 
   get open(): boolean {
     return this.isOpen && this.socket.readyState === WebSocket.OPEN;
-  }
-
-  get bufferedAmount(): number {
-    return this.socket.bufferedAmount;
   }
 
   send(payload: unknown): void {

@@ -12,7 +12,9 @@ import {
   type TranslationKey,
 } from '../../src/i18n/index.ts';
 import { REJECTION_CODES } from '../../src/features/game/engine/state.ts';
-import { CONNECTION_PHASES } from '../../src/features/game/network/session.ts';
+import { CONNECTION_PHASES, SESSION_CLOSED_REASONS } from '../../src/features/game/network/session.ts';
+import { ROOM_ERROR_CODES } from '../../src/features/game/network/roomTransport.ts';
+import { joinRejectionReasonSchema } from '../../src/features/game/network/protocol.ts';
 
 const keys = Object.keys(en) as TranslationKey[];
 
@@ -58,35 +60,16 @@ describe('dictionaries', () => {
   });
 
   it('has a localised message for every session error and close reason', () => {
-    for (const code of [
-      'notConfigured',
-      'browserUnsupported',
-      'network',
-      'timeout',
-      'closed',
-      'unknown',
-      'roomFull',
-      'gameInProgress',
-      'invalidName',
-      'protocolMismatch',
-      'unknownSeat',
-      'invalidResumeToken',
-      'roomClosed',
-      'roomTaken',
-    ]) {
+    // Derived, not copied: a hand-kept list is how `status.initializing` and
+    // `status.ready` outlived the phases that produced them.
+    for (const code of [...ROOM_ERROR_CODES, ...joinRejectionReasonSchema.options]) {
       expect(keys).toContain(`error.${code}`);
     }
-    for (const reason of [
-      'roomClosed',
-      'roomReset',
-      'removedByCreator',
-      'duplicateConnection',
-      'leftVoluntarily',
-      // The one that ends a round without ending the room.
-      'abandoned',
-    ]) {
+    for (const reason of SESSION_CLOSED_REASONS) {
       expect(keys).toContain(`closed.${reason}`);
     }
+    // And the one that ends a round without ending the room.
+    expect(keys).toContain('closed.abandoned');
   });
 
   it('can describe every event the engine emits', () => {

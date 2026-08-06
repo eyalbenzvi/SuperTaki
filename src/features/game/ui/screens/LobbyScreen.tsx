@@ -179,7 +179,7 @@ export function LobbyScreen(): ReactNode {
               <span className="sr-only">{t('lobby.seatLabel', { seat: index + 1 })}</span>
               {player.isCreator ? (
                 <Badge tone="accent" icon="crown">
-                  {t('common.host')}
+                  {t('common.creator')}
                 </Badge>
               ) : null}
               {/* A robot is always here, so a connection badge beside it would be

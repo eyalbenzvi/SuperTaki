@@ -641,7 +641,7 @@ export class ClientSession implements Session {
         this.handleKicked(message.payload.reason);
         return;
       case 'roomClosed':
-        this.closeWith(message.payload.reason === 'roomReset' ? 'roomReset' : 'roomClosed');
+        this.closeWith('roomClosed');
         return;
     }
   }

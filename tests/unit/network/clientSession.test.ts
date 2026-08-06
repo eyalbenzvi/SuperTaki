@@ -287,22 +287,19 @@ describe('host-driven lifecycle messages', () => {
     harness.destroy();
   });
 
-  it.each(['roomClosed', 'roomReset'] as const)(
-    'closes the session when the room reports %s',
-    async (reason) => {
-      /*
-       * Both are terminal, and that is the change. There used to be four reasons here
-       * and two of them — a host reloading, a host handing over — were not endings at
-       * all, so a client had to hold its seat through them. A room does not reload and
-       * does not move.
-       */
-      const harness = await connectClient();
-      harness.host.say('roomClosed', { reason });
-      await flush();
-      expect(harness.recorder.last('closed')?.reason).toBe(reason);
-      harness.destroy();
-    },
-  );
+  it('closes the session when the room reports it is closed', async () => {
+    /*
+     * Terminal, and that is the change. There used to be four reasons here and two of
+     * them — a host reloading, a host handing over — were not endings at all, so a
+     * client had to hold its seat through them. A room does not reload and does not
+     * move, so anything that ends a session ends it.
+     */
+    const harness = await connectClient();
+    harness.host.say('roomClosed', { reason: 'roomClosed' });
+    await flush();
+    expect(harness.recorder.last('closed')?.reason).toBe('roomClosed');
+    harness.destroy();
+  });
 
   it('stops retrying after a definitive rejection but allows a manual retry', async () => {
     const harness = await connectClient({ accept: false });

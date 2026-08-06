@@ -115,9 +115,10 @@ export function useShellEffects(screen: Screen): void {
   }, [screen]);
 
   /*
-   * A refresh or a closed tab during play costs the host's room outright, and
-   * costs a guest their turn. The browser's own confirmation is the only hook
-   * available, and it is worth using for exactly this window.
+   * A refresh or a closed tab during play costs nobody the room any more — it is in
+   * the room, not this tab — but it still costs this player the moments it takes to
+   * come back, and the table waits on them meanwhile. The browser's own confirmation
+   * is the only hook available, and it is worth using for exactly this window.
    */
   useEffect(() => {
     if (screen !== 'game') {

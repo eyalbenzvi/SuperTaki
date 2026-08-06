@@ -72,7 +72,7 @@ describe('lobby', () => {
     renderApp();
     const items = screen.getAllByRole('listitem');
     expect(items[0]).toHaveTextContent('דנה');
-    expect(within(items[0] as HTMLElement).getByText('מנחה')).toBeInTheDocument();
+    expect(within(items[0] as HTMLElement).getByText('פתח/ה את החדר')).toBeInTheDocument();
     expect(items[0]).toHaveTextContent('(את/ה)');
     expect(items[1]).toHaveTextContent('אלי');
   });

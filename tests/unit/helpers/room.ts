@@ -15,7 +15,7 @@
  * The clock is manual, so nothing waits and alarms fire when a test says so.
  */
 
-import { AlarmMux, type AlarmPlatform, type AlarmStore } from '../../../worker/src/alarms.ts';
+import { AlarmMux, memoryAlarms } from '../../../worker/src/alarms.ts';
 import { GameRoom, type RoomSocket } from '../../../worker/src/gameRoom.ts';
 import { memoryStore, type RoomStore } from '../../../worker/src/storage.ts';
 import type { ChannelFactory, RoomChannel } from '../../../src/features/game/network/roomTransport.ts';
@@ -62,30 +62,6 @@ export function createRecorder(): {
     last: (type) => ofType(type).at(-1),
     clear: () => {
       updates.length = 0;
-    },
-  };
-}
-
-interface AlarmBox extends AlarmStore, AlarmPlatform {
-  armedAt: number | null;
-}
-
-function alarmBox(): AlarmBox {
-  const rows = new Map<string, number>();
-  return {
-    armedAt: null,
-    entries: () => [...rows].map(([kind, at]) => ({ kind, at })),
-    put(kind, at) {
-      rows.set(kind, at);
-    },
-    delete(kind) {
-      rows.delete(kind);
-    },
-    setAlarm(atMs) {
-      this.armedAt = atMs;
-    },
-    deleteAlarm() {
-      this.armedAt = null;
     },
   };
 }
@@ -141,10 +117,6 @@ class PipedChannel implements RoomChannel {
 
   get open(): boolean {
     return this.isOpen;
-  }
-
-  get bufferedAmount(): number {
-    return 0;
   }
 
   send(payload: unknown): void {
@@ -216,7 +188,7 @@ export class TestRoom {
   private clock: number;
   private readonly rooms = new Map<
     string,
-    { room: GameRoom; alarms: AlarmBox; store: RoomStore; channels: PipedChannel[] }
+    { room: GameRoom; alarms: ReturnType<typeof memoryAlarms>; store: RoomStore; channels: PipedChannel[] }
   >();
 
   constructor(private readonly options: TestRoomOptions = {}) {
@@ -233,13 +205,13 @@ export class TestRoom {
 
   private entry(roomCode: string): {
     room: GameRoom;
-    alarms: AlarmBox;
+    alarms: ReturnType<typeof memoryAlarms>;
     store: RoomStore;
     channels: PipedChannel[];
   } {
     let entry = this.rooms.get(roomCode);
     if (entry === undefined) {
-      const alarms = alarmBox();
+      const alarms = memoryAlarms();
       const store = memoryStore();
       entry = {
         alarms,
@@ -448,9 +420,6 @@ class ScriptedChannel implements RoomChannel {
 
   get open(): boolean {
     return this.isOpen;
-  }
-  get bufferedAmount(): number {
-    return 0;
   }
   send(payload: unknown): void {
     if (this.isOpen) {

@@ -33,7 +33,7 @@ export const en = {
   'common.share': 'Share',
   'common.back': 'Back',
   'common.you': 'you',
-  'common.host': 'Host',
+  'common.creator': 'Opened the room',
   'common.leave': 'Leave',
 
   'common.on': 'On',
@@ -246,7 +246,6 @@ export const en = {
   'error.roomTaken': 'That room code is in use. Try creating the room again.',
 
   'closed.roomClosed': 'The room is closed.',
-  'closed.roomReset': 'The room was reset.',
   'closed.removedByCreator': 'You were removed from the room.',
   'closed.duplicateConnection': 'This room was opened in another tab, which took over the connection.',
   'closed.leftVoluntarily': 'You left the room.',

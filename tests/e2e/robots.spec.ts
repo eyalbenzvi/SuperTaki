@@ -6,7 +6,7 @@ import { awaitSettled, createRoom, openApp, takeAnyTurn } from './helpers.ts';
  *
  * This is the only test in the suite that plays a game without a second page,
  * which is the point: a robot is what makes a table of one a game. Everything
- * below the button is production code — the host's authoritative path, the same
+ * below the button is production code — the room's authoritative path, the same
  * engine, the same protocol — and the assertions are about what a player actually
  * sees: a seat marked as a robot, and a hand that empties without anybody touching
  * it.
@@ -65,7 +65,7 @@ test.describe('a table with a robot in it', () => {
 
     /*
      * Now play. The human plays the first legal card each time; the robot answers on
-     * its own, from the host's tab, with no help from this test. The round is bounded
+     * its own, from inside the room, with no help from this test. The round is bounded
      * by the clock rather than by a step count — how long a Taki round runs varies
      * enormously — and the assertion is that it *ends*.
      */

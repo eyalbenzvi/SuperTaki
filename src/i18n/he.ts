@@ -27,7 +27,7 @@ export const he: Translations = {
   'common.share': 'שיתוף',
   'common.back': 'חזרה',
   'common.you': 'את/ה',
-  'common.host': 'מנחה',
+  'common.creator': 'פתח/ה את החדר',
   'common.leave': 'יציאה',
 
   'common.on': 'מופעל',
@@ -238,7 +238,6 @@ export const he: Translations = {
   'error.roomTaken': 'קוד החדר הזה תפוס. כדאי לנסות לפתוח חדר שוב.',
 
   'closed.roomClosed': 'החדר סגור.',
-  'closed.roomReset': 'החדר אופס.',
   'closed.removedByCreator': 'הוסרת מהחדר.',
   'closed.duplicateConnection': 'החדר נפתח בלשונית אחרת, שהשתלטה על החיבור.',
   'closed.leftVoluntarily': 'יצאת מהחדר.',

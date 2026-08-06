@@ -35,20 +35,25 @@ export interface SessionError {
 /**
  * Why a session ended.
  *
+ * A value as well as a type, so the dictionaries are checked against this list rather
+ * than a hand-kept copy of it.
+ *
  * Every one of these is terminal, which is new. There used to be reasons that were
  * not — a host reloading, a host handing the room to somebody else — and a great
  * deal of machinery existed so a client could tell those from a goodbye and hold its
  * seat through them. A room does not reload and does not move, so if the session is
  * over it is over, and what a client does about it is always the same.
  */
-export type SessionClosedReason =
-  | 'roomClosed'
-  | 'roomReset'
-  | 'removedByCreator'
-  | 'duplicateConnection'
-  | 'leftVoluntarily'
+export const SESSION_CLOSED_REASONS = [
+  'roomClosed',
+  'removedByCreator',
+  'duplicateConnection',
+  'leftVoluntarily',
   /** The round ran out of players. */
-  | 'abandoned';
+  'abandoned',
+] as const;
+
+export type SessionClosedReason = (typeof SESSION_CLOSED_REASONS)[number];
 
 /** Close reasons after which the seat is genuinely gone, so its credential is worthless. */
 export const CREDENTIAL_ENDING_REASONS: ReadonlySet<SessionClosedReason> = new Set<SessionClosedReason>([

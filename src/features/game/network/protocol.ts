@@ -361,7 +361,7 @@ export type JoinRejectionReason = z.infer<typeof joinRejectionReasonSchema>;
  * see-you-in-a-moment and hold its seat through the second. The room does not
  * reload and does not move: if it says it is closed, it is.
  */
-export const roomClosedReasonSchema = z.enum(['roomClosed', 'roomReset']);
+export const roomClosedReasonSchema = z.enum(['roomClosed']);
 export const kickReasonSchema = z.enum(['removedByCreator', 'duplicateConnection']);
 
 const envelopeShape = {
