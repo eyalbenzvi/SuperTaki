@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # And the app's, because the worker compiles `../src/features/game/**` and those
+      # files resolve `zod` upward from themselves — a walk that reaches the repository
+      # root and never passes `worker/node_modules`. Without this the typecheck fails
+      # and nothing deploys. See the same step in `ci.yml`.
+      - name: Install the app's dependencies
+        run: npm ci
+        working-directory: ${{ github.workspace }}
+
       - name: Typecheck and test
         run: npm run verify
 

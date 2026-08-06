@@ -70,6 +70,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The app's too, and this is not belt-and-braces.
+      #
+      # The worker compiles `../src/features/game/**` by relative import, and those
+      # files resolve `zod` the way Node does: upward from the importing file. From
+      # `src/features/game/network/` that walk reaches the repository root and never
+      # passes `worker/node_modules`, so the worker having `zod` in its own manifest
+      # is irrelevant — `tsc` and esbuild both need the root install. It works on a
+      # developer's machine only because the root install is always there, which is
+      # exactly why this was missed until CI ran it.
+      - name: Install the app's dependencies
+        run: npm ci
+        working-directory: ${{ github.workspace }}
+
       # The worker typechecks the engine, the robots and the wire protocol as well
       # as its own code — they are the app's, borrowed by relative import — so a
       # rules change that breaks the room fails here as well as in the app's job.
