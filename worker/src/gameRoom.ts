@@ -1845,13 +1845,22 @@ export class GameRoom {
     // --- everything that only means something during a live, unpaused round
     const live = record.phase === 'inGame' && this.game !== null && record.pausedBy === null;
     if (!live) {
-      for (const kind of ['absentTurn', 'botStall', 'standIn', 'lastCard', 'idleNudge'] as AlarmKind[]) {
+      /*
+       * `botMove` is cleared here too, even though `BotRunner` owns it everywhere else.
+       * The runner cancels its own pause when `blocked()` turns true — but only if this
+       * instance is the one that armed it, and after a hibernation it is not: the alarm
+       * row survived in storage and the runner came back with nothing pending. Left
+       * alone, a paused table would wake to play a card.
+       */
+      for (const kind of [
+        'absentTurn',
+        'botStall',
+        'botMove',
+        'standIn',
+        'lastCard',
+        'idleNudge',
+      ] as AlarmKind[]) {
         this.alarms.clear(kind);
-      }
-      if (!live && record.pausedBy !== null) {
-        // A pause suppresses the robots too, and the runner's own `blocked()` agrees —
-        // but the alarm it already booked has to go, or a paused table plays a card.
-        this.alarms.clear('botMove');
       }
       return;
     }
@@ -1867,6 +1876,17 @@ export class GameRoom {
     this.alarms.clear('absentTurn');
     this.alarms.clear('botStall');
     this.alarms.clear('idleNudge');
+
+    /*
+     * Collected and booked as a minimum rather than assigned per seat. `set` replaces,
+     * so a loop that books inside it lets the *last* seat considered decide the
+     * deadline — which for a +3 waiting on three seats means the room wakes for
+     * whichever one happens to be last in the array rather than whichever is due first.
+     */
+    let absentTurnAt: number | null = null;
+    let botStallAt: number | null = null;
+    const soonest = (current: number | null, candidate: number): number =>
+      current === null ? candidate : Math.min(current, candidate);
 
     /*
      * The +3 window first, and without any grace, because it is the worst stall in the
@@ -1885,14 +1905,14 @@ export class GameRoom {
         if (this.robotControls(seat)) {
           const since = Math.max(record.waitingSince ?? 0, seat.standInSince ?? 0);
           if (since > 0) {
-            this.book('botStall', since + BOT_STALL_MS);
+            botStallAt = soonest(botStallAt, since + BOT_STALL_MS);
           }
           continue;
         }
         if (!this.present(seat)) {
           // Nothing to wait for: decline for them at once.
-          this.book('absentTurn', now);
-          return;
+          absentTurnAt = soonest(absentTurnAt, now);
+          continue;
         }
         /*
          * And the case that froze a table indefinitely: a seat that is *here* and
@@ -1901,9 +1921,11 @@ export class GameRoom {
          */
         const silentSince = Math.max(record.waitingSince ?? 0, seat.lastIntentAt ?? 0);
         if (silentSince > 0) {
-          this.book('absentTurn', silentSince + STAND_IN_IDLE_MS);
+          absentTurnAt = soonest(absentTurnAt, silentSince + STAND_IN_IDLE_MS);
         }
       }
+      this.bookIfSet('absentTurn', absentTurnAt);
+      this.bookIfSet('botStall', botStallAt);
       return;
     }
 
@@ -1951,6 +1973,13 @@ export class GameRoom {
       at = Math.max(at, seat.lastResumeAttemptAt + RESUME_ATTEMPT_SUPPRESSES_SKIP_MS);
     }
     this.book('absentTurn', at);
+  }
+
+  /** Books a deadline only when one was computed. */
+  private bookIfSet(kind: AlarmKind, atMs: number | null): void {
+    if (atMs !== null) {
+      this.book(kind, atMs);
+    }
   }
 
   /**

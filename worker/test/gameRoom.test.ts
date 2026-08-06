@@ -466,6 +466,30 @@ describe('absence, on the alarm', () => {
     expect(pending.every((entry) => entry.at > table.now())).toBe(true);
   });
 
+  it('wakes for the earliest of several deadlines, not the last one considered', () => {
+    /*
+     * A +3 can be waiting on more than one seat, and each contributes a deadline. The
+     * queue holds one row per kind, so a loop that books inside it lets whichever seat
+     * happens to be last in the array decide when the room wakes — which is the wrong
+     * seat roughly half the time, and unboundedly wrong when their clocks differ.
+     */
+    const table = new Harness();
+    const creator = table.join('Dana', CREATE);
+    const second = table.join('Yoni');
+    const third = table.join('Noa');
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+
+    // Two seats owe an answer, and one of them went quiet much earlier than the other.
+    table.room.forcePlusThreeForTests(creator.playerId, second.playerId);
+    table.advance(30_000);
+    table.room.handleClose(third.client);
+
+    const pending = table.pendingAlarms();
+    expect(pending.length).toBeGreaterThan(0);
+    expect(table.armedAt).toBe(pending[0]!.at);
+    expect(pending.every((entry) => entry.at > table.now())).toBe(true);
+  });
+
   it('stops working the table when nobody is connected at all', () => {
     // Two players closing their tabs must not leave the room passing turns between
     // two empty chairs every twelve seconds for six hours. The table waits.
