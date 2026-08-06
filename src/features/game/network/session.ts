@@ -4,9 +4,23 @@ import type { PublicGameState } from '../engine/views.ts';
 import type { JoinRejectionReason, LobbySnapshot } from './protocol.ts';
 import type { RoomErrorCode } from './roomTransport.ts';
 
-/** Connection lifecycle, surfaced verbatim in the UI. */
-export type ConnectionPhase =
-  'idle' | 'initializing' | 'ready' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'failed';
+/**
+ * Connection lifecycle, surfaced verbatim in the UI.
+ *
+ * Exported as a value as well as a type so the dictionaries can be checked against
+ * it rather than against a hand-kept copy of it — which is how `initializing` and
+ * `ready` outlived the session that used to emit them.
+ */
+export const CONNECTION_PHASES = [
+  'idle',
+  'connecting',
+  'connected',
+  'reconnecting',
+  'disconnected',
+  'failed',
+] as const;
+
+export type ConnectionPhase = (typeof CONNECTION_PHASES)[number];
 
 export type SessionErrorCode = RoomErrorCode | JoinRejectionReason | 'protocolMismatch';
 

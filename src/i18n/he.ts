@@ -203,8 +203,6 @@ export const he: Translations = {
   'card.playAria': 'הנחת {card}',
 
   'status.idle': 'לא מחובר',
-  'status.initializing': 'מתחיל…',
-  'status.ready': 'מוכן',
   'status.connecting': 'מתחבר…',
   'status.connected': 'מחובר',
   'status.reconnecting': 'מתחבר מחדש…',

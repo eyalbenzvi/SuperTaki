@@ -55,12 +55,12 @@ player-shaped trust boundary is gone: no device now holds anything but its own c
 ### 1. A malicious or buggy client tries to forge state
 
 **Mitigation — structural.** There is no message in the protocol that carries game state from
-a client. The client vocabulary is `joinRequest`, `resumeRequest`, `action`, `playAgainVote`,
-`leave`, `ping`, `pong`. `action` can only say _what the player wants to do_. A client cannot
-assert "the state is now X" because the wire format has no way to express it, and the host has
-no code path that would accept it.
+a client. The client vocabulary is `joinRequest`, `resumeRequest`, `action`, `leave`,
+`playAgainVote`, `pauseRequest`, `abandonVote`, `nudge`, `roomCommand`. `action` can only say
+_what the player wants to do_. A client cannot assert "the state is now X" because the wire
+format has no way to express it, and the room has no code path that would accept it.
 
-Tested: a scripted peer sends host-only message types and they are rejected as `unknownType`.
+Tested: a scripted client sends room-only message types and they are rejected as `unknownType`.
 
 ### 2. A client sends invalid or nonsensical commands
 
@@ -70,14 +70,14 @@ not your turn, card not in hand, illegal card, colour required, must play after 
 draw during Taki, wrong Taki colour, and so on. The rejection is sent back only to the player
 who asked, and the state is untouched.
 
-Tested: a client asks to play a card that is in the _host's_ hand — rejected with
+Tested: a client asks to play a card that is in _another player's_ hand — rejected with
 `cardNotInHand`; a client acts out of turn — rejected with `notYourTurn`.
 
 ### 3. A client impersonates another player
 
-**Mitigation.** Client messages do not carry a player id. The host binds a seat id to the data
-connection at join time and injects that id into every command it builds. To act as another
-player you would have to take over their data channel, not edit a field.
+**Mitigation.** Client messages do not carry a player id. The room binds a seat id to the
+WebSocket at join time and injects that id into every command it builds. To act as another
+player you would have to take over their socket, not edit a field.
 
 `resumeRequest` is the one exception, and it must present the seat's random 16-byte token.
 
@@ -86,50 +86,58 @@ a wrong token is rejected.
 
 ### 4. Message spoofing over the transport — the honest limits
 
-`senderPeerId` in the envelope is **not** an authentication field. It is transport metadata,
-useful for logs. Anything received on a data connection is treated as coming from whoever owns
-that connection, which is exactly what the transport guarantees:
+`senderPeerId` in the envelope is **not** an authentication field, and nothing is routed by it.
+It is a connection label kept for logs. Anything received on a socket is treated as coming from
+the seat that socket is bound to, which is the whole of the guarantee:
 
-- Traffic to and from the relay is TLS-encrypted, so a third party on the network cannot
-  inject frames or read them.
-- The relay stamps the sender's authenticated peer id on every frame it routes, so no client
-  can speak in another peer's name — spoofing a player requires owning their relay claim,
-  not editing a field.
-- The relay itself could read or mis-route frames if its operator modified it: it is code
-  from this repository running on the room owner's own Cloudflare account, which is a
-  meaningfully smaller leap of trust than the anonymous public broker it replaced — but it
-  is a component players trust the room owner about, and this document says so. What passes
-  through it: game intents, public state, and each player's own hand on its way to them.
-  What never exists on it: any stored game data — claims (peer id → secret, last seen) are
-  the only state, and they expire with the room.
-- The `BroadcastChannel` transport is same-origin and same-browser only. It is not a security
-  boundary at all; it exists for tests and same-device play, and is never the default.
+- There is nothing between a player and the room. Each client holds one `wss://` socket
+  straight to the object; no frame a player sends is ever forwarded to another player
+  verbatim, because the room answers rather than relays. What every other player sees is
+  the room's own recomputed public state.
+- The socket is TLS-encrypted, so a third party on the network cannot inject frames or read
+  them.
+- The binding is the object's, not the message's: the seat id is stored on the socket's
+  attachment when the join or resume is accepted, and every command is built by the room from
+  that. Speaking as another player therefore requires holding their socket or their 16-byte
+  resume token.
+- One seat, one live socket: a second connection accepted for a seat closes the first with
+  `superseded`, so a seat cannot be driven from two places at once.
+- The room itself could read anything, and does — it holds every hand. That is §11, and it is
+  the trust this design spends. It is code from this repository, running on the repository
+  owner's own Cloudflare account.
 
 ### 5. Replay and duplicate messages
 
-**Mitigation.** Each connection keeps a bounded LRU of the last 512 message ids and drops
-repeats. Snapshots additionally carry a monotonic version, and a client ignores anything older
-than what it has applied, so replaying an old snapshot cannot roll a client back.
+**Mitigation.** Each connection keeps a bounded LRU of the last 512 envelope ids and drops
+repeats. That covers accidents on the wire, and nothing else: an envelope id is minted fresh on
+every send, so a deliberate re-send of the same intent carries a new one. What makes an intent
+idempotent is `requestId`, which lives on the _seat_ rather than the connection and therefore
+survives a reconnect: a repeated request id is answered with the same acceptance and applied
+once. Snapshots carry a monotonic version, and a client ignores anything older than what it has
+applied, so a replayed snapshot cannot roll a client back.
 
-Tested: a replayed join request seats one player, not two; a stale snapshot is dropped.
+Tested: a replayed `requestId` is answered once and moves the state once; a repeated
+`joinRequest` on one socket is answered rather than ignored, and seats one player.
 
-### 6. Denial of service by a peer
+### 6. Denial of service by a player
 
-A peer that is already in the room can be a nuisance, and in a peer-to-peer private game there
-is no way to prevent that entirely. What is bounded:
+A player who is already in the room can be a nuisance, and in a private game with no accounts
+there is no way to prevent that entirely. What is bounded:
 
-- Messages larger than 64 KiB are dropped before parsing.
+- Frames larger than 128 KiB are refused by the socket, and messages larger than 64 KiB are
+  dropped before parsing.
 - Every string, array and number in every schema has a maximum, so a hostile payload cannot
   allocate unbounded memory.
-- Duplicate connections from one peer id close the older channel, so a peer cannot accumulate
-  channels.
+- A second accepted connection for a seat closes the first, so nobody can accumulate sockets.
 - Invalid messages are dropped silently and cheaply — no logging storm, no state change.
-- The host can remove any player in the lobby, and can leave (which ends the room) at any time.
+- The seat holding the lobby buttons can remove any player before the game starts; leaving is
+  just leaving, and the room stays open for everybody else.
 
-**Not mitigated, honestly:** a peer in the room can flood valid-but-useless messages (pings,
-illegal actions) and consume the host's CPU. There is no rate limiter. In a private game with
-at most six invited players, kicking or closing the room is a proportionate response, and a
-rate limiter would add complexity for a threat that barely exists here.
+**Not mitigated, honestly:** a player in the room can flood valid-but-useless messages and
+consume the object's CPU. There is no rate limiter. The blast radius is one room — Durable
+Objects are isolated per room code, so the worst case is that the flooder spoils their own
+table. In a private game with at most six invited players, kicking is a proportionate
+response, and a rate limiter would add complexity for a threat that barely exists here.
 
 Equally, joining a room requires only the room code, so anyone with the invite link can occupy
 a seat until the game starts. Treat the link like an invitation to your living room.
@@ -144,11 +152,12 @@ a seat until the game starts. Treat the link like an invitation to your living r
    extra field would be stripped.
 3. Private hands are unicast with `connection.send`, never broadcast.
 4. A client checks that a received hand belongs to it and ignores anything else, so even a
-   buggy host cannot make a client render another hand.
+   buggy room cannot make a client render another hand.
 
 Tested three ways: a unit test asserts no hand card id appears in a serialised public
-snapshot; a session test asserts the two players' hands are disjoint and invisible to each
-other; a Playwright test asserts the same in real rendered HTML.
+snapshot; a room test plays a round and asserts that no frame ever sent to one player carries
+a card id from another player's hand or from the draw pile; a Playwright test asserts the same
+in real rendered HTML, against the real room.
 
 **Remaining exposure:** the room legitimately holds every hand, because someone has to. No
 _player_ can look, which is the change: the holder used to be one of the players. What holds
@@ -160,14 +169,14 @@ it now is the operator's infrastructure — see §11.
 
 - `dangerouslySetInnerHTML` is not used anywhere in the codebase. All player-supplied text
   goes through React text nodes, which escape by construction.
-- Display names are sanitised on the host: normalised to NFC, stripped of C0/C1 controls, bidi
+- Display names are sanitised in the room, on arrival: normalised to NFC, stripped of C0/C1 controls, bidi
   overrides and embeddings, zero-width marks and the BOM, whitespace-collapsed, and truncated
   to 16 characters. This is about readability and anti-spoofing (a bidi override can make one
   name render as another), not about HTML escaping, which React already handles.
 - A Content Security Policy is set in `index.html`: `default-src 'self'`, `object-src 'none'`,
   `frame-ancestors 'none'`, `form-action 'none'`, no `unsafe-inline` for scripts, and
-  `connect-src` limited to exactly two destinations — the page's own origin and the relay
-  it was built for (injected from `VITE_RELAY_URL` at build time). `style-src` allows
+  `connect-src` limited to exactly two destinations — the page's own origin and the room
+  worker it was built for (injected from `VITE_RELAY_URL` at build time). `style-src` allows
   `unsafe-inline` because the app sets `color-scheme` on the root element and Vite injects a
   style tag in development — a documented, narrow exception.
 - No external images, no remote fonts, no CDN scripts, no analytics. Nothing to compromise.
@@ -189,19 +198,21 @@ it now is the operator's infrastructure — see §11.
   That channel's privacy is outside this app's control.
 - The app removes invite parameters from the address bar after reading them, so a room code is
   not left in the browser history of a shared device.
-- Never put anything secret in a URL, and this app does not: the link carries a room code and,
-  optionally, a peer id. Nothing else.
+- Never put anything secret in a URL, and this app does not: the link carries a room code.
+  Nothing else. It used to carry a peer id as well, so that a joiner could address the host's
+  device; there is nothing to address now, because the room is at the room code.
 
 ### 10. Local-storage limitations
 
-What is stored: language, theme, display name, and — while a room is live — room code, host
-peer id, seat id, rejoin token and a timestamp.
+What is stored: language, theme, sound, display name, and — while a room is live — the room
+code, the seat id, the rejoin token, the display name that seat was taken under, and a
+timestamp.
 
 - `localStorage` is **not** encrypted and is readable by any script on the same origin. Since
   the origin serves only this app and loads no third-party scripts, the practical exposure is
   another person using the same browser profile.
 - The rejoin token expires after 6 hours, and stored values are validated on read (shape, room
-  code format, peer id format, token length, timestamp sanity); anything suspect is deleted
+  code format, seat id format, token length, timestamp sanity); anything suspect is deleted
   rather than used.
 - Leaving a room, being removed, or a room closing all erase the entry immediately. The home
   screen offers "Start fresh" to erase it manually.
@@ -252,7 +263,7 @@ listed as one in [architecture.md](architecture.md).
 | XSS                                   | Prevented (no raw HTML, sanitised names, CSP)                              |
 | Duplicate connections                 | Handled (older channel closed)                                             |
 | Room-code guessing                    | Partially mitigated (10^6 codes, short-lived, 6 seats, closed after start) |
-| Flooding by a joined peer             | **Not mitigated** — kick or close the room                                 |
+| Flooding by a joined player           | **Not mitigated** — kick; blast radius is the one room                     |
 | A player cheating by inspecting state | **Prevented** — no player's device holds another's cards                   |
 | Room outage                           | **Not mitigated** — single point of failure, reported honestly in the UI   |
 | Operator reading hands                | **Accepted and stated** — see §11; bounded by a 6-hour deletion            |

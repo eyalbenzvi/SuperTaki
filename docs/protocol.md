@@ -222,7 +222,7 @@ Join request (client → room):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "9f2c1a7b4e0d8c33",
   "roomId": "482913",
   "senderPeerId": "abc123def456",
@@ -236,10 +236,10 @@ Join accepted (room → client):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "1b7e4c2a9d5f0e81",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000000120,
   "type": "joinAccepted",
   "payload": {
@@ -265,7 +265,7 @@ An action (client → room) — note there is no player id anywhere:
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "5c8a2e1d7b3f9046",
   "roomId": "482913",
   "senderPeerId": "abc123def456",
@@ -279,10 +279,10 @@ Public state (room → all) — card counts only:
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "aa10bb20cc30dd40",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042100,
   "type": "publicState",
   "payload": {
@@ -320,10 +320,10 @@ Private hand (room → one client only):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "bb11cc22dd33ee44",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042110,
   "type": "privateHand",
   "payload": {
@@ -343,10 +343,10 @@ Events (room → all):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "cc12dd34ee56ff78",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042120,
   "type": "gameEvents",
   "payload": {
@@ -368,10 +368,10 @@ A rejection (room → one client):
 
 ```json
 {
-  "protocolVersion": 1,
+  "protocolVersion": 6,
   "id": "dd13ee24ff35aa46",
   "roomId": "482913",
-  "senderPeerId": "crush-482913",
+  "senderPeerId": "room",
   "timestamp": 1758000042130,
   "type": "actionRejected",
   "payload": { "code": "wrongTakiColor" }

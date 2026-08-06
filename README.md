@@ -124,9 +124,9 @@ Requirements: Node.js 20+ (CI uses 22) and npm 10+.
 ## Running the tests
 
 ```bash
-npm test                # 669 unit + component tests
+npm test                # 798 unit + component tests
 npm run test:coverage   # same, with coverage thresholds enforced
-npm run test:e2e        # 28 scenarios x 2 viewports (needs a Chromium download once)
+npm run test:e2e        # 50 scenarios x 2 viewports (needs a Chromium download once)
 ```
 
 Playwright downloads Chromium on first use (`npx playwright install chromium`). If your
@@ -195,9 +195,12 @@ VITE_BASE_PATH=/super-taki/ npm run build
 Routing uses the URL hash (`#/join?room=...`), which GitHub Pages serves correctly without
 rewrite rules. The workflow also copies `index.html` to `404.html` as a safety net.
 
-### Deploying the relay (one-time Cloudflare setup)
+### Deploying the room worker (one-time Cloudflare setup)
 
-The game needs its relay. Setting it up takes about ten minutes, once:
+The game needs its room server. Setting it up takes about ten minutes, once. Everything below
+still says _relay_ — the workflow, the worker's name, the repository variable — because that
+is what it was before the game moved into it, and renaming any of it would break a deployment
+that works. It is the room worker; only the label is historical.
 
 1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com) — no credit
    card required.
@@ -212,9 +215,9 @@ The game needs its relay. Setting it up takes about ten minutes, once:
    `wss://supertaki-relay.<your-subdomain>.workers.dev`, and re-run the Pages deploy.
 
 The Pages build injects `RELAY_URL` into the app (`VITE_RELAY_URL`) and into the Content
-Security Policy, so the deployed page can talk to exactly one relay: yours. Locally, no
-configuration is needed — `npm run dev` in `worker/` serves the relay on
-`ws://127.0.0.1:8787`, which is the dev build's default.
+Security Policy, so the deployed page can talk to exactly one room server: yours. Locally, no
+configuration is needed — `npm run dev` in `worker/` serves it on `ws://127.0.0.1:8787`,
+which is the dev build's default.
 
 ## The room server (read this)
 
@@ -324,7 +327,7 @@ no UI imports, and the UI holds no game rules.
 - [docs/protocol.md](docs/protocol.md) — message envelope, every message type, validation, versioning, examples
 - [docs/rules.md](docs/rules.md) — exact deck, exact rules, +2 runs, the King, the +3 breaker window, decisions where editions disagree (bilingual)
 - [docs/robots.md](docs/robots.md) — robot players: what they know, how they play, when one covers a human seat
-- [docs/threat-model.md](docs/threat-model.md) — what a malicious peer can and cannot do
+- [docs/threat-model.md](docs/threat-model.md) — what a malicious client can and cannot do, and what the operator can see
 - [docs/deployment.md](docs/deployment.md) — GitHub Pages step by step
 - [docs/qa-report.md](docs/qa-report.md) — what was tested, coverage, manual checklist, known limitations
 - [docs/review-notes.md](docs/review-notes.md) — findings from the expert review passes and the changes made

@@ -225,48 +225,58 @@ Coverage of the room comes from three directions:
 2. UI: is it a wild card? -> open the colour modal, wait for a choice
 3. store.playCard(cardId, chosenColor?)  ->  session.submitAction({type:'playCard', ...})
 4. Client session wraps it in an envelope (protocol version, message id, room id,
-   sender peer id, timestamp) and sends it on the data channel
-5. Host: parseClientMessage() validates the envelope and payload with Zod
-   - wrong protocol version -> joinRejected(protocolMismatch)
+   connection label, timestamp) with a requestId, and sends it on its socket
+5. Room: a frame over 128 KiB closes the socket unparsed; otherwise
+   parseClientMessage() validates the envelope and payload with Zod
+   - wrong protocol version -> joinRejected(protocolMismatch), so the tab reloads
    - wrong room id          -> ignored
    - duplicate message id   -> ignored
    - malformed              -> ignored
-6. Host resolves the seat bound to that connection, builds a GameCommand with that
-   player id, and calls applyCommand(state, command)
-7a. Rejected -> actionRejected(code) to that player only -> localised toast
-7b. Accepted -> new state, version + 1
+6. Room resolves the seat bound to that socket, and:
+   - a repeated requestId is answered from the seat, not applied again
+   - a turn-scoped intent whose turnToken is stale is rejected as notYourTurn
+   - otherwise it builds a GameCommand with that player id and calls
+     applyCommand(state, command)
+7a. Rejected -> actionRejected(code, requestId) to that player only -> localised toast
+7b. Accepted -> new state, version + 1, written to the object's SQLite
+      - actionAccepted(requestId, version) to the player who asked
       - broadcast publicState to everyone
       - send each player their own privateHand
       - broadcast gameEvents (the log lines)
+      - re-arm the one alarm for whichever deadline is now earliest
 8. Every client validates, drops stale versions, and re-renders
 ```
 
-The host's own move enters at step 6 directly, through the same function.
+A robot's move enters at step 6's last line directly, through the same function. There is no
+other entrance: nothing in the room can move the game except `applyCommand`.
 
 ## Connection lifecycle
 
-`idle → initializing → ready → connecting → connected`, with `reconnecting`,
-`disconnected` and `failed` as the unhappy paths. The current phase is always visible in the
-UI; it is never hidden behind a spinner that could last forever.
+`idle → connecting → connected`, with `reconnecting`, `disconnected` and `failed` as the
+unhappy paths. The current phase is always visible in the UI; it is never hidden behind a
+spinner that could last forever.
 
-- **Timeouts.** 15 s to open a data connection, 12 s to complete the join handshake.
-- **Retries.** Bounded exponential backoff: 1 s, 2 s, 4 s, 8 s, 12 s, then stop and offer a
-  manual retry.
-- **Fail fast where retrying is pointless.** "No such peer" _before_ joining means the room
-  code is wrong or the host is gone; retrying for 15 seconds only delays an answer the
-  player needs immediately, so it fails at once. (Another finding from end-to-end testing.)
-- **Definitive rejections stop the loop.** Room full, bad rejoin token, join timeout — the
-  automatic retry is disabled and the UI offers an explicit "Try again" instead.
-- **Heartbeat.** The host pings every 5 s; a client answers with a matching pong. Silence
-  for more than 9 s marks a player _unstable_, more than 20 s marks them _disconnected_.
-  Both states are shown per player in the lobby and during the game.
-- **Client-side watchdog.** A client that hears nothing from the host for 20 s closes the
-  channel and starts reconnecting, rather than sitting on a dead connection.
-- **Browser events.** `offline` moves the phase to `disconnected`; `online` triggers a
-  reconnect attempt.
-- **Duplicate connections.** A second channel from the same peer id closes the first with
-  `kicked(duplicateConnection)`, so a re-opened tab takes over cleanly instead of two
-  channels fighting.
+- **Timeouts.** 8 s to open the first socket, 20 s for later attempts (nobody is watching
+  those), and 15 s for the join handshake.
+- **Retries.** Bounded backoff with 30 % jitter: 0 s, 1 s, 2 s, 5 s, 10 s, 20 s, 30 s. The
+  first attempt is immediate, because whatever triggered it — a wake, an `online` event, a
+  socket close — is new information.
+- **Definitive rejections stop the loop.** Room full, game in progress, bad rejoin token —
+  the automatic retry is disabled and the UI offers an explicit "Try again" instead.
+- **Liveness probes.** The client sends a bare `ping` every 15 s and expects a `pong` within
+  3 s. The Cloudflare runtime answers it via `setWebSocketAutoResponse`, so a probe never
+  wakes the object and never costs a request; the cadence is 15 s rather than 5 s because a
+  faster one keeps a cellular modem out of its idle state for no gain. Two consecutive
+  unanswered probes close the socket and start reconnecting.
+- **Presence is observed, not inferred.** A client no longer guesses whether _another_ player
+  is there. The runtime tells the room when a socket closes, and the room publishes that. The
+  whole apparatus of probe accounting — miss counts, an "unstable" state, a consent-freshness
+  floor — went with the guessing.
+- **Browser events.** `offline` moves the phase to `disconnected`; `online`, a `visibilitychange`
+  back to visible, and a `pageshow` each trigger an immediate probe or reconnect.
+- **Duplicate connections.** A second socket accepted for a seat closes the first with a
+  `superseded` close code, so a re-opened tab takes over cleanly instead of two sockets
+  fighting.
 
 ## Reconnection model
 

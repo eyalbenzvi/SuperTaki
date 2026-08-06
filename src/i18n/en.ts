@@ -211,8 +211,6 @@ export const en = {
   'card.playAria': 'Play {card}',
 
   'status.idle': 'Not connected',
-  'status.initializing': 'Starting up…',
-  'status.ready': 'Ready',
   'status.connecting': 'Connecting…',
   'status.connected': 'Connected',
   'status.reconnecting': 'Reconnecting…',

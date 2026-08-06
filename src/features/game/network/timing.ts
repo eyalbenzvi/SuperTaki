@@ -79,7 +79,7 @@ export const LOBBY_GRACE_MS = 30_000;
  */
 export const SEAT_GRACE_MS = 300_000;
 
-/** How much sooner than the host's grace a client stops trying, so it never races the vacate. */
+/** How much sooner than the room's grace a client stops trying, so it never races the vacate. */
 export const RECONNECT_DEADLINE_MARGIN_MS = 30_000;
 
 /**

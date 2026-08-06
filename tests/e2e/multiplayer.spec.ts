@@ -11,41 +11,45 @@ import {
 } from './helpers.ts';
 
 /**
- * Two pages in one browser play a real game over the BroadcastChannel
- * transport. Everything above the transport — protocol, host authority, engine,
- * UI — is the production code path.
+ * Two pages in one browser play a real game against a real room: `wrangler dev`
+ * runs the worker, the Durable Object deals the cards and rules on every move,
+ * and the pages talk to it over ordinary WebSockets. Nothing here is stubbed —
+ * there is no test transport left to stub with.
+ *
+ * Neither page is special. `creator` is only the one that opened the room, and
+ * the sole thing that buys is the lobby buttons.
  */
-async function seatTwoPlayers(host: Page, guest: Page): Promise<string> {
-  await openApp(host, '/');
-  const roomCode = await createRoom(host, 'Dana', 2);
+async function seatTwoPlayers(creator: Page, guest: Page): Promise<string> {
+  await openApp(creator, '/');
+  const roomCode = await createRoom(creator, 'Dana', 2);
 
   await openApp(guest, '/');
   await joinRoom(guest, 'Eli', roomCode);
 
-  await expect(host.getByText('2 of 2 players')).toBeVisible();
+  await expect(creator.getByText('2 of 2 players')).toBeVisible();
   await expect(guest.getByText('2 of 2 players')).toBeVisible();
   return roomCode;
 }
 
 test.describe('a two-player game, against the real room', () => {
   test('creates a room, joins by code and starts a game', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
-    await seatTwoPlayers(host, guest);
+    await seatTwoPlayers(creator, guest);
 
-    await expect(host.getByRole('button', { name: 'Start game' })).toBeEnabled();
+    await expect(creator.getByRole('button', { name: 'Start game' })).toBeEnabled();
     await expect(guest.getByText('Waiting for the game to start')).toBeVisible();
 
-    await host.getByRole('button', { name: 'Start game' }).click();
+    await creator.getByRole('button', { name: 'Start game' }).click();
 
     // Both sides receive the table; each holds exactly eight private cards.
-    await expect(host.locator('.hand .card')).toHaveCount(8);
+    await expect(creator.locator('.hand .card')).toHaveCount(8);
     await expect(guest.locator('.hand .card')).toHaveCount(8);
-    await expect(host.getByText('Current colour:')).toBeVisible();
+    await expect(creator.getByText('Current colour:')).toBeVisible();
     await expect(guest.getByText('Current colour:')).toBeVisible();
 
-    // The host plays first, so exactly one side is on turn.
-    await expect(host.locator('.turn-banner--mine')).toBeVisible();
+    // The room deals the first turn to the first seat, so exactly one side is on turn.
+    await expect(creator.locator('.turn-banner--mine')).toBeVisible();
     await expect(guest.locator('.turn-banner')).toHaveText("Dana's turn");
   });
 
@@ -73,11 +77,11 @@ test.describe('a two-player game, against the real room', () => {
   });
 
   test('joins through an invite link', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
 
-    await openApp(host, '/');
-    const roomCode = await createRoom(host, 'Dana', 4);
+    await openApp(creator, '/');
+    const roomCode = await createRoom(creator, 'Dana', 4);
 
     await guest.goto(`/#/join?room=${roomCode}`);
     await switchToEnglish(guest);
@@ -85,19 +89,19 @@ test.describe('a two-player game, against the real room', () => {
     await guest.getByLabel('Your display name').fill('Eli');
     await guest.getByRole('button', { name: 'Join room' }).click();
 
-    await expect(host.getByText('2 of 4 players')).toBeVisible();
+    await expect(creator.getByText('2 of 4 players')).toBeVisible();
     // The invite parameters are removed from the address bar afterwards.
     expect(new URL(guest.url()).hash).toBe('');
   });
 
   test('keeps hands private between players', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
-    await seatTwoPlayers(host, guest);
-    await host.getByRole('button', { name: 'Start game' }).click();
+    await seatTwoPlayers(creator, guest);
+    await creator.getByRole('button', { name: 'Start game' }).click();
     await expect(guest.locator('.hand .card')).toHaveCount(8);
 
-    const hostLabels = await host
+    const creatorLabels = await creator
       .locator('.hand .card')
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('aria-label')));
     const guestLabels = await guest
@@ -106,75 +110,75 @@ test.describe('a two-player game, against the real room', () => {
 
     // The opponent's cards are only ever shown face down.
     await expect(guest.locator('.seat .card--back')).toHaveCount(1);
-    expect(hostLabels).toHaveLength(8);
+    expect(creatorLabels).toHaveLength(8);
     expect(guestLabels).toHaveLength(8);
-    // Guest markup must not contain the host's card faces.
+    // Guest markup must not contain the other hand's card faces.
     const guestHtml = await guest.content();
-    const uniqueHostLabels = hostLabels.filter((label) => label && !guestLabels.includes(label));
-    for (const label of uniqueHostLabels.slice(0, 4)) {
+    const unique = creatorLabels.filter((label) => label && !guestLabels.includes(label));
+    for (const label of unique.slice(0, 4)) {
       expect(guestHtml).not.toContain(`Play ${label?.replace('Play ', '') ?? ''} `);
     }
   });
 
   test('plays a card and passes the turn', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
-    await seatTwoPlayers(host, guest);
-    await host.getByRole('button', { name: 'Start game' }).click();
-    await expect(host.locator('.turn-banner--mine')).toBeVisible();
+    await seatTwoPlayers(creator, guest);
+    await creator.getByRole('button', { name: 'Start game' }).click();
+    await expect(creator.locator('.turn-banner--mine')).toBeVisible();
 
     /*
      * An opening hand with nothing legal in it is uncommon — roughly one deal
      * in fifty — but it does happen, and this test is about what a *play*
-     * does. Draw, let the guest move, and come back round until the host is
-     * holding something it can put down.
+     * does. Draw, let the guest move, and come back round until Dana is
+     * holding something she can put down.
      */
     let before = 0;
     let ready = false;
     for (let step = 0; step < 24 && !ready; step += 1) {
-      await host.bringToFront();
-      const hostOnTurn = await onTurn(host);
-      if (!hostOnTurn) {
+      await creator.bringToFront();
+      const mine = await onTurn(creator);
+      if (!mine) {
         await takeAnyTurn(guest);
         continue;
       }
-      before = await host.locator('.hand .card').count();
-      if ((await host.locator('.hand .card--playable').count()) > 0) {
+      before = await creator.locator('.hand .card').count();
+      if ((await creator.locator('.hand .card--playable').count()) > 0) {
         ready = true;
         break;
       }
-      await host.getByRole('button', { name: /Draw pile, \d+ cards/ }).click();
+      await creator.getByRole('button', { name: /Draw pile, \d+ cards/ }).click();
     }
-    expect(ready, 'the host never came round to a playable card').toBe(true);
+    expect(ready, 'Dana never came round to a playable card').toBe(true);
 
-    await playAnyLegalCard(host);
+    await playAnyLegalCard(creator);
 
-    // The host's hand shrinks (or the turn returns after a Stop/Plus);
-    // in every case the log records the play on both sides.
-    await expect(host.locator('.hand .card')).toHaveCount(before - 1);
-    await expectLogged(host, 'Dana played');
+    // The hand shrinks (or the turn returns after a Stop/Plus); in every case
+    // the log records the play on both sides.
+    await expect(creator.locator('.hand .card')).toHaveCount(before - 1);
+    await expectLogged(creator, 'Dana played');
     await expectLogged(guest, 'Dana played');
   });
 
   test('lets a player draw when nothing is playable', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
-    await seatTwoPlayers(host, guest);
-    await host.getByRole('button', { name: 'Start game' }).click();
-    await expect(host.locator('.turn-banner--mine')).toBeVisible();
+    await seatTwoPlayers(creator, guest);
+    await creator.getByRole('button', { name: 'Start game' }).click();
+    await expect(creator.locator('.turn-banner--mine')).toBeVisible();
 
-    const drawPile = host.getByRole('button', { name: /Draw pile, \d+ cards/ });
+    const drawPile = creator.getByRole('button', { name: /Draw pile, \d+ cards/ });
     await expect(drawPile).toHaveAttribute('aria-disabled', 'false');
     await drawPile.click();
     await expect(guest.locator('.turn-banner--mine')).toBeVisible();
-    await expectLogged(host, 'Dana drew a card');
+    await expectLogged(creator, 'Dana drew a card');
   });
 
   test('refuses the draw pile and the hand when it is not your turn', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
-    await seatTwoPlayers(host, guest);
-    await host.getByRole('button', { name: 'Start game' }).click();
+    await seatTwoPlayers(creator, guest);
+    await creator.getByRole('button', { name: 'Start game' }).click();
     await expect(guest.locator('.turn-banner')).toHaveText("Dana's turn");
 
     await expect(guest.getByRole('button', { name: /Draw pile, \d+ cards/ })).toHaveAttribute(
@@ -205,31 +209,31 @@ test.describe('a two-player game, against the real room', () => {
   });
 
   test('lets the seat with the lobby buttons remove a player before the game starts', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
-    await seatTwoPlayers(host, guest);
+    await seatTwoPlayers(creator, guest);
 
-    await host.getByRole('button', { name: 'Remove Eli' }).click();
+    await creator.getByRole('button', { name: 'Remove Eli' }).click();
     // Throwing somebody out cannot be undone from their side, and the control sits
     // beside their name in a list, so it asks first.
-    await host.getByRole('dialog').getByRole('button', { name: 'Remove player' }).click();
-    await expect(host.getByText('1 of 2 players')).toBeVisible();
+    await creator.getByRole('dialog').getByRole('button', { name: 'Remove player' }).click();
+    await expect(creator.getByText('1 of 2 players')).toBeVisible();
     await expect(guest.getByText('You were removed from the room')).toBeVisible();
   });
 
   test('leaves the room open for everybody else when the creator goes', async ({ context }) => {
     /*
      * This test used to assert the opposite, and the assertion was true: the room
-     * *was* the host's tab, so their leaving closed it on everybody, and the UI said
-     * so in as many words. The room outlives every player now, so what has to be
-     * proved is that nothing happens to the people still at it.
+     * *was* the creator's tab, so their leaving closed it on everybody, and the UI
+     * said so in as many words. The room outlives every player now, so what has to
+     * be proved is that nothing happens to the people still at it.
      */
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
-    await seatTwoPlayers(host, guest);
+    await seatTwoPlayers(creator, guest);
 
-    await host.getByRole('button', { name: 'Leave' }).click();
-    await host.getByRole('dialog').getByRole('button', { name: 'Leave' }).click();
+    await creator.getByRole('button', { name: 'Leave' }).click();
+    await creator.getByRole('dialog').getByRole('button', { name: 'Leave' }).click();
 
     // Still in the room, still seated, and now holding the lobby buttons.
     await expect(guest.getByRole('button', { name: 'Start game' })).toBeVisible();
@@ -238,10 +242,10 @@ test.describe('a two-player game, against the real room', () => {
   });
 
   test('refuses a third player in a two-player room', async ({ context }) => {
-    const host = await context.newPage();
+    const creator = await context.newPage();
     const guest = await context.newPage();
     const third = await context.newPage();
-    const roomCode = await seatTwoPlayers(host, guest);
+    const roomCode = await seatTwoPlayers(creator, guest);
 
     await openApp(third, '/');
     await joinRoom(third, 'Noa', roomCode);

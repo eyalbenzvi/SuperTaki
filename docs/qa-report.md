@@ -167,6 +167,12 @@ deterministic and would make CI flaky, hiding real regressions. Everything above
 — protocol, validation, host authority, engine, store, UI — is the production code path. Real
 WebRTC is covered by the manual checklist below.
 
+> **No longer true, and worth saying where it was claimed.** There is no WebRTC, no
+> BroadcastChannel transport and no host authority left. The end-to-end suite now drives two
+> real browser pages against the real room under `wrangler dev`, which is the production path
+> without the domain name — so the limitation this paragraph documented has been closed rather
+> than restated. See [server-game-plan.md](server-game-plan.md).
+
 ## Manual test checklist
 
 Performed against the production build. WebRTC items require two devices.

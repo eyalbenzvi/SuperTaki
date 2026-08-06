@@ -12,6 +12,7 @@ import {
   type TranslationKey,
 } from '../../src/i18n/index.ts';
 import { REJECTION_CODES } from '../../src/features/game/engine/state.ts';
+import { CONNECTION_PHASES } from '../../src/features/game/network/session.ts';
 
 const keys = Object.keys(en) as TranslationKey[];
 
@@ -51,16 +52,7 @@ describe('dictionaries', () => {
   });
 
   it('has a localised message for every connection phase', () => {
-    for (const phase of [
-      'idle',
-      'initializing',
-      'ready',
-      'connecting',
-      'connected',
-      'reconnecting',
-      'disconnected',
-      'failed',
-    ]) {
+    for (const phase of CONNECTION_PHASES) {
       expect(keys).toContain(`status.${phase}`);
     }
   });
