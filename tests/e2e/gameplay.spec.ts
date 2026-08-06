@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from './helpers.ts';
+import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp, tapIfPresent } from './helpers.ts';
 
 /**
  * Plays a complete round through the UI.
@@ -37,16 +37,12 @@ async function takeOneAction(page: Page): Promise<boolean> {
    * declaration the last card cannot win, so a bot that skipped it would draw a
    * two-card penalty every time it got close and the round would never end.
    */
-  const declare = page.getByRole('button', { name: /Last card!/ });
-  if (await declare.isVisible().catch(() => false)) {
-    await clickInForeground(page, declare);
+  if (await tapIfPresent(page, /Last card!/)) {
     return true;
   }
 
   // An open +3 suspends the turn order, so this comes before the turn check.
-  const breakPrompt = page.getByRole('button', { name: 'Let it through' });
-  if (await breakPrompt.isVisible().catch(() => false)) {
-    await clickInForeground(page, breakPrompt);
+  if (await tapIfPresent(page, 'Let it through')) {
     return true;
   }
 

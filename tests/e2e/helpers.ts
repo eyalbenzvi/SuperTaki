@@ -172,6 +172,22 @@ export async function tapIfPresent(page: Page, name: string | RegExp): Promise<b
   if (!(await button.isVisible().catch(() => false))) {
     return false;
   }
+  /*
+   * Visible is not pressable. These prompts render disabled while a submitted move is
+   * unanswered and during the catch grace, so a driver that only checked visibility
+   * clicked a `disabled` button and waited — which is what it did.
+   *
+   * `isEnabled()` is right *here* because these buttons carry a real `disabled`
+   * attribute. It is wrong for the draw pile, which refuses with `aria-disabled` so a
+   * blocked tap can explain itself; that is what `canDrawFrom` is for. The two are not
+   * interchangeable and the difference has bitten this suite in both directions.
+   */
+  if (!(await button.isEnabled().catch(() => false))) {
+    return false;
+  }
+  // Chromium stops firing animation frames in a background tab, and Playwright's
+  // actionability check waits on two of them.
+  await page.bringToFront();
   try {
     await button.click();
     return true;
