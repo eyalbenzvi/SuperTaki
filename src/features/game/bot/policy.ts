@@ -23,9 +23,9 @@ import type { BotView } from './view.ts';
  * It plays like a competent club player, not like an oracle. Every legality
  * decision goes through the same {@link isCardPlayable} the table's own UI uses, it
  * never reasons about cards it has not seen, it does not count the discard pile to
- * infer anybody's hand, and it can be caught on its own last card — the pause
- * before it declares lives in the driver precisely so a human can beat it to the
- * call.
+ * infer anybody's hand, and it declares its own last card as fast as a person
+ * reaches the button rather than sitting on it — the pause lives in the driver, and
+ * it is a tap, not a handicap.
  */
 
 /** Which obligation a move answers. The driver's pause depends on it. */

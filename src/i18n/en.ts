@@ -294,7 +294,8 @@ export const en = {
   'event.drawPileExhausted': 'There are no cards left to draw.',
   'event.playerWon': '{name} has no cards left and wins!',
   'event.turnSkipped': '{name} was away, so their turn was passed.',
-  'event.turnSkippedDrew': '{name} was away and drew the {count} cards they owed.',
+  'event.turnSkippedDrew.one': '{name} was away, so their turn was passed and they drew a card.',
+  'event.turnSkippedDrew.other': '{name} was away, so their turn was passed and they drew {count} cards.',
   'event.playerLeft': '{name} left the round.',
   'event.roundAbandoned': 'Too few players are left, so the round was abandoned.',
   'event.nudged': '{name} is waiting for you.',
@@ -313,7 +314,7 @@ export const en = {
   'robot.standInLabel': 'Let a robot play for a missing player',
   'robot.standInHint':
     'When somebody stops answering, a robot plays their hand so the round keeps moving. They get their seat back the moment they come back.',
-  'robot.standInOff': 'A missing player is skipped and nobody plays their hand.',
+  'robot.standInOff': 'A missing player draws a card, their turn is passed, and nobody plays their hand.',
   'robot.playingFor': 'A robot is playing for {name}',
   'robot.playingForBody':
     'Their hand is being played until they come back. It is their seat, not the robot\u2019s.',

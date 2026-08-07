@@ -86,8 +86,9 @@ export const RECONNECT_DEADLINE_MARGIN_MS = 30_000;
  * Before skipping the turn of a player whose socket is provably closed.
  *
  * Short on purpose. The room already *knows* the socket is gone, so waiting learns
- * nothing — and a skip costs the absent player no cards at all, which is what makes
- * a short window affordable.
+ * nothing — and a pass costs the seat exactly what the turn would have cost anybody
+ * who took the pile, which is what makes a short window affordable. It is the price
+ * of the turn, not a penalty for the disconnection.
  *
  * There used to be a second, longer grace for a player who was merely *unstable*.
  * That state existed because presence was guessed at; it is not, so there is one
@@ -184,13 +185,19 @@ export const BOT_SEQUENCE_MAX_MS = 900;
 /**
  * Before a robot declares its own last card.
  *
- * Deliberately far above {@link LAST_CARD_GRACE_MS}: this is the window in which a
- * human can call the robot out, and it is the whole reason robots are catchable at
- * all. A robot that declared in the same tick would be immune to the one rule the
- * other players enforce themselves.
+ * A second or two sat here first, on the theory that a catchable robot is a fairer
+ * robot. It was not a window, it was a guarantee: a robot reaching one card was
+ * caught every single time by whoever happened to be looking, because a human hand
+ * reaches a button in a fraction of that. The rule stopped being something the
+ * table enforced against a robot and became something the table farmed.
+ *
+ * So: about as long as a person takes to tap the button they were already reaching
+ * for. Still jittered, and still from the room's seeded stream, so that two robots
+ * that reach their last card on the same beat do not shout in lockstep — and still
+ * a real window, because the bottom of the range is not the top.
  */
-export const BOT_DECLARE_MIN_MS = 900;
-export const BOT_DECLARE_MAX_MS = 2_000;
+export const BOT_DECLARE_MIN_MS = 0;
+export const BOT_DECLARE_MAX_MS = 100;
 
 /**
  * Before a robot calls somebody else out.
@@ -219,10 +226,10 @@ export const BOT_STALL_MS = 15_000;
  * How long a seat has to be away before a robot may play it, when the table has
  * asked for that.
  *
- * Longer than both absent-turn graces on purpose: a blip is still answered by the
- * free skip that costs the absent player nothing, and only a real absence — three
- * orbits of skipping, by which point the round has stopped being a game — brings a
- * robot in. Far shorter than {@link SEAT_GRACE_MS}, because playing the seat is
+ * Longer than both absent-turn graces on purpose: a blip is still answered by a
+ * passed turn, which costs the seat a card and no more, and only a real absence —
+ * three orbits of that, by which point the round has stopped being a game — brings
+ * a robot in. Far shorter than {@link SEAT_GRACE_MS}, because playing the seat is
  * what makes holding it worth anything.
  */
 export const STAND_IN_ABSENT_MS = 45_000;

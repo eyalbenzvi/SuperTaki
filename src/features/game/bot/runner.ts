@@ -92,10 +92,11 @@ const KIND_RANK: Readonly<Record<BotMoveKind, number>> = {
 /**
  * Where a duty sits in the queue.
  *
- * A declaration that costs nothing goes first, ahead even of a +3 answer: it is the
- * declaration a robot makes for *somebody else's* seat, and every moment it waits is a
- * moment that seat can be called out for four cards it never risked. Everything else
- * follows the ordinary order.
+ * A declaration with no pause at all goes first, ahead even of a +3 answer: there is
+ * nothing to wait for, and every moment it waits is a moment that seat can be called
+ * out for four cards it never risked. That is always true of a seat a robot is
+ * merely covering, and true of its own whenever the jitter lands on nought.
+ * Everything else follows the ordinary order.
  */
 function rankOf(duty: Duty): number {
   if (duty.move.kind === 'declare' && duty.pause <= 0) {
@@ -281,10 +282,10 @@ export class BotRunner {
     }
     if (move.kind === 'declare' && standIn) {
       /*
-       * No window at all when the hand belongs to somebody else. A robot's own last
-       * card is fair game — being catchable is what keeps it a player rather than an
-       * oracle — but a covered seat's four-card penalty would follow its owner into
-       * the standings for a rule they were not there to keep.
+       * Exactly nought when the hand belongs to somebody else, rather than the very
+       * short window a robot allows on its own last card: a covered seat's four-card
+       * penalty would follow its owner into the standings for a rule they were not
+       * there to keep, and no amount of jitter is worth risking that on.
        */
       return 0;
     }

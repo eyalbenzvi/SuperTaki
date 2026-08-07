@@ -42,7 +42,7 @@ function expectTableMoves(state: GameState): void {
 }
 
 describe('skipping the turn of a player who is away', () => {
-  it('costs them nothing on an ordinary turn', () => {
+  it('costs them the card the turn itself would have cost', () => {
     const state = makeState({
       players: players('Alice', 'Bob'),
       hands: { 'p-alice': cards('red:1', 'red:3'), 'p-bob': cards('blue:5') },
@@ -51,13 +51,14 @@ describe('skipping the turn of a player who is away', () => {
     const before = state.hands['p-alice']?.length ?? 0;
     const { state: next, events } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
 
-    // A disconnect is not a decision. Charging a card per orbit would leave a
-    // returning player several cards down after their seat was faithfully held,
-    // which would make holding it meaningless.
-    expect(next.hands['p-alice']?.length).toBe(before);
+    // Exactly what a present player pays for a turn they play nothing on. A pass
+    // that cost nothing was the cheapest turn at the table — a hand that cannot
+    // grow cannot lose — so orbiting an absent seat handed it an advantage over
+    // everybody who stayed.
+    expect(next.hands['p-alice']?.length).toBe(before + 1);
     expect(events.find((event) => event.type === 'turnSkipped')).toMatchObject({
       playerId: 'p-alice',
-      drew: 0,
+      drew: 1,
     });
     expect(currentPlayer(next)?.id).toBe('p-bob');
     expect(totalCards(next)).toBe(totalCards(state));
@@ -84,11 +85,11 @@ describe('skipping the turn of a player who is away', () => {
     expectTableMoves(next);
   });
 
-  it("forfeits a King's free turn without a penalty", () => {
-    // A King cancels everything and hands its player an unrestricted turn. That
-    // turn is a gift; charging a card for an unused gift is a penalty the rules
-    // do not contain — which is exactly why a skip cannot be built out of
-    // `drawCard`, whose whole job is to take a card.
+  it("forfeits a King's free turn for the price of any other turn", () => {
+    // A King cancels everything and hands its player an unrestricted turn. An
+    // absent player loses the freedom and pays the card, which is precisely what
+    // taking the pile on that turn would have cost them — no extra penalty for
+    // the gift going unused, and no discount for it either.
     const state = makeState({
       players: players('Alice', 'Bob'),
       hands: { 'p-alice': cards('red:1', 'blue:7'), 'p-bob': cards('blue:5') },
@@ -101,7 +102,7 @@ describe('skipping the turn of a player who is away', () => {
     expect(drawn.hands['p-alice']).toHaveLength(3);
 
     const { state: next } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
-    expect(next.hands['p-alice']).toHaveLength(2);
+    expect(next.hands['p-alice']).toHaveLength(3);
     expect(next.pendingPlus).toBe(false);
     expect(next.freePlay).toBe(false);
     expect(currentPlayer(next)?.id).toBe('p-bob');
@@ -117,12 +118,12 @@ describe('skipping the turn of a player who is away', () => {
       drawPile: cards('green:8'),
     });
     // Same as the King: a present player may pay the obligation from the pile,
-    // and that costs a card. An absent one is charged nothing at all.
+    // and that costs a card. An absent one pays the same card.
     const drawn = expectOk(applyCommand(state, { type: 'drawCard', playerId: 'p-alice' })).state;
     expect(drawn.hands['p-alice']).toHaveLength(2);
 
     const { state: next } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
-    expect(next.hands['p-alice']).toHaveLength(1);
+    expect(next.hands['p-alice']).toHaveLength(2);
     expect(currentPlayer(next)?.id).toBe('p-bob');
     expectTableMoves(next);
   });
@@ -148,6 +149,10 @@ describe('skipping the turn of a player who is away', () => {
 
     expect(next.takiMode).toBeNull();
     expect(eventTypes(events)).toContain('takiClosed');
+    // The close *was* the turn, so there is nothing left to pass and nothing to
+    // charge for: the last card of the sequence resolved as it always does.
+    expect(next.hands['p-alice']).toHaveLength(1);
+    expect(eventTypes(events)).not.toContain('turnSkipped');
     expect(currentPlayer(next)?.id).toBe('p-bob');
     expectTableMoves(next);
   });
@@ -192,6 +197,8 @@ describe('skipping the turn of a player who is away', () => {
     expect(next.pendingPlus).toBe(false);
     expect(currentPlayer(next)?.id).toBe('p-bob');
     expect(eventTypes(events)).toContain('turnSkipped');
+    // The Plus left a turn behind, and the turn that is skipped costs its card.
+    expect(next.hands['p-alice']).toHaveLength(2);
     expectTableMoves(next);
   });
 
@@ -216,6 +223,26 @@ describe('skipping the turn of a player who is away', () => {
 
     expect(eventTypes(events)).toContain('drawPileExhausted');
     expect(next.pendingDraw).toBe(0);
+    expect(totalCards(next)).toBe(totalCards(state));
+    expectTableMoves(next);
+  });
+
+  it('still passes the turn when there is no card left to charge', () => {
+    // The price of a skip is a card, but the point of a skip is that the table
+    // keeps moving. With nothing to draw and nothing to recycle — the top card is
+    // never recycled — the turn moves on anyway rather than the round stopping.
+    const state = makeState({
+      players: players('Alice', 'Bob'),
+      hands: { 'p-alice': cards('red:1'), 'p-bob': cards('blue:5') },
+      discardPile: cards('red:9'),
+      drawPile: [],
+    });
+    const { state: next, events } = expectOk(applyCommand(state, { type: 'skipTurn', playerId: 'p-alice' }));
+
+    expect(eventTypes(events)).toContain('drawPileExhausted');
+    expect(events.find((event) => event.type === 'turnSkipped')).toMatchObject({ drew: 0 });
+    expect(next.hands['p-alice']).toHaveLength(1);
+    expect(currentPlayer(next)?.id).toBe('p-bob');
     expect(totalCards(next)).toBe(totalCards(state));
     expectTableMoves(next);
   });

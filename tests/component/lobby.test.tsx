@@ -439,6 +439,6 @@ describe('robots in the lobby', () => {
     await user.click(screen.getByText('הגדרות החדר'));
     const group = screen.getByRole('radiogroup', { name: 'רובוט ימשיך במקום מי שנעלם' });
     expect(within(group).getByRole('radio', { name: 'כבוי' })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByText(/מי שנעלם מדולג/)).toBeInTheDocument();
+    expect(screen.getByText(/מי שנעלם לוקח קלף/)).toBeInTheDocument();
   });
 });

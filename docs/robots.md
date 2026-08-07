@@ -106,10 +106,12 @@ otherwise paid in full.
 
 - It never reasons about cards it has not seen, and does not count the discard pile to infer
   anybody's hand.
-- It **can be caught** on its own last card: it declares after a human-shaped pause, not in
-  the same tick, and that pause is the window in which a human can call it out. On a seat it
-  is merely _covering_ it declares at once instead — those four cards would follow somebody
-  else into the standings for a rule they were not there to keep.
+- It declares its own last card **at the speed of a tap** — a jittered fraction of a second,
+  not the same tick. It used to wait a second or two, and that was not a window but a
+  guarantee: a robot on one card was caught every round by whoever happened to be looking, so
+  the rule stopped being something the table enforced and became something it farmed. On a
+  seat it is merely _covering_ it declares at once, with no jitter at all — those four cards
+  would follow somebody else into the standings for a rule they were not there to keep.
 - It calls others out slowest of all its moves, so the people at the table normally get there
   first.
 - It never calls out somebody who is not there — they cannot shout, so that would be farming
@@ -123,7 +125,7 @@ All in `network/timing.ts`, all jittered from a per-seat seeded stream.
 | ----------------------------- | ---------- | ---------------------------------------------- |
 | `BOT_THINK_MIN_MS` … `MAX`    | 0.7–1.7 s  | before an ordinary move                        |
 | `BOT_SEQUENCE_MIN_MS` … `MAX` | 0.62–0.9 s | between cards inside a Taki sequence           |
-| `BOT_DECLARE_MIN_MS` … `MAX`  | 0.9–2.0 s  | before declaring its own last card             |
+| `BOT_DECLARE_MIN_MS` … `MAX`  | 0–0.1 s    | before declaring its own last card             |
 | `BOT_CATCH_MIN_MS` … `MAX`    | 2.2–4.0 s  | before calling somebody out                    |
 | `BOT_ANSWER_MIN_MS` … `MAX`   | 0.5–1.2 s  | before answering an open +3                    |
 | `BOT_STALL_MS`                | 15 s       | before the room passes a robot's own seat      |
@@ -141,12 +143,12 @@ deadline the room passes the seat itself, and logs that it had to.
 snapshot and changeable by the seat holding the lobby buttons. When it is off, absence behaves exactly as it did before
 robots existed.
 
-A stand-in is **layered on top of** the free skip, never in place of it:
+A stand-in is **layered on top of** the passed turn, never in place of it:
 
 | Time since the seat went quiet | What happens                                           |
 | ------------------------------ | ------------------------------------------------------ |
 | 0–12 s                         | nothing; they may be back in a second                  |
-| 12 s onwards                   | their turn is passed, free, as it always was           |
+| 12 s onwards                   | their turn is passed, for the card the turn would cost |
 | 45 s onwards                   | a robot plays the seat — if the table allows it        |
 | any moment they speak          | the seat is theirs again, before their move is applied |
 

@@ -1841,8 +1841,8 @@ export class GameRoom {
    *
    * A refused move is *not* retried and buys no privilege. The most a robot gets is
    * what any player in that position has: if its own idea of the turn was refused, it
-   * pays a card from the pile, which ends the turn. Nothing here can free-skip — that
-   * is the room's own backstop, on an alarm, and it is a bug when it fires.
+   * pays a card from the pile, which ends the turn. Nothing here can pass a seat —
+   * that is the room's own backstop, on an alarm, and it is a bug when it fires.
    */
   private submitBotMove(playerId: string, move: BotMove): boolean {
     const seat = this.seatFor(playerId);

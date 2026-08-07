@@ -385,9 +385,11 @@ connection while `readyState` stayed `OPEN`, so believing the socket is how a pl
 watching a table that will never update. The response to a wake is a probe on a short deadline,
 and a rebuild if it goes unanswered.
 
-**The table keeps moving.** An absent player's turn is passed after a short grace — free,
-except that an outstanding +2 run is still paid, since that is an obligation somebody else
-created. A breaker window waiting on an absent seat is resolved immediately, because it freezes
+**The table keeps moving.** An absent player's turn is passed after a short grace, at the
+price of the turn: one card from the pile, exactly what a present player pays for a turn they
+play nothing on — or the whole +2 run when they owed one, since that is an obligation somebody
+else created. A pass that cost nothing made a dropped connection the cheapest turn at the
+table, because a hand that cannot grow cannot lose. A breaker window waiting on an absent seat is resolved immediately, because it freezes
 every seat and is invisible to any check based on whose turn it is. A seat that leaves for good
 is _marked_, never deleted. Any player can pause the table, and the table can agree to end a
 round with no winner. All of it runs on alarms — and stops entirely when nobody is connected,

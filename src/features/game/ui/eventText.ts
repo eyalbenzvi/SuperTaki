@@ -77,10 +77,14 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
     case 'playerWon':
       return t('event.playerWon', { name: nameOf(event.playerId) });
     case 'turnSkipped':
-      // The draw count matters: a skip is free unless the player owed a +2 run,
-      // and a returning player deserves to see which of the two happened.
+      // The draw count matters: a passed turn costs the one card the turn itself
+      // would have cost, or the whole run when the seat owed one, and a returning
+      // player deserves to see which. Nought only when the pile had nothing left.
       return event.drew > 0
-        ? t('event.turnSkippedDrew', { name: nameOf(event.playerId), count: event.drew })
+        ? t(event.drew === 1 ? 'event.turnSkippedDrew.one' : 'event.turnSkippedDrew.other', {
+            name: nameOf(event.playerId),
+            count: event.drew,
+          })
         : t('event.turnSkipped', { name: nameOf(event.playerId) });
     case 'playerLeft':
       return t('event.playerLeft', { name: nameOf(event.playerId) });
