@@ -140,9 +140,7 @@ describe('playing inside a taki sequence', () => {
     // An ordinary card of another colour is refused, as ever.
     expectRejected(play(next, 'p-alice', 'blue:3'), 'wrongTakiColor');
     // A Taki is not ordinary: laid straight onto the Taki, it takes the run over.
-    expect(
-      getPlayableCardIds(next.hands['p-alice'] ?? [], playContextFromState(next)).sort(),
-    ).toEqual(
+    expect(getPlayableCardIds(next.hands['p-alice'] ?? [], playContextFromState(next)).sort()).toEqual(
       (next.hands['p-alice'] ?? [])
         .filter((card) => card.id.startsWith('red:3#') || card.id.startsWith('blue:taki#'))
         .map((card) => card.id)
@@ -282,7 +280,13 @@ describe('closing a taki sequence', () => {
   it('rejects closing a sequence owned by someone else', () => {
     const state = makeState({
       currentPlayerIndex: 1,
-      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 1, openedWithSuperTaki: false, takisOnly: false },
+      takiMode: {
+        color: 'red',
+        playerId: 'p-alice',
+        cardsPlayed: 1,
+        openedWithSuperTaki: false,
+        takisOnly: false,
+      },
     });
     expectRejected(applyCommand(state, { type: 'closeTaki', playerId: 'p-bob' }), 'noTakiOpen');
   });
@@ -390,7 +394,13 @@ describe('closing a taki sequence', () => {
     const state = makeState({
       discardPile: [],
       activeColor: 'red',
-      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 1, openedWithSuperTaki: false, takisOnly: false },
+      takiMode: {
+        color: 'red',
+        playerId: 'p-alice',
+        cardsPlayed: 1,
+        openedWithSuperTaki: false,
+        takisOnly: false,
+      },
     });
     const closed = expectOk(applyCommand(state, { type: 'closeTaki', playerId: 'p-alice' }));
     expect(currentPlayer(closed.state)?.id).toBe('p-bob');

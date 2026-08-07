@@ -58,7 +58,13 @@ describe('win detection', () => {
   it('wins on the final card of an open taki sequence', () => {
     const state = makeState({
       ...declared,
-      takiMode: { color: 'red', playerId: 'p-alice', cardsPlayed: 1, openedWithSuperTaki: false, takisOnly: false },
+      takiMode: {
+        color: 'red',
+        playerId: 'p-alice',
+        cardsPlayed: 1,
+        openedWithSuperTaki: false,
+        takisOnly: false,
+      },
       hands: { 'p-alice': cards('red:6'), 'p-bob': cards('red:1', 'blue:3') },
       discardPile: cards('red:taki'),
       activeColor: 'red',
