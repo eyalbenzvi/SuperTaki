@@ -286,7 +286,8 @@ export const he: Translations = {
   'event.drawPileExhausted': 'לא נשארו קלפים למשיכה.',
   'event.playerWon': 'ל{name} לא נשארו קלפים — ניצחון!',
   'event.turnSkipped': '{name} לא היה כאן, ולכן התור עבר.',
-  'event.turnSkippedDrew': '{name} לא היה כאן, ומשך את {count} הקלפים שהיה חייב.',
+  'event.turnSkippedDrew.one': '{name} לא היה כאן — התור עבר ונלקח קלף אחד.',
+  'event.turnSkippedDrew.other': '{name} לא היה כאן — התור עבר ונלקחו {count} קלפים.',
   'event.playerLeft': '{name} עזב את הסבב.',
   'event.roundAbandoned': 'נשארו מעט מדי שחקנים, ולכן הסבב הופסק.',
   'event.nudged': '{name} מחכה לך.',
@@ -305,7 +306,7 @@ export const he: Translations = {
   'robot.standInLabel': 'רובוט ימשיך במקום מי שנעלם',
   'robot.standInHint':
     'כששחקן מפסיק להגיב, רובוט משחק את היד שלו כדי שהסבב יימשך. ברגע שהוא חוזר, המושב חוזר אליו.',
-  'robot.standInOff': 'מי שנעלם מדולג, ואף אחד לא משחק את היד שלו.',
+  'robot.standInOff': 'מי שנעלם לוקח קלף, התור שלו עובר, ואף אחד לא משחק את היד שלו.',
   'robot.playingFor': 'רובוט משחק במקום {name}',
   'robot.playingForBody': 'היד שלו משוחקת עד שיחזור. המושב שלו, לא של הרובוט.',
   'robot.standInNow': 'שרובוט ימשיך',

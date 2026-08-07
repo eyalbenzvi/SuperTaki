@@ -52,8 +52,9 @@ describe('the timeout hierarchy', () => {
   });
 
   it('gives an absent seat a grace far shorter than the seat is held for', () => {
-    // A blip is answered by a free skip that costs the absent player nothing; losing
-    // the seat is a different and much slower decision.
+    // A blip is answered by a passed turn, which costs the seat the one card the
+    // turn itself would have cost; losing the seat is a different and much slower
+    // decision.
     expect(ABSENT_TURN_GRACE_CLOSED_MS).toBeLessThan(SEAT_GRACE_MS / 10);
   });
 

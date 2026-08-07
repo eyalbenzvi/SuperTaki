@@ -367,8 +367,13 @@ describe('how long a robot thinks', () => {
     expect(catchPause).toBeGreaterThan(answer);
   });
 
-  it('declares its own last card with a window somebody can catch it in', () => {
-    // Being catchable is what keeps a robot a player rather than an oracle.
+  it('declares its own last card about as fast as a person taps the button', () => {
+    /*
+     * Not a handicap. A window long enough to be *reliably* beaten made the catch a
+     * formality rather than a race — a robot on one card was caught every round by
+     * whoever was looking — so the pause is the length of a tap, jittered only so
+     * two robots reaching one card together do not shout in lockstep.
+     */
     const box = harness(
       makeState({
         players: players('Ann', 'Ben'),

@@ -663,12 +663,13 @@ function applyCloseTaki(state: GameState, playerId: PlayerId): CommandResult {
 }
 
 /**
- * Passes the turn of a player who is not there.
+ * Passes the turn of a player who is not there, at the price of the turn.
  *
  * This is its own transition rather than a `drawCard` issued on somebody's behalf,
- * and it has to be: the engine refuses to draw during an open Taki, so a skip
- * built out of `drawCard` would be rejected in exactly the state where a table is
- * most likely to be stuck. It also has to be free, and `drawCard` never is.
+ * and it has to be: the engine refuses to draw during an open Taki, so a skip built
+ * out of `drawCard` would be rejected in exactly the state where a table is most
+ * likely to be stuck. It also answers with its own rejection code, because the
+ * caller is the room acting on a timer rather than a player taking a turn.
  *
  * The order below matters and each step re-reads the state the previous one left:
  *
@@ -678,11 +679,17 @@ function applyCloseTaki(state: GameState, playerId: PlayerId): CommandResult {
  *    Super Taki, Stop, Change Direction or +2 has already moved it on, and adding
  *    another advance here would skip an innocent player — two of them after a
  *    Stop. A colourless card cannot end a sequence, so those seven cases are
- *    exhaustive.
+ *    exhaustive. A close is a move that was actually made, so nothing is charged
+ *    for it; it is only what is left of the turn afterwards that is skipped.
  * 2. An outstanding +2 run is paid in full. It is an obligation somebody else
  *    created, and voiding it would either destroy cards or dump the run on the
  *    next seat, who did nothing to deserve it.
- * 3. Everything else costs nothing at all.
+ * 3. Every other skip costs one card from the pile — the same card the same turn
+ *    would have cost had they been there to take it. A free pass was the cheapest
+ *    turn at the table: a hand that cannot grow cannot lose, so a seat that dropped
+ *    out at the right moment came out ahead of one that played, and orbiting a
+ *    disconnected player cost them nothing at all. Ending the turn by taking the
+ *    pile is what the rules already say happens when nothing is played.
  */
 function applySkipTurn(state: GameState, playerId: PlayerId): CommandResult {
   if (currentPlayer(state)?.id !== playerId) {
@@ -706,8 +713,10 @@ function applySkipTurn(state: GameState, playerId: PlayerId): CommandResult {
   const draft = toDraft(state);
   const events: GameEvent[] = [];
 
+  // The owed run when there is one, otherwise the single card any turn that plays
+  // nothing costs. `drew` can still come back short — the pile can run dry.
   const owed = state.pendingDraw;
-  const drew = owed > 0 ? drawCards(draft, playerId, owed, events) : 0;
+  const drew = drawCards(draft, playerId, owed > 0 ? owed : 1, events);
 
   draft.pendingDraw = 0;
   draft.pendingPlus = false;

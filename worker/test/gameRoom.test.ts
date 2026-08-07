@@ -360,9 +360,19 @@ describe('absence, on the alarm', () => {
   it('passes the turn of a player who is not there, once the grace has run out', () => {
     const { table, creator, guest } = dealtTable();
     const seats = [creator, guest];
-    // Make sure the absent seat is the one on turn.
+    /*
+     * Play on until the seat on turn owes a plain turn and nothing else. Two states
+     * reach the same place by another route and would not exercise the price of a
+     * pass: a sequence of the seat's own is *closed* first, and a close that ends
+     * the turn is a move rather than a pass, so it costs nothing; and an outstanding
+     * +2 run is paid in full, which is somebody else's arithmetic, not this one's.
+     */
     let onTurn = seats.find((s) => s.playerId === currentPlayerId(creator.client))!;
-    if (onTurn.playerId === creator.playerId) {
+    for (let guard = 0; guard < 20; guard += 1) {
+      const state = creator.client.state;
+      if (state?.takiMode === null && state.pendingDraw === 0 && onTurn.playerId === guest.playerId) {
+        break;
+      }
       takeTurn(seats);
       onTurn = seats.find((s) => s.playerId === currentPlayerId(creator.client))!;
     }
@@ -381,16 +391,14 @@ describe('absence, on the alarm', () => {
     table.advance(4_000);
     expect(currentPlayerId(watcher.client)).not.toBe(away.playerId);
     /*
-     * And it cost them nothing. A disconnect is not a decision, so a skip is free —
-     * charging a card would leave a returning player several cards down after a seat
-     * had been faithfully held for them, which makes the whole promise theatre.
-     *
-     * Asserted on the card count rather than on a `turnSkipped` event, because the
-     * engine reaches the same place by more than one route: a seat holding an open
-     * Taki has its sequence closed first, and if that ends the turn there is nothing
-     * left to skip and no such event. The count is the invariant either way.
+     * And it cost them exactly what the turn would have cost them: the card a
+     * present player takes when they play nothing. A pass that cost nothing made a
+     * dropped connection the cheapest turn at the table — a hand that cannot grow
+     * cannot lose — so being orbited while away was better than sitting down.
      */
-    expect(watcher.client.state?.players.find((p) => p.id === away.playerId)?.cardCount).toBe(cardsBefore);
+    expect(watcher.client.state?.players.find((p) => p.id === away.playerId)?.cardCount).toBe(
+      (cardsBefore ?? 0) + 1,
+    );
   });
 
   it('defers a pending skip when the seat is visibly trying to come back', () => {
