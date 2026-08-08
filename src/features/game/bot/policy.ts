@@ -52,7 +52,16 @@ const SEQUENCE_ORDER: Readonly<Record<Card['kind'], number>> = {
   plus: 3,
   stop: 4,
   plusTwo: 5,
-  // Colourless cards can never enter a sequence; listed so the record is total.
+  /*
+   * Last of all, and the record is total so the rest are listed too.
+   *
+   * A Super Taki is the one colourless card that can enter a sequence, and only
+   * while the run is still nothing but Takis — so ranking it last is what keeps
+   * it in hand: any ordinary card goes down first, which settles the run and
+   * takes the Super Taki out of the sequence for good. It is spent only when the
+   * hand has nothing else the sequence will accept, where dumping a card beats
+   * closing on one.
+   */
   colorChange: 9,
   superTaki: 9,
   king: 9,

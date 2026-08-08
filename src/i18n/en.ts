@@ -135,6 +135,8 @@ export const en = {
   'game.lastCard': 'Last card!',
   'game.declareLastCard': 'Last card!',
   'game.declareLastCardBody': 'Declare, or be caught for {count} cards.',
+  'game.declareWithPlay': 'Shout it as the card goes down, before anyone can catch you for {count}.',
+  'game.declareWithPlayArmed': 'Shouting with the card. Tap again to take it back.',
   'game.declaredLastCard': 'Declared',
   'game.declaredLastCardMine': 'Declared — nobody can catch you now.',
   'game.catchLastCard': 'Catch {name}',

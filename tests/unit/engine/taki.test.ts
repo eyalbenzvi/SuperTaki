@@ -214,16 +214,81 @@ describe('playing inside a taki sequence', () => {
     expect(currentPlayer(closed.state)?.id).toBe('p-bob');
   });
 
-  it('will not let a Super Taki carry the sequence, early or not', () => {
-    // It has no colour of its own to carry the run into, and a colourless card
-    // never enters a sequence.
+  it('lets a Super Taki join the run, leaving the colour where it is', () => {
+    // A coloured Taki is legal on top of a Super Taki, so a Super Taki has to be
+    // legal on top of a Taki. It has no colour of its own, so unlike a coloured
+    // one it carries nothing: the run stays red.
+    let state = makeState({
+      hands: { 'p-alice': cards('red:taki', 'superTaki', 'red:3', 'red:4'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'red:taki')).state;
+    expect(state.takiMode?.takisOnly).toBe(true);
+
+    state = expectOk(play(state, 'p-alice', 'superTaki')).state;
+    expect(state.takiMode?.color).toBe('red');
+    expect(state.activeColor).toBe('red');
+    expect(state.takiMode?.takisOnly).toBe(true);
+    expect(state.takiMode?.cardsPlayed).toBe(2);
+
+    // And the run carries on in that colour, as any Taki run does.
+    state = expectOk(play(state, 'p-alice', 'red:3')).state;
+    expect(state.takiMode?.takisOnly).toBe(false);
+  });
+
+  it('lets a Super Taki land on a Super Taki, and a coloured Taki carry both', () => {
+    let state = makeState({
+      hands: {
+        'p-alice': cards('superTaki', 'superTaki', 'blue:taki', 'blue:5', 'blue:6'),
+        'p-bob': cards('red:1'),
+      },
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'superTaki')).state;
+    expect(state.takiMode?.color).toBe('red');
+
+    state = expectOk(play(state, 'p-alice', 'superTaki')).state;
+    expect(state.takiMode?.color).toBe('red');
+    expect(state.takiMode?.openedWithSuperTaki).toBe(true);
+
+    // The coloured one is the only card here with a colour to give, so it is the
+    // one that moves the run.
+    state = expectOk(play(state, 'p-alice', 'blue:taki')).state;
+    expect(state.takiMode?.color).toBe('blue');
+    expect(state.takiMode?.openedWithSuperTaki).toBe(false);
+    expect(state.takiMode?.takisOnly).toBe(true);
+    state = expectOk(play(state, 'p-alice', 'blue:5')).state;
+    expect(state.takiMode?.color).toBe('blue');
+  });
+
+  it('shuts a Super Taki out once an ordinary card has settled the run', () => {
+    // The same limit the coloured Taki has: the permission hangs on the run, and
+    // the run stopped being nothing but Takis.
+    let state = makeState({
+      hands: { 'p-alice': cards('red:taki', 'red:3', 'superTaki'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+    });
+    state = expectOk(play(state, 'p-alice', 'red:taki')).state;
+    state = expectOk(play(state, 'p-alice', 'red:3')).state;
+    expect(state.takiMode?.takisOnly).toBe(false);
+    expectRejected(play(state, 'p-alice', 'superTaki'), 'wildNotAllowedInTaki');
+  });
+
+  it('still refuses every other colourless card, however early', () => {
     const state = makeState({
-      hands: { 'p-alice': cards('red:taki', 'superTaki', 'red:3'), 'p-bob': cards('red:1') },
+      hands: {
+        'p-alice': cards('red:taki', 'colorChange', 'king', 'plusThree', 'breakPlusThree'),
+        'p-bob': cards('red:1'),
+      },
       discardPile: cards('red:9'),
     });
     const next = expectOk(play(state, 'p-alice', 'red:taki')).state;
     expect(next.takiMode?.takisOnly).toBe(true);
-    expectRejected(play(next, 'p-alice', 'superTaki'), 'wildNotAllowedInTaki');
+    for (const spec of ['king', 'plusThree', 'breakPlusThree']) {
+      expectRejected(play(next, 'p-alice', spec), 'wildNotAllowedInTaki');
+    }
+    // Change Colour is asked for its colour first, and refused on the colour it names.
+    expectRejected(play(next, 'p-alice', 'colorChange', 'red'), 'wildNotAllowedInTaki');
   });
 
   it('cannot open a second sequence in another colour in the same turn', () => {

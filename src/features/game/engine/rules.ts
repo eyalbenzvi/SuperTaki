@@ -1,4 +1,12 @@
-import { cardColor, cardSymbol, isWildCard, type Card, type CardColor, type CardId } from './cards.ts';
+import {
+  cardColor,
+  cardSymbol,
+  isTakiCard,
+  isWildCard,
+  type Card,
+  type CardColor,
+  type CardId,
+} from './cards.ts';
 import type { TurnDirection } from './state.ts';
 
 /**
@@ -15,7 +23,7 @@ export interface PlayContext {
   /** Colour an open Taki sequence is locked to, or `null` when none is open. */
   readonly openTakiColor: CardColor | null;
   /**
-   * Whether a Taki of another colour may still take the sequence over.
+   * Whether another Taki may still be laid straight onto the run.
    *
    * True while the run is nothing but Taki cards. Meaningless when
    * `openTakiColor` is `null`.
@@ -39,9 +47,10 @@ export interface PlayContext {
  * colourless cards are never allowed.
  *
  * The one exception is a Taki laid straight onto another Taki: while the run is
- * still nothing but Taki cards, a Taki of any colour may be played and carries
- * the sequence into its own colour. As soon as an ordinary card joins the run
- * the colour is settled, and a Taki of a different colour is refused however
+ * still nothing but Taki cards, any Taki may be played — a coloured one carries
+ * the sequence into its own colour, a Super Taki has none of its own and leaves
+ * the run in the colour it is already in. As soon as an ordinary card joins the
+ * run the colour is settled, and a Taki of a different colour is refused however
  * many same-colour Takis follow it.
  *
  * Two situations override all of that: a pending +2 run can only be met with
@@ -53,9 +62,13 @@ export function isCardPlayable(card: Card, context: PlayContext): boolean {
     if (cardColor(card) === context.openTakiColor) {
       return true;
     }
-    // A colourless card has no colour to carry the sequence into, so a Super
-    // Taki cannot take one over however early it is played.
-    return context.takiSwitchOpen && card.kind === 'taki';
+    /*
+     * A Super Taki counts here exactly as a coloured one does. A coloured Taki is
+     * legal on top of a Super Taki — the symbols match — so a Super Taki has to be
+     * legal on top of a Taki too, or the rule would read in one direction only. It
+     * simply has no colour to carry the run into, so the run stays where it is.
+     */
+    return context.takiSwitchOpen && isTakiCard(card);
   }
   if (context.pendingDraw > 0) {
     // Two cards meet a run, and they meet it differently: a +2 raises it and

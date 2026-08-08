@@ -130,18 +130,28 @@ other players are the ones who enforce it.
    rejected with `nothingToCatch`. **Every seat is told who called it**, in a banner as well
    as in the log: from three players up, "somebody drew four" does not say whose call it was.
 6. **The first instant belongs to the player.** From the moment a hand comes down to one
-   card, nobody may call that player out for **30 ms**. It is barely more than a frame, and
-   that is the point: it settles the ordering — the hand reaching one card and the catch
-   button appearing are not the same instant on every screen — without buying silence any
-   real time. A quarter of a second sat here first, and it read as a delay: callers watched a
-   seat drop to one card and found the button dead. It is the host's clock that measures it,
-   and a catch made inside the window is refused with `nothingToCatch` — there is nothing to
-   catch _yet_. The button does not appear on the other players' screens until it has passed.
-   Coming back down to one card later buys a fresh window, exactly as it needs a fresh
-   declaration.
+   card, nobody may call that player out for **300 ms**. It exists because the two halves of
+   the moment are not simultaneous on a screen the way they are at a table: the play has to
+   reach the host, the new hand has to come back, and only then does a declare button appear
+   where nothing was — while every opponent's catch button is already on screen, already
+   under a thumb. 30 ms sat here first, which covered the ordering and nothing else, and
+   handed the difference to whoever happened to be watching. It is the host's clock that
+   measures it, and a catch made inside the window is refused with `nothingToCatch` — there
+   is nothing to catch _yet_. The button does not appear on the other players' screens until
+   it has passed. Coming back down to one card later buys a fresh window, exactly as it needs
+   a fresh declaration.
 7. **It is public.** Who has declared is part of the table state everyone sees, the same
    way a shout at a real table is heard by everyone. That is what makes catching possible at
    all, and it is why every seat on one card shows either "declared" or a button to call it.
+8. **You may shout with the card.** A card that asks for a colour — Change Colour — puts a
+   dialog between the play and the declaration, so the head start above is spent choosing a
+   colour rather than reaching for the button. When such a card would leave you on one, the
+   colour dialog offers the shout beside the four colours: arm it, pick a colour, and the
+   play and the declaration are one move, applied together, with no instant in between for
+   anyone to catch. It is **off by default** — the rule being enforced is remembering, and a
+   box that remembers for you is a different game — and the host honours it only when the
+   play really does leave exactly one card in hand. A play that empties the hand wins instead,
+   and a +3 Breaker spent on nothing draws its three cards first, so neither declares.
 
 ### +2 runs
 
@@ -202,15 +212,19 @@ works out whether it may answer by looking at its own hand, which it already kno
 - Playing a **Taki** card opens a sequence locked to that card's colour.
 - While the sequence is open you may play **any number of further cards of that colour**,
   including other special cards and further Taki cards.
-- **Colourless cards cannot enter a sequence.** Change Colour, Super Taki, King, +3 and the
-  +3 Breaker have no colour, so the engine rejects them with `wildNotAllowedInTaki`.
+- **Colourless cards cannot enter a sequence.** Change Colour, King, +3 and the +3 Breaker
+  have no colour, so the engine rejects them with `wildNotAllowedInTaki`. The Super Taki is
+  the one exception, and only in the case below — it is a Taki, and every rule about a Taki
+  laid on a Taki means it too.
 - **An ordinary card of a different colour is rejected** with `wrongTakiColor`, even if its
   symbol matches the top card. Inside a sequence, colour is the rule.
-- **A Taki carries the sequence into its own colour — but only straight onto another Taki.**
-  While every card played in the sequence is a Taki, you may lay a Taki of any colour on it:
-  the run continues, uninterrupted, in the new card's colour, and you go on playing cards of
-  _that_ colour before closing as usual. You may do it more than once, so Red Taki → Blue
-  Taki → Green Taki is a green sequence.
+- **A Taki laid straight onto another Taki continues the run, whatever it is printed on.**
+  While every card played in the sequence is a Taki, you may lay **any** Taki on it —
+  coloured or Super. A coloured one carries the run into its own colour; a Super Taki has no
+  colour of its own, so it leaves the run exactly where it is. Either way the run continues,
+  uninterrupted, and you go on playing cards of the sequence colour before closing as usual.
+  You may do it more than once, so Red Taki → Blue Taki → Green Taki is a green sequence, and
+  Red Taki → Super Taki → Blue Taki is a blue one.
 - **The moment an ordinary card joins the run, the colour is settled.** After Red Taki →
   Red 3, no Taki reopens the choice — not even Red Taki → Red 3 → Red Taki → Yellow Taki,
   where a Taki is on top with nothing on it. What matters is the run, not the top card.
@@ -243,6 +257,10 @@ Super Taki is a colourless Taki that takes the colour already in play:
 5. It matches as a Taki. Once it is the top card, a coloured Taki from anybody's hand is a
    plain symbol match on it, sequence closed — the next player is not made to hunt for the
    leading colour just because the card that set it happens to be colourless.
+6. And the same in reverse, inside a sequence: while the run is nothing but Takis, a Super
+   Taki may be laid on it. A coloured Taki is legal on top of a Super Taki, so a Super Taki
+   has to be legal on top of a Taki, or the rule would read in one direction only. It carries
+   nothing — the run stays in the colour it was already in.
 
 ### Effect order when a card is played
 
@@ -324,6 +342,7 @@ Each of these is a genuine fork. We picked one, implemented it, and tested it.
 | "Last card" declaration and a penalty for silence | **Declared with a button; the win does not depend on it, but any other player may catch a silent single card for four cards.** | This is how it is played at a table: the declaration is enforced by the other players, not by the deal.                                                                               |
 | A +3 Breaker with no +3 open                      | **Legal, and its owner draws the three.**                                                                                      | Refusing it left a card that could be unplayable all round. Charging its owner keeps it a defensive card rather than a second +3.                                                     |
 | A Taki of another colour inside an open sequence  | **Legal onto a bare Taki, and it carries the run into its colour; illegal once an ordinary card has joined the run.**          | The run, not the top card, is what the permission hangs on — otherwise Red Taki → Red 3 → Red Taki → Yellow Taki would switch colour, which is the case players say plainly does not. |
+| A Super Taki inside an open sequence              | **Legal onto a bare Taki, on the same terms, and it leaves the colour alone.**                                                 | A coloured Taki is legal on top of a Super Taki; the mirror of that has to hold, or "a Taki on a Taki" would mean one thing in one direction and another in the other.                |
 | Is there a plain number 2?                        | **No.** The only 2 in the deck is the +2.                                                                                      | It is what the printed deck contains; a bare 2 read as a +2 that had lost its plus.                                                                                                   |
 | Opening card is a special card                    | **It is buried at the bottom and the next card is drawn** until a number card appears.                                         | Keeps the first turn unambiguous without discarding cards.                                                                                                                            |
 | Point scoring                                     | **None.** Standings show remaining cards.                                                                                      | Scoring systems vary wildly; card counts are unambiguous.                                                                                                                             |
@@ -491,14 +510,22 @@ opened it in. One turn is one sequence, and one colour.
    בקוד `nothingToCatch`. **כל השולחן מקבל הודעה מי תפס**, לא רק ביומן: משלושה שחקנים ומעלה
    "מישהו לקח ארבעה" לא אומר של מי הייתה הקריאה.
 6. **הרגע הראשון שייך לשחקן.** מרגע שהיד יורדת לקלף אחד, אי אפשר לתפוס אותו במשך
-   **30 מילישניות**. זה בקושי יותר מפריים אחד, וזו בדיוק הכוונה: החלון מסדר את הסדר — הרגע
-   שבו היד יורדת לקלף אחד והרגע שבו כפתור התפיסה מופיע אינם אותו רגע בכל מסך — בלי לקנות
-   לשתיקה זמן אמיתי. קודם עמדה כאן רבע שנייה, וזה נקרא כמו השהייה: מי שרצה לתפוס ראה מושב
-   יורד לקלף אחד ומצא כפתור מת. השעון של המנחה הוא זה שמודד, ותפיסה בתוך החלון נדחית בקוד
-   `nothingToCatch` — עדיין אין את מי לתפוס. הכפתור לא מופיע אצל השאר עד שהחלון נסגר. חזרה
-   לקלף בודד בהמשך קונה חלון חדש, בדיוק כמו שהיא דורשת הכרזה חדשה.
+   **300 מילישניות**. החלון קיים כי שני חצאי הרגע אינם בו-זמניים על מסך כמו שהם בשולחן
+   אמיתי: ההנחה צריכה להגיע למנחה, היד החדשה צריכה לחזור, ורק אז מופיע כפתור הכרזה במקום
+   שהיה ריק — בזמן שכפתור התפיסה של כל יריב כבר על המסך וכבר מתחת לאצבע. קודם עמדו כאן
+   30 מילישניות, שסידרו את הסדר ותו לא, ומסרו את ההפרש למי שבמקרה הסתכל. השעון של המנחה הוא
+   זה שמודד, ותפיסה בתוך החלון נדחית בקוד `nothingToCatch` — עדיין אין את מי לתפוס. הכפתור
+   לא מופיע אצל השאר עד שהחלון נסגר. חזרה לקלף בודד בהמשך קונה חלון חדש, בדיוק כמו שהיא
+   דורשת הכרזה חדשה.
 7. **ההכרזה פומבית.** מי שהכריז מופיע במצב השולחן שכולם רואים, בדיוק כמו הכרזה בקול בשולחן
    אמיתי. זה מה שמאפשר לתפוס בכלל, ולכן כל מושב עם קלף בודד מציג או "הכריז/ה" או כפתור לתפוס.
+8. **אפשר להכריז יחד עם הקלף.** קלף שדורש בחירת צבע — שינוי צבע — מכניס חלון בחירה בין ההנחה
+   לבין ההכרזה, כך שהחלון שבסעיף 6 נשרף על בחירת צבע במקום על הדרך לכפתור. כשקלף כזה עומד
+   להשאיר אתכם עם קלף אחד, חלון הצבעים מציע גם את ההכרזה לצד ארבעת הצבעים: מדליקים אותה,
+   בוחרים צבע, וההנחה וההכרזה הן מהלך אחד שמוחל יחד — בלי רגע ביניים שבו אפשר לתפוס.
+   ההכרזה **כבויה כברירת מחדל**, כי הכלל שנאכף כאן הוא לזכור, ותיבה שזוכרת במקומכם היא כבר
+   משחק אחר. המנחה מכבד אותה רק כשההנחה באמת משאירה קלף אחד ביד: הנחה שמרוקנת את היד מנצחת
+   ממילא, ושבירת פלוס 3 שהונחה לריק מושכת קודם שלושה קלפים — בשני המקרים אין מה להכריז.
 
 ### רצפי קח 2
 
@@ -556,14 +583,17 @@ opened it in. One turn is one sequence, and one colour.
 - הנחת קלף **טאקי** פותחת רצף שנעול לצבע של אותו קלף.
 - כל עוד הרצף פתוח אפשר להניח **כמה קלפים שרוצים באותו צבע**, כולל קלפים מיוחדים וקלפי
   טאקי נוספים.
-- **קלפים ללא צבע לא נכנסים לרצף.** שינוי צבע, סופר טאקי, מלך, פלוס 3 ושבירת פלוס 3 נדחים
-  בקוד `wildNotAllowedInTaki`.
+- **קלפים ללא צבע לא נכנסים לרצף.** שינוי צבע, מלך, פלוס 3 ושבירת פלוס 3 נדחים בקוד
+  `wildNotAllowedInTaki`. סופר טאקי הוא היוצא מן הכלל היחיד, ורק במקרה שבסעיף הבא — הוא
+  טאקי, וכל כלל על טאקי שמונח על טאקי חל גם עליו.
 - **קלף רגיל בצבע אחר נדחה** בקוד `wrongTakiColor`, גם אם הסמל שלו מתאים לקלף העליון. בתוך
   רצף, הצבע הוא הכלל.
-- **טאקי מעביר את הרצף לצבע שלו — אבל רק ישירות על טאקי אחר.** כל עוד כל הקלפים שהונחו
-  ברצף הם קלפי טאקי, אפשר להניח עליו טאקי בכל צבע: הרצף ממשיך, בלי הפסקה, בצבע הקלף החדש,
-  וממשיכים להניח קלפים ב**אותו** צבע ואז סוגרים כרגיל. אפשר לעשות את זה יותר מפעם אחת, כך
-  שטאקי אדום ← טאקי כחול ← טאקי ירוק הוא רצף ירוק.
+- **טאקי שמונח ישירות על טאקי אחר ממשיך את הרצף, מה שלא יהיה מודפס עליו.** כל עוד כל
+  הקלפים שהונחו ברצף הם קלפי טאקי, אפשר להניח עליו **כל** טאקי — צבעוני או סופר. טאקי
+  צבעוני מעביר את הרצף לצבע שלו; לסופר טאקי אין צבע משלו, ולכן הוא משאיר את הרצף בדיוק
+  בצבע שבו היה. כך או כך הרצף ממשיך בלי הפסקה, וממשיכים להניח קלפים בצבע הרצף ואז סוגרים
+  כרגיל. אפשר לעשות את זה יותר מפעם אחת, כך שטאקי אדום ← טאקי כחול ← טאקי ירוק הוא רצף
+  ירוק, וטאקי אדום ← סופר טאקי ← טאקי כחול הוא רצף כחול.
 - **ברגע שקלף רגיל נכנס לרצף, הצבע נסגר.** אחרי טאקי אדום ← אדום 3, שום טאקי לא פותח מחדש
   את הבחירה — גם לא טאקי אדום ← אדום 3 ← טאקי אדום ← טאקי צהוב, שבו טאקי נמצא למעלה ולא
   הונח עליו כלום. מה שקובע הוא הרצף, לא הקלף העליון.
@@ -586,12 +616,15 @@ opened it in. One turn is one sequence, and one colour.
 
 1. מניחים אותו על כל קלף.
 2. נפתח רצף ב**צבע הנוכחי**. לא בוחרים צבע, וניסיון לבחור נדחה ב-`colorNotAllowed`.
-3. משם הרצף מתנהג בדיוק כמו רצף טאקי: רק אותו צבע, בלי קלפים ללא צבע, סגירה מפורשת,
-   והשפעת הקלף האחרון בסגירה.
+3. משם הרצף מתנהג בדיוק כמו רצף טאקי: רק אותו צבע, בלי קלפים ללא צבע (חוץ מטאקי, ראו
+   סעיף 6), סגירה מפורשת, והשפעת הקלף האחרון בסגירה.
 4. אם סוגרים כשהסופר טאקי עדיין הקלף העליון, התור פשוט עובר והצבע לא משתנה.
 5. הוא מתאים כטאקי. ברגע שהוא הקלף העליון, טאקי צבעוני מכל יד הוא התאמת סמל רגילה עליו,
    אחרי שהרצף נסגר — אין סיבה שהשחקן הבא יחפש דווקא את הצבע המוביל רק מפני שהקלף שקבע אותו
    הוא חסר צבע.
+6. ואותו דבר בכיוון ההפוך, בתוך רצף: כל עוד הרצף הוא רק קלפי טאקי, אפשר להניח עליו סופר
+   טאקי. טאקי צבעוני חוקי על סופר טאקי, ולכן סופר טאקי חייב להיות חוקי על טאקי — אחרת הכלל
+   היה נקרא לכיוון אחד בלבד. הוא לא מעביר כלום: הרצף נשאר בצבע שבו כבר היה.
 
 ### סדר ההשפעות בהנחת קלף
 
@@ -643,6 +676,7 @@ opened it in. One turn is one sequence, and one colour.
 | ניצחון בקלף פלוס, קח 2, פלוס 3 או טאקי      | **מנצחים.** כל חובה שנותרה מתבטלת.                                               | יד ריקה מסיימת את הסבב; דרישה לקלף נוסף מיד ריקה חסרת משמעות.                                                                                 |
 | קלפים ללא צבע בתוך רצף                      | **אסור.**                                                                        | רצף מוגדר על ידי צבע, ולקלף ללא צבע אין.                                                                                                      |
 | טאקי בצבע אחר בתוך רצף פתוח                 | **מותר ישירות על טאקי, ומעביר את הרצף לצבע שלו; אסור אחרי שקלף רגיל נכנס לרצף.** | מה שקובע הוא הרצף ולא הקלף העליון — אחרת טאקי אדום ← אדום 3 ← טאקי אדום ← טאקי צהוב היה מחליף צבע, וזה בדיוק המקרה ששחקנים אומרים שאינו חוקי. |
+| סופר טאקי בתוך רצף פתוח                     | **מותר ישירות על טאקי, באותם תנאים, ומשאיר את הצבע כמו שהוא.**                   | טאקי צבעוני חוקי על סופר טאקי; התמונה ההפוכה חייבת להתקיים גם היא, אחרת "טאקי על טאקי" היה אומר דבר אחד בכיוון אחד ודבר אחר בכיוון השני.      |
 | אילו השפעות חלות בסגירת רצף?                | **רק של הקלף האחרון.**                                                           | אחרת רצף ארוך היה משרשר כמה קלפי עצור.                                                                                                        |
 | האם קנס קח־2 מצטבר?                         | **כן, בשניים לכל קלף, בלי תקרה.**                                                | זה החוק המודפס. אין שסתום שחרור: עונים בקח 2 או משלמים.                                                                                       |
 | האם מלך עונה לקנס קח־2?                     | **כן.** הוא מבטל את כל הקנס, ומי שהניח אותו לא מושך כלום.                        | זו הקריאה של החוק המודפס למלך: הקלף היחיד שמבטל קנס, ושניים ב־116 קלפים שומרים על נדירותו.                                                    |

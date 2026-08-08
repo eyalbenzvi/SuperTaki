@@ -312,8 +312,55 @@ describe('wild cards and the colour picker', () => {
     }
 
     await user.click(within(dialog).getByRole('button', { name: 'ירוק' }));
-    expect(playCard).toHaveBeenCalledWith(colorChange.id, 'green');
+    expect(playCard).toHaveBeenCalledWith(colorChange.id, 'green', false);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('carries the last-card shout with the colour when it is armed', async () => {
+    // Two in hand, so this card is the second to last: the dialog that would
+    // otherwise have cost the head start offers the shout instead.
+    const playCard = vi.fn();
+    situation({ hand: [colorChange, red5], discardTop: red9, activeColor: 'red' });
+    setState({ playCard });
+    const { user } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'הנחת שינוי צבע' }));
+    const dialog = screen.getByRole('dialog');
+    const shout = within(dialog).getByRole('button', { name: /אחרון בידי/ });
+    expect(shout).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(shout);
+    expect(shout).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(within(dialog).getByRole('button', { name: 'ירוק' }));
+    expect(playCard).toHaveBeenCalledWith(colorChange.id, 'green', true);
+  });
+
+  it('forgets an armed shout when the dialog is cancelled', async () => {
+    const playCard = vi.fn();
+    situation({ hand: [colorChange, red5], discardTop: red9, activeColor: 'red' });
+    setState({ playCard });
+    const { user } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'הנחת שינוי צבע' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /אחרון בידי/ }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'ביטול' }));
+
+    await user.click(screen.getByRole('button', { name: 'הנחת שינוי צבע' }));
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: /אחרון בידי/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('offers no shout when the card is not the second to last', async () => {
+    situation({ hand: [colorChange, red5, blue3], discardTop: red9, activeColor: 'red' });
+    const { user } = renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'הנחת שינוי צבע' }));
+    expect(
+      within(screen.getByRole('dialog')).queryByRole('button', { name: /אחרון בידי/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('plays Super Taki without asking, because it keeps the leading colour', async () => {

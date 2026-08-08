@@ -134,6 +134,7 @@ function buildCommand(playerId: string, action: GameAction): GameCommand {
         playerId,
         cardId: action.cardId,
         ...(action.chosenColor ? { chosenColor: action.chosenColor } : {}),
+        ...(action.declareLastCard === true ? { declareLastCard: true } : {}),
       };
     case 'catchLastCard':
       return { type: 'catchLastCard', playerId, targetId: action.targetId };
