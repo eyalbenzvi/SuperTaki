@@ -150,6 +150,20 @@ export type GameCommand =
       readonly cardId: CardId;
       /** Required for wild cards, forbidden otherwise. */
       readonly chosenColor?: CardColor;
+      /**
+       * Shouts "last card" as the card goes down, in the same move.
+       *
+       * At a table the two are one gesture, and the separate button only exists
+       * because a screen cannot hear you. That is fine when the play is a single
+       * tap — the button is there the moment the hand is — but a card that asks
+       * for a colour first puts a dialog between the two, and the head start is
+       * spent choosing rather than reaching. So the choice carries the shout.
+       *
+       * Ignored unless the play actually leaves exactly one card in hand, which
+       * makes it safe to set optimistically: a play that wins the round, or one
+       * that draws a penalty on the way, simply does not declare.
+       */
+      readonly declareLastCard?: boolean;
     }
   | { readonly type: 'drawCard'; readonly playerId: PlayerId }
   | { readonly type: 'closeTaki'; readonly playerId: PlayerId }

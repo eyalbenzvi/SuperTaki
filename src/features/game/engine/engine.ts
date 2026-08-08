@@ -7,6 +7,7 @@ import {
   cardColor,
   isCardColor,
   isNumberCard,
+  isTakiCard,
   isWildCard,
   requiresColorChoice,
   type Card,
@@ -433,6 +434,7 @@ function applyPlayCard(
   playerId: PlayerId,
   cardId: string,
   chosenColor: CardColor | undefined,
+  declareLastCard: boolean,
 ): CommandResult {
   const hand = state.hands[playerId] ?? [];
   const card = hand.find((candidate) => candidate.id === cardId);
@@ -463,17 +465,22 @@ function applyPlayCard(
 
   if (!answeringPlusThree) {
     if (state.takiMode) {
-      if (isWildCard(card)) {
-        return reject('wildNotAllowedInTaki');
-      }
       /*
        * Colour is the rule inside a sequence, with one opening: a Taki laid
-       * straight onto another Taki takes the run into its own colour, and may
-       * do so only while nothing but Takis have been played. After an ordinary
-       * card the colour is settled, and no later Taki reopens it.
+       * straight onto another Taki continues the run whatever it is printed on,
+       * and may do so only while nothing but Takis have been played. A coloured
+       * Taki takes the run into its own colour; a Super Taki has none and leaves
+       * it where it is, which is the only difference between them here. After an
+       * ordinary card the colour is settled, and no later Taki reopens it.
        */
-      if (card.color !== state.takiMode.color && !(state.takiMode.takisOnly && card.kind === 'taki')) {
-        return reject('wrongTakiColor');
+      const carriesTheRun = state.takiMode.takisOnly && isTakiCard(card);
+      if (!carriesTheRun) {
+        if (isWildCard(card)) {
+          return reject('wildNotAllowedInTaki');
+        }
+        if (card.color !== state.takiMode.color) {
+          return reject('wrongTakiColor');
+        }
       }
     } else if (state.pendingDraw > 0 && card.kind !== 'plusTwo' && card.kind !== 'king') {
       return reject('mustAnswerDraw');
@@ -523,19 +530,39 @@ function applyPlayCard(
     return { ok: true, state: freeze(draft), events };
   }
 
+  /*
+   * The shout, when it was made with the card rather than after it.
+   *
+   * Here and not earlier, because "the card left me on one" is only true once the
+   * hand is settled — a breaker's penalty has already been drawn above, and the
+   * win check above has already taken the case where nothing is left to declare.
+   * Nothing below this point adds to or removes from *this* player's hand, so the
+   * count cannot change again inside this command.
+   */
+  if (
+    declareLastCard &&
+    (draft.hands[playerId] ?? []).length === 1 &&
+    !draft.declaredLastCard.includes(playerId)
+  ) {
+    draft.declaredLastCard.push(playerId);
+    events.push({ type: 'lastCardDeclared', playerId });
+  }
+
   if (answeringPlusThree) {
     resolvePlusThree(draft, playerId, events);
   } else if (draft.takiMode) {
     /*
      * Inside a sequence: accumulate; effects are resolved when the Taki closes.
      *
-     * The colour follows the run rather than the opening card, because a Taki
-     * played onto a Taki carries it over — `resultingColor` is that card's own
-     * colour, and the validation above has already refused the move unless the
-     * run was still nothing but Takis. Everything else leaves the colour alone,
-     * since it had to match it to be here at all.
+     * The colour follows the run rather than the opening card, because a coloured
+     * Taki played onto a Taki carries it over — `resultingColor` is that card's
+     * own colour, and the validation above has already refused the move unless
+     * the run was still nothing but Takis. Everything else leaves the colour
+     * alone: an ordinary card had to match it to be here at all, and a Super Taki
+     * has no colour of its own, so `resultingColor` falls back to the one the run
+     * is already in.
      */
-    const takisOnly = draft.takiMode.takisOnly && card.kind === 'taki';
+    const takisOnly = draft.takiMode.takisOnly && isTakiCard(card);
     draft.takiMode = {
       ...draft.takiMode,
       color: resultingColor,
@@ -545,7 +572,7 @@ function applyPlayCard(
       // longer the Super Taki's, whatever opened it.
       openedWithSuperTaki: draft.takiMode.openedWithSuperTaki && card.kind !== 'taki',
     };
-  } else if (card.kind === 'taki' || card.kind === 'superTaki') {
+  } else if (isTakiCard(card)) {
     draft.takiMode = {
       color: resultingColor,
       playerId,
@@ -900,7 +927,13 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
   if (state.plusThree) {
     switch (command.type) {
       case 'playCard':
-        return applyPlayCard(state, command.playerId, command.cardId, command.chosenColor);
+        return applyPlayCard(
+          state,
+          command.playerId,
+          command.cardId,
+          command.chosenColor,
+          command.declareLastCard === true,
+        );
       case 'passBreak':
         return applyPassBreak(state, command.playerId);
       default:
@@ -925,7 +958,13 @@ export function applyCommand(state: GameState, command: GameCommand): CommandRes
 
   switch (command.type) {
     case 'playCard':
-      return applyPlayCard(state, command.playerId, command.cardId, command.chosenColor);
+      return applyPlayCard(
+        state,
+        command.playerId,
+        command.cardId,
+        command.chosenColor,
+        command.declareLastCard === true,
+      );
     case 'closeTaki':
       return applyCloseTaki(state, command.playerId);
     case 'drawCard':

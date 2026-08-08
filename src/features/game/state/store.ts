@@ -174,7 +174,17 @@ export interface AppActions {
   readonly setPaused: (paused: boolean) => void;
   readonly voteAbandon: (agree: boolean) => void;
   readonly nudgePlayer: (playerId: string) => void;
-  readonly playCard: (cardId: string, chosenColor?: 'red' | 'blue' | 'green' | 'yellow') => void;
+  /**
+   * Plays a card, optionally shouting "last card" in the same move.
+   *
+   * The shout is only honoured by the engine when the play really does leave one
+   * card in hand, so passing it is never a way of declaring early.
+   */
+  readonly playCard: (
+    cardId: string,
+    chosenColor?: 'red' | 'blue' | 'green' | 'yellow',
+    declareLastCard?: boolean,
+  ) => void;
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
   readonly passBreak: () => void;
@@ -816,8 +826,13 @@ export const useAppStore = create<AppStore>((set, get) => {
       session?.nudge(playerId);
     },
 
-    playCard: (cardId, chosenColor) => {
-      submit(chosenColor ? { type: 'playCard', cardId, chosenColor } : { type: 'playCard', cardId });
+    playCard: (cardId, chosenColor, declareLastCard) => {
+      submit({
+        type: 'playCard',
+        cardId,
+        ...(chosenColor ? { chosenColor } : {}),
+        ...(declareLastCard === true ? { declareLastCard: true } : {}),
+      });
     },
 
     drawCard: () => {

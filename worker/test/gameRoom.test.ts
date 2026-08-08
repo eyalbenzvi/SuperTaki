@@ -314,6 +314,16 @@ describe('last card', () => {
     });
     expect(creator.client.expect('actionRejected').payload.code).toBe('nothingToCatch');
 
+    // Still inside it a fifth of a second later: the window is a real head start,
+    // not a frame's worth of ordering.
+    table.advance(200);
+    creator.client.forget();
+    creator.client.say('action', {
+      action: { type: 'catchLastCard', targetId: guest.playerId },
+      requestId: 'rq-still-early',
+    });
+    expect(creator.client.expect('actionRejected').payload.code).toBe('nothingToCatch');
+
     table.advance(500);
     creator.client.forget();
     creator.client.say('action', {

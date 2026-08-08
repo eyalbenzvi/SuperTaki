@@ -143,14 +143,21 @@ export const CAUGHT_NOTICE_MS = 8_000;
  * everybody else's screen. Without a window the catch could land on the far side
  * of that gap.
  *
- * Thirty milliseconds: barely more than a frame, and deliberately so. It settles
- * that ordering and nothing else. A quarter of a second sat here first and read as
- * a delay — callers watched a seat drop to one card and found the button dead —
- * because anything that long stops covering the gap and starts protecting the
- * silence. A genuinely silent player stays exposed for as long as they stay silent
- * either way.
+ * Thirty milliseconds sat here first — barely more than a frame — on the theory
+ * that the window had only to settle that ordering. It did not, because the gap is
+ * not one frame wide: the play has to reach the room, the new hand has to come back,
+ * the declare button has to appear where nothing was a moment ago, and only then can
+ * a thumb start moving to it. An opponent's button is already on screen and already
+ * under a finger. A window narrower than that difference hands every last card to
+ * whoever was watching rather than to whoever was playing.
+ *
+ * Three hundred milliseconds: a round trip plus the beginning of a reach, and still
+ * inside the quarter-second a tap of one's own reads as instant. It is not enough to
+ * make the button feel dead — the earlier quarter-second complaint was about a window
+ * that also had nothing behind it to cover — and a genuinely silent player stays
+ * exposed for as long as they stay silent either way.
  */
-export const LAST_CARD_GRACE_MS = 30;
+export const LAST_CARD_GRACE_MS = 300;
 
 /**
  * How long a robot appears to think before it plays.

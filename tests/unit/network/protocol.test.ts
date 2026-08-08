@@ -36,6 +36,7 @@ describe('client message validation', () => {
     for (const action of [
       { type: 'playCard', cardId: 'n-red-5-0' },
       { type: 'playCard', cardId: 'w-colorChange-0', chosenColor: 'green' },
+      { type: 'playCard', cardId: 'w-colorChange-0', chosenColor: 'green', declareLastCard: true },
       { type: 'playCard', cardId: 'w-breakPlusThree-0' },
       { type: 'drawCard' },
       { type: 'closeTaki' },

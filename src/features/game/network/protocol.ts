@@ -331,7 +331,17 @@ export type LobbyPlayer = z.infer<typeof lobbyPlayerSchema>;
 
 /** Action a client asks for. The room attaches the authenticated player id. */
 export const gameActionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('playCard'), cardId: cardIdSchema, chosenColor: colorSchema.optional() }),
+  z.object({
+    type: z.literal('playCard'),
+    cardId: cardIdSchema,
+    chosenColor: colorSchema.optional(),
+    /*
+     * "Last card!" shouted with the card rather than after it. Optional, so an
+     * older client that never sends it is unchanged, and honoured by the engine
+     * only when the play really does leave one card in hand.
+     */
+    declareLastCard: z.boolean().optional(),
+  }),
   z.object({ type: z.literal('drawCard') }),
   z.object({ type: z.literal('closeTaki') }),
   z.object({ type: z.literal('passBreak') }),

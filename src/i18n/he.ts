@@ -127,6 +127,8 @@ export const he: Translations = {
   'game.lastCard': 'קלף אחרון!',
   'game.declareLastCard': 'אחרון בידי!',
   'game.declareLastCardBody': 'להכריז, או להיתפס על {count} קלפים.',
+  'game.declareWithPlay': 'להכריז יחד עם הקלף, לפני שמישהו יספיק לתפוס על {count} קלפים.',
+  'game.declareWithPlayArmed': 'מכריזים עם הקלף. לביטול — לוחצים שוב.',
   'game.declaredLastCard': 'הכריז/ה',
   'game.declaredLastCardMine': 'הכרזת — אף אחד לא יכול לתפוס אותך.',
   'game.catchLastCard': 'תפיסת {name}',

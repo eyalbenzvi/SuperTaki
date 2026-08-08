@@ -101,6 +101,18 @@ export function isNumberCard(card: Card): card is NumberCard {
 }
 
 /**
+ * Whether the card is a Taki of any kind — coloured or Super.
+ *
+ * Both print TAKI and both open a sequence, so every rule about "a Taki laid on a
+ * Taki" means either of them. What separates them is only what they do to the
+ * colour: a coloured one carries the run into its own, a Super one has none to
+ * carry and leaves the run where it is.
+ */
+export function isTakiCard(card: Card): boolean {
+  return card.kind === 'taki' || card.kind === 'superTaki';
+}
+
+/**
  * Whether playing this card asks its owner to name the next colour.
  *
  * Only Change Colour does. Since the King joined the deck, the other

@@ -101,7 +101,14 @@ export function GameScreen(): ReactNode {
    */
   const [registry] = useState(() => new AnchorRegistry());
 
-  const [pendingWild, setPendingWild] = useState<Card | null>(null);
+  /*
+   * The wild card waiting for a colour, and whether its owner has armed the shout
+   * that goes with it. One piece of state, because the arming belongs to that one
+   * card: cancelling the dialog or picking a different card has to forget it.
+   */
+  const [pendingWild, setPendingWild] = useState<{ readonly card: Card; readonly declaring: boolean } | null>(
+    null,
+  );
   const [refusal, setRefusal] = useState<string | null>(null);
   const refusalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -210,7 +217,7 @@ export function GameScreen(): ReactNode {
 
   const onPlay = (card: Card): void => {
     if (requiresColorChoice(card)) {
-      setPendingWild(card);
+      setPendingWild({ card, declaring: false });
       return;
     }
     playCard(card.id);
@@ -232,9 +239,14 @@ export function GameScreen(): ReactNode {
     }, REFUSAL_MS);
   };
 
+  /*
+   * The colour, and with it the shout if it was armed. Both travel in the one
+   * action, so the room applies them together and there is no instant in which
+   * the hand is down to a card nobody has claimed.
+   */
   const onChooseColor = (color: CardColor): void => {
     if (pendingWild) {
-      playCard(pendingWild.id, color);
+      playCard(pendingWild.card.id, color, pendingWild.declaring);
       setPendingWild(null);
     }
   };
@@ -410,8 +422,16 @@ export function GameScreen(): ReactNode {
 
       <ColorPickerModal
         open={pendingWild !== null}
-        card={pendingWild}
+        card={pendingWild?.card ?? null}
         t={t}
+        // Two in hand means this card is the second to last: playing it leaves one.
+        lastCardNext={table.hand.length === 2}
+        declaring={pendingWild?.declaring === true}
+        onToggleDeclare={() => {
+          setPendingWild((current) =>
+            current === null ? null : { ...current, declaring: !current.declaring },
+          );
+        }}
         onChoose={onChooseColor}
         onCancel={() => {
           setPendingWild(null);

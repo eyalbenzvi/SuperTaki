@@ -99,6 +99,78 @@ describe('declaring the last card', () => {
   });
 });
 
+describe('shouting with the card', () => {
+  /** Plays a card by spec, shouting in the same move. */
+  function playAndDeclare(state: ReturnType<typeof makeState>, playerId: string, spec: string) {
+    const match = (state.hands[playerId] ?? []).find((candidate) => candidate.id.startsWith(`${spec}#`));
+    if (!match) {
+      throw new Error(`${spec} not in hand`);
+    }
+    return applyCommand(state, {
+      type: 'playCard',
+      playerId,
+      cardId: match.id,
+      declareLastCard: true,
+      ...(match.kind === 'colorChange' ? { chosenColor: 'blue' as const } : {}),
+    });
+  }
+
+  it('declares in the same move, so there is no window to be caught in', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('colorChange', 'red:3'), 'p-bob': cards('red:1', 'blue:4') },
+      discardPile: cards('red:9'),
+    });
+    const { state: next, events } = expectOk(playAndDeclare(state, 'p-alice', 'colorChange'));
+
+    expect(next.declaredLastCard).toEqual(['p-alice']);
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'colorChosen', 'lastCardDeclared', 'turnChanged']);
+    // Which is the whole point: the state the table is first shown already has
+    // the shout in it.
+    expectRejected(catchOut(next, 'p-bob', 'p-alice'), 'nothingToCatch');
+  });
+
+  it('is ignored when the play does not leave exactly one card', () => {
+    // Three in hand: the flag is a shout about a card the player is not yet on.
+    const early = makeState({
+      hands: { 'p-alice': cards('red:3', 'red:4', 'red:5'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+    });
+    expect(expectOk(playAndDeclare(early, 'p-alice', 'red:3')).state.declaredLastCard).toEqual([]);
+
+    // And a play that empties the hand ends the round; there is nothing to declare.
+    const winning = makeState({
+      hands: { 'p-alice': cards('red:3'), 'p-bob': cards('red:1', 'blue:4') },
+      discardPile: cards('red:9'),
+    });
+    const won = expectOk(playAndDeclare(winning, 'p-alice', 'red:3')).state;
+    expect(won.winnerId).toBe('p-alice');
+    expect(won.declaredLastCard).toEqual([]);
+  });
+
+  it('is not a way of declaring twice', () => {
+    const state = makeState({
+      hands: { 'p-alice': cards('red:3', 'red:4'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+    });
+    const next = expectOk(playAndDeclare(state, 'p-alice', 'red:3')).state;
+    expect(next.declaredLastCard).toEqual(['p-alice']);
+    expectRejected(declare(next, 'p-alice'), 'alreadyDeclared');
+  });
+
+  it('does not fire for a breaker that draws its own penalty', () => {
+    // The three cards land before the hand is counted, so the player is not on a
+    // last card at all — the same reason a breaker cannot win the round.
+    const state = makeState({
+      hands: { 'p-alice': cards('breakPlusThree', 'red:4'), 'p-bob': cards('red:1') },
+      discardPile: cards('red:9'),
+      drawPile: cards('green:4', 'green:5', 'green:6'),
+    });
+    const next = expectOk(playAndDeclare(state, 'p-alice', 'breakPlusThree')).state;
+    expect((next.hands['p-alice'] ?? []).length).toBe(4);
+    expect(next.declaredLastCard).toEqual([]);
+  });
+});
+
 describe('being caught on a silent last card', () => {
   it('makes the silent player draw the penalty, called from any seat', () => {
     const state = makeState({
