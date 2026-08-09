@@ -130,12 +130,14 @@ other players are the ones who enforce it.
    rejected with `nothingToCatch`. **Every seat is told who called it**, in a banner as well
    as in the log: from three players up, "somebody drew four" does not say whose call it was.
 6. **The first instant belongs to the player.** From the moment a hand comes down to one
-   card, nobody may call that player out for **300 ms**. It exists because the two halves of
+   card, nobody may call that player out for **100 ms**. It exists because the two halves of
    the moment are not simultaneous on a screen the way they are at a table: the play has to
    reach the host, the new hand has to come back, and only then does a declare button appear
    where nothing was — while every opponent's catch button is already on screen, already
-   under a thumb. 30 ms sat here first, which covered the ordering and nothing else, and
-   handed the difference to whoever happened to be watching. It is the host's clock that
+   under a thumb. 30 ms sat here first, which was under a round trip and handed the
+   difference to whoever happened to be watching; 300 ms sat here next, which covered more of
+   the reach than a window settling an ordering has any business covering. A round trip is
+   the measure, and the reach itself is answered by rule 8 below. It is the host's clock that
    measures it, and a catch made inside the window is refused with `nothingToCatch` — there
    is nothing to catch _yet_. The button does not appear on the other players' screens until
    it has passed. Coming back down to one card later buys a fresh window, exactly as it needs
@@ -510,13 +512,14 @@ opened it in. One turn is one sequence, and one colour.
    בקוד `nothingToCatch`. **כל השולחן מקבל הודעה מי תפס**, לא רק ביומן: משלושה שחקנים ומעלה
    "מישהו לקח ארבעה" לא אומר של מי הייתה הקריאה.
 6. **הרגע הראשון שייך לשחקן.** מרגע שהיד יורדת לקלף אחד, אי אפשר לתפוס אותו במשך
-   **300 מילישניות**. החלון קיים כי שני חצאי הרגע אינם בו-זמניים על מסך כמו שהם בשולחן
+   **100 מילישניות**. החלון קיים כי שני חצאי הרגע אינם בו-זמניים על מסך כמו שהם בשולחן
    אמיתי: ההנחה צריכה להגיע למנחה, היד החדשה צריכה לחזור, ורק אז מופיע כפתור הכרזה במקום
    שהיה ריק — בזמן שכפתור התפיסה של כל יריב כבר על המסך וכבר מתחת לאצבע. קודם עמדו כאן
-   30 מילישניות, שסידרו את הסדר ותו לא, ומסרו את ההפרש למי שבמקרה הסתכל. השעון של המנחה הוא
-   זה שמודד, ותפיסה בתוך החלון נדחית בקוד `nothingToCatch` — עדיין אין את מי לתפוס. הכפתור
-   לא מופיע אצל השאר עד שהחלון נסגר. חזרה לקלף בודד בהמשך קונה חלון חדש, בדיוק כמו שהיא
-   דורשת הכרזה חדשה.
+   30 מילישניות, שהיו קצרות מהלוך-חזור אחד ומסרו את ההפרש למי שבמקרה הסתכל; אחר כך עמדו כאן
+   300, שכיסו מהדרך אל הכפתור יותר משחלון שמסדר סדר אמור לכסות. המידה היא הלוך-חזור, והדרך
+   אל הכפתור נענית בסעיף 8 למטה. השעון של המנחה הוא זה שמודד, ותפיסה בתוך החלון נדחית בקוד
+   `nothingToCatch` — עדיין אין את מי לתפוס. הכפתור לא מופיע אצל השאר עד שהחלון נסגר. חזרה
+   לקלף בודד בהמשך קונה חלון חדש, בדיוק כמו שהיא דורשת הכרזה חדשה.
 7. **ההכרזה פומבית.** מי שהכריז מופיע במצב השולחן שכולם רואים, בדיוק כמו הכרזה בקול בשולחן
    אמיתי. זה מה שמאפשר לתפוס בכלל, ולכן כל מושב עם קלף בודד מציג או "הכריז/ה" או כפתור לתפוס.
 8. **אפשר להכריז יחד עם הקלף.** קלף שדורש בחירת צבע — שינוי צבע — מכניס חלון בחירה בין ההנחה

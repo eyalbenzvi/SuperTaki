@@ -26,7 +26,7 @@ const NONE = { seats: '', served: false } as const;
  * inheriting the old one. The cost is that a second seat coming down to a silent
  * last card restarts the window for both, so an existing button can blink off for
  * a moment. That needs two players to reach their last card inside the same
- * `LAST_CARD_GRACE_MS`, which is a third of a second, and it errs in the direction
+ * `LAST_CARD_GRACE_MS`, which is a tenth of a second, and it errs in the direction
  * the rule already leans — towards the player being called out.
  */
 export function useCatchGrace(opponents: readonly OpponentView[]): readonly OpponentView[] {

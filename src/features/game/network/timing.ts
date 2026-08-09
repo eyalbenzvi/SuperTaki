@@ -151,13 +151,15 @@ export const CAUGHT_NOTICE_MS = 8_000;
  * under a finger. A window narrower than that difference hands every last card to
  * whoever was watching rather than to whoever was playing.
  *
- * Three hundred milliseconds: a round trip plus the beginning of a reach, and still
- * inside the quarter-second a tap of one's own reads as instant. It is not enough to
- * make the button feel dead — the earlier quarter-second complaint was about a window
- * that also had nothing behind it to cover — and a genuinely silent player stays
- * exposed for as long as they stay silent either way.
+ * A hundred milliseconds: enough for a round trip on a table sitting on the same
+ * network, and short enough that nobody watching the seat drop to one card can feel
+ * it. Three hundred sat here briefly and covered more of the reach, but the reach is
+ * not what this window is for — the colour dialog now carries the shout for the one
+ * card that made the reach impossible, and past a round trip the window stops
+ * settling an ordering and starts buying silence time. A genuinely silent player
+ * stays exposed for as long as they stay silent either way.
  */
-export const LAST_CARD_GRACE_MS = 300;
+export const LAST_CARD_GRACE_MS = 100;
 
 /**
  * How long a robot appears to think before it plays.
