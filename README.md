@@ -21,9 +21,12 @@ full Super Taki deck — numbers 1 and 3–9, Stop, Plus, +2, Change Direction a
 colours, plus Change Colour, Super Taki, King, +3 and the +3 Breaker. There is no plain 2:
 the only 2 in Taki is the +2. "Last card" is declared with a button, and a player who stays
 silent on a single card can be caught by anybody else for four cards — a beat after
-their card lands, so the declaration is a decision rather than a race. The exact rules the engine
-implements are in [docs/rules.md](docs/rules.md); the app has no rules page, so read that
-if a card's behaviour is not what you expected.
+their card lands, so the declaration is a decision rather than a race. A table can be set up
+to play the ordinary game or **stairs** (טאקי מדרגות), where emptying your hand deals you a new
+one a card smaller — eight down to one — and the round goes to whoever finishes all eight
+hands. Rounds won are kept as a running score for as long as the room is open. The exact rules
+the engine implements are in [docs/rules.md](docs/rules.md); the app has no rules page, so read
+that if a card's behaviour is not what you expected.
 
 ---
 
@@ -340,7 +343,7 @@ no UI imports, and the UI holds no game rules.
 - [docs/architecture.md](docs/architecture.md) — static hosting constraints, server authority, data flow, reconnection, limitations
 - [docs/server-game-plan.md](docs/server-game-plan.md) — why the game moved into the room, and what that deleted
 - [docs/protocol.md](docs/protocol.md) — message envelope, every message type, validation, versioning, examples
-- [docs/rules.md](docs/rules.md) — exact deck, exact rules, +2 runs, the King, the +3 breaker window, decisions where editions disagree (bilingual)
+- [docs/rules.md](docs/rules.md) — exact deck, exact rules, +2 runs, the King, the +3 breaker window, game modes and the running score, decisions where editions disagree (bilingual)
 - [docs/robots.md](docs/robots.md) — robot players: what they know, how they play, when one covers a human seat
 - [docs/threat-model.md](docs/threat-model.md) — what a malicious client can and cannot do, and what the operator can see
 - [docs/deployment.md](docs/deployment.md) — GitHub Pages step by step

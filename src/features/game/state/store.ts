@@ -4,7 +4,7 @@ import { releaseSound, setSoundEnabled, unlockSound } from '../../../lib/audio.t
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import type { Card } from '../engine/cards.ts';
-import type { GameEvent, RejectionCode } from '../engine/state.ts';
+import type { GameEvent, GameMode, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import { ClientSession } from '../network/clientSession.ts';
 import type { ChannelFactory } from '../network/roomTransport.ts';
@@ -147,6 +147,7 @@ export interface AppActions {
     name: string;
     maxPlayers: number;
     tableLanguage: Language;
+    gameMode: GameMode;
   }) => Promise<void>;
   readonly joinRoom: (options: {
     name: string;
@@ -156,6 +157,8 @@ export interface AppActions {
   readonly retryConnection: () => void;
 
   readonly setMaxPlayers: (value: number) => void;
+  /** Picks how the next round is won. Lobby only; the room refuses it after the deal. */
+  readonly setGameMode: (mode: GameMode) => void;
   readonly removePlayer: (playerId: string) => void;
   readonly startGame: () => void;
   /** Seats a robot. Lobby only, and only for the seat holding the lobby buttons. */
@@ -656,7 +659,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ caught: null });
     },
 
-    createRoom: async ({ name, maxPlayers, tableLanguage }) => {
+    createRoom: async ({ name, maxPlayers, tableLanguage, gameMode }) => {
       if (get().busy) {
         return;
       }
@@ -688,7 +691,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         const clientSession = new ClientSession({
           roomCode,
           displayName: cleaned,
-          create: { maxPlayers, tableLanguage },
+          create: { maxPlayers, tableLanguage, gameMode },
           observer: observerFor(attemptEpoch),
           ...(channelFactory ? { connect: channelFactory } : {}),
         });
@@ -777,6 +780,10 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     setMaxPlayers: (value) => {
       command({ type: 'setMaxPlayers', maxPlayers: Math.round(value) });
+    },
+
+    setGameMode: (mode) => {
+      command({ type: 'setGameMode', mode });
     },
 
     removePlayer: (playerId) => {

@@ -89,6 +89,21 @@ const seatSchema = z.object({
    */
   lastRequestId: z.string().min(1).max(64).nullable(),
   lastRequestVersion: z.number().int().nonnegative().nullable(),
+  /**
+   * Rounds this seat has won since the room opened.
+   *
+   * On the seat rather than in a map beside the seats, because the score's lifetime
+   * *is* the seat's: every path that drops a seat — a goodbye in the lobby, a
+   * removal, a grace that ran out, the room being forgotten — takes the score with
+   * it without having to remember to. A table's running total therefore cannot
+   * outlive the table, which is the promise the room makes about everything else it
+   * holds.
+   *
+   * Defaulted, per the rule stated on `emptySince`: a record written before this
+   * field existed must reload as a table where nobody has won yet, rather than be
+   * thrown away with every credential in it.
+   */
+  wins: z.number().int().min(0).max(10_000).default(0),
 });
 
 export type SeatRecord = z.infer<typeof seatSchema>;
@@ -100,6 +115,15 @@ export const roomRecordSchema = z.object({
   phase: z.enum(['lobby', 'inGame', 'finished']),
   maxPlayers: z.number().int().min(2).max(6),
   tableLanguage: z.enum(['he', 'en']),
+  /**
+   * How the next round will be won. See `GameMode` in the engine.
+   *
+   * The table's setting, not the round's: a round in play carries its own copy in
+   * `GameState`, so changing this mid-round is impossible by construction rather
+   * than by a check somebody has to remember. Defaulted for the same reason as
+   * `emptySince`.
+   */
+  gameMode: z.enum(['classic', 'stairs']).default('classic'),
   /** Highest state version this room has ever broadcast. */
   versionFloor: z.number().int().nonnegative(),
   /** Rounds dealt so far, so the starting seat rotates. */
@@ -175,6 +199,15 @@ const rngStateSchema = z.object({ seed: z.number().int() });
 export const gameStateSchema = z.object({
   version: z.number().int().nonnegative(),
   phase: z.enum(['playing', 'finished']),
+  /*
+   * Defaulted, and the default is the mode the game had before there were modes: a
+   * round persisted by an older deployment reloads as the classic round it was
+   * being played as, rather than being discarded — which for a live round means
+   * every hand at the table.
+   */
+  mode: z.enum(['classic', 'stairs']).default('classic'),
+  /** Hands each seat has emptied. Empty for a round dealt before the staircase existed. */
+  stairs: z.record(playerId, z.number().int().min(0).max(8)).default({}),
   players: z
     .array(z.object({ id: playerId, name: z.string().min(1).max(32), left: z.boolean().optional() }))
     .min(2)

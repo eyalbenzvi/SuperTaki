@@ -493,6 +493,28 @@
 }
 
 /*
+ * How far down the staircase somebody is, in a "stairs" round.
+ *
+ * Numerals, not a bar: the number is compared across seats — "I am on four, he is
+ * on six" — and a length is the one shape that cannot be compared at this size. The
+ * digits are tabular so the chip does not change width as the round goes on, which
+ * on a row of six seats would shuffle the whole table sideways.
+ */
+.stairs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  white-space: nowrap;
+  /* The fraction is Latin-ordered in both languages: "3/8", never "8/3". */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/*
  * Whether the player on one card declared it. Not decoration: a declared last
  * card can end the round, an undeclared one costs its owner two cards, and this
  * is where the difference is visible.

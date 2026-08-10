@@ -23,6 +23,16 @@ import {
 
 const CREATE = { create: { maxPlayers: 4, tableLanguage: 'he' as const } };
 
+/**
+ * A seed a staircase actually finishes under.
+ *
+ * A stairs round is thirty-six cards a player rather than eight, so it is long
+ * enough that the move ceiling in `playOut` is a real bound rather than a formality
+ * — and a fixed seed is what makes "it finished" a fact about the rules instead of a
+ * coin toss that will one day land the other way in CI.
+ */
+const STAIRS_SEED = { seed: 20260810 };
+
 /** A room with two seated players and a round in play. */
 function dealtTable(options?: ConstructorParameters<typeof Harness>[0]) {
   const table = new Harness(options);
@@ -51,6 +61,43 @@ function takeTurn(seats: readonly Seat[]): void {
     throw new Error(`nobody recognisable is on turn (${String(onTurn)})`);
   }
   seat.client.takeTurn();
+}
+
+/**
+ * Plays a round out where some of the seats are not ours to move.
+ *
+ * `playOut` dispatches on whose turn it is, which is enough for a table of people
+ * playing a classic round and not enough here. Two things break it: a robot seat
+ * moves on the room's own alarm rather than on a message, and an open +3 leaves the
+ * seat *on turn* unable to do anything at all — the only legal move belongs to
+ * whoever holds a breaker, out of turn. A loop that keeps asking the seat on turn to
+ * move in that state sends a move the room correctly refuses, for ever, and a refusal
+ * changes no version, so nothing else ever happens either.
+ *
+ * So: whoever among `seats` can actually act does, and when nobody can, the clock
+ * moves and the room settles it. Which is exactly what a real table does.
+ */
+function playWithRoom(table: Harness, seats: readonly Seat[], limit = 4_000): void {
+  for (let move = 0; move < limit; move += 1) {
+    const state = seats[0]?.client.state;
+    if (state?.phase === 'finished') {
+      return;
+    }
+    const pending = state?.plusThree ?? null;
+    const actor =
+      pending !== null
+        ? seats.find(
+            (seat) =>
+              seat.playerId !== pending.playerId &&
+              seat.client.hand.some((card) => card.kind === 'breakPlusThree'),
+          )
+        : seats.find((seat) => seat.playerId === state?.currentPlayerId);
+    if (actor !== undefined) {
+      actor.client.takeTurn();
+      continue;
+    }
+    table.advance(5_000);
+  }
 }
 
 /** Plays until somebody wins, or until `limit` moves have gone by. */
@@ -743,6 +790,167 @@ describe('pause, abandon and play again', () => {
   });
 });
 
+describe('the running score', () => {
+  it('counts a round to its winner, and publishes it to the whole table', () => {
+    const { creator, guest } = dealtTable();
+    playOut([creator, guest]);
+
+    const winnerId = creator.client.state?.winnerId;
+    expect(winnerId).not.toBeNull();
+    const winsOf = (client: TestClient, playerId: string): number | undefined =>
+      client.lobby?.players.find((player) => player.id === playerId)?.wins;
+
+    expect(winsOf(creator.client, winnerId as string)).toBe(1);
+    // Everybody's screen gets the same score, not only the winner's.
+    expect(winsOf(guest.client, winnerId as string)).toBe(1);
+    const loserId = winnerId === creator.playerId ? guest.playerId : creator.playerId;
+    expect(winsOf(creator.client, loserId)).toBe(0);
+  });
+
+  it('adds one per round rather than one per snapshot', () => {
+    const { table, creator, guest } = dealtTable();
+    playOut([creator, guest]);
+    const winnerId = creator.client.state?.winnerId as string;
+
+    // Everything a finished table still does: somebody asks about the score, a
+    // credential comes back, the room hibernates and is rebuilt.
+    creator.client.say('playAgainVote', { agree: false });
+    const back = table.client('Yoni-back');
+    back.say('resumeRequest', { playerId: guest.playerId, resumeToken: guest.resumeToken });
+    table.hibernate([
+      { socket: creator.client, playerId: creator.playerId },
+      { socket: back, playerId: guest.playerId },
+    ]);
+
+    const seat = readRoom(table.store);
+    expect(seat.ok && seat.value.seats.find((s) => s.playerId === winnerId)?.wins).toBe(1);
+  });
+
+  it('scores nothing for a round that ended with no winner', () => {
+    const { creator, guest } = dealtTable();
+    creator.client.say('abandonVote', { agree: true });
+    guest.client.say('abandonVote', { agree: true });
+
+    expect(creator.client.state?.phase).toBe('finished');
+    expect(creator.client.state?.winnerId).toBeNull();
+    expect(creator.client.lobby?.players.every((player) => (player.wins ?? 0) === 0)).toBe(true);
+  });
+
+  it('keeps the score across rounds, and loses it with the room', () => {
+    const { table, creator, guest } = dealtTable();
+    playOut([creator, guest]);
+    const firstWinner = creator.client.state?.winnerId as string;
+
+    creator.client.say('playAgainVote', { agree: true });
+    guest.client.say('playAgainVote', { agree: true });
+    expect(creator.client.lobby?.phase).toBe('inGame');
+    // The score of the first round is still on the table during the second.
+    expect(creator.client.lobby?.players.find((p) => p.id === firstWinner)?.wins).toBe(1);
+
+    playOut([creator, guest]);
+    const totals = (creator.client.lobby?.players ?? []).map((player) => player.wins ?? 0);
+    expect(totals.reduce((sum, wins) => sum + wins, 0)).toBe(2);
+
+    // And the promise the standings screen makes: the room going takes the score.
+    table.room.handleClose(creator.client);
+    table.room.handleClose(guest.client);
+    table.advance(7 * 60 * 60 * 1000);
+    expect(table.forgotten).toBe(true);
+    expect(table.store.get('room')).toBeUndefined();
+  });
+});
+
+describe('stairs mode', () => {
+  const STAIRS = { create: { maxPlayers: 4, tableLanguage: 'he' as const, gameMode: 'stairs' as const } };
+
+  it('deals the round in the mode the table was opened with', () => {
+    const table = new Harness(STAIRS_SEED);
+    const creator = table.join('Dana', STAIRS);
+    const guest = table.join('Yoni');
+    expect(creator.client.lobby?.gameMode).toBe('stairs');
+
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+    const state = creator.client.expect('publicState').payload.state;
+    expect(state.mode).toBe('stairs');
+    // Both modes open with the same eight cards; the staircase starts at nought.
+    expect(handOf(guest.client).length).toBe(8);
+    expect(state.players.every((player) => player.stairsStep === 0)).toBe(true);
+  });
+
+  it('changes mode in the lobby, and refuses to once cards are dealt', () => {
+    const table = new Harness();
+    const creator = table.join('Dana', CREATE);
+    table.join('Yoni');
+    expect(creator.client.lobby?.gameMode).toBe('classic');
+
+    creator.client.say('roomCommand', { command: { type: 'setGameMode', mode: 'stairs' } });
+    expect(creator.client.expect('lobbyState').payload.lobby.gameMode).toBe('stairs');
+
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+    creator.client.say('roomCommand', { command: { type: 'setGameMode', mode: 'classic' } });
+    // The round in play was dealt as a staircase and stays one; so does the table.
+    expect(creator.client.lobby?.gameMode).toBe('stairs');
+    expect(creator.client.state?.mode).toBe('stairs');
+  });
+
+  it('only the seat holding the lobby buttons may change the mode', () => {
+    const table = new Harness();
+    const creator = table.join('Dana', CREATE);
+    const guest = table.join('Yoni');
+
+    guest.client.say('roomCommand', { command: { type: 'setGameMode', mode: 'stairs' } });
+    expect(creator.client.lobby?.gameMode).toBe('classic');
+  });
+
+  it('plays a whole staircase out: eight hands, then a winner', () => {
+    const table = new Harness(STAIRS_SEED);
+    const creator = table.join('Dana', STAIRS);
+    const guest = table.join('Yoni');
+    // Both seats are answering for themselves throughout, so nothing a robot did can
+    // be mistaken for the rule being tested.
+    creator.client.say('roomCommand', { command: { type: 'setStandInEnabled', enabled: false } });
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+
+    // A staircase is thirty-six cards a player rather than eight, so the ceiling is
+    // higher than a classic round's — and it is still a ceiling, not a wait.
+    playWithRoom(table, [creator, guest]);
+
+    const final = creator.client.state;
+    expect(final?.phase).toBe('finished');
+    const winner = final?.players.find((player) => player.id === final.winnerId);
+    // Won by walking the whole staircase down, not by an empty hand.
+    expect(winner?.stairsStep).toBe(8);
+    expect(winner?.cardCount).toBe(0);
+    // The steps were real: the loser got somewhere too, and the log said so.
+    const advanced = creator.client
+      .all('gameEvents')
+      .flatMap((message) => message.payload.events)
+      .filter((event) => event.type === 'stairsAdvanced');
+    expect(advanced.length).toBeGreaterThanOrEqual(7);
+    // Every step deals one card fewer than the last, for each seat independently.
+    for (const seat of final?.players ?? []) {
+      const mine = advanced.filter((event) => event.playerId === seat.id);
+      expect(mine.map((event) => event.stage)).toEqual(mine.map((_, index) => index + 1));
+      expect(mine.map((event) => event.dealt)).toEqual(mine.map((_, index) => 7 - index));
+    }
+    // And the round it won still counts once towards the room's score.
+    expect(creator.client.lobby?.players.find((p) => p.id === final?.winnerId)?.wins).toBe(1);
+  });
+
+  it('a robot walks the staircase as well as a person does', () => {
+    const table = new Harness(STAIRS_SEED);
+    const creator = table.join('Dana', STAIRS);
+    creator.client.say('roomCommand', { command: { type: 'addBot' } });
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+
+    playWithRoom(table, [creator]);
+
+    const final = creator.client.state;
+    expect(final?.phase).toBe('finished');
+    expect(final?.players.find((player) => player.id === final.winnerId)?.stairsStep).toBe(8);
+  });
+});
+
 describe('robots', () => {
   it('seats a robot, and the robot plays a round out against a person', () => {
     const table = new Harness();
@@ -918,6 +1126,43 @@ describe('storage', () => {
     back.say('resumeRequest', { playerId: guest.playerId, resumeToken: guest.resumeToken });
     // Their seat and credential survived; the round did not, so the table can deal again.
     expect(back.expect('joinAccepted').payload.lobby.phase).toBe('lobby');
+  });
+
+  /*
+   * The rule stated on `emptySince` in the schema, exercised rather than trusted: a
+   * field added to a stored record must be defaulted, because a rejected record is
+   * treated as no room at all — which would take every seat and every credential on
+   * the first wake after a deployment, mid-round.
+   */
+  it('reads a room and a round written before the mode and the score existed', () => {
+    const { table, creator, guest } = dealtTable();
+    const stored = JSON.parse(table.store.get('room') as string) as Record<string, unknown>;
+    const round = JSON.parse(table.store.get('game') as string) as Record<string, unknown>;
+    delete stored['gameMode'];
+    for (const seat of stored['seats'] as Record<string, unknown>[]) {
+      delete seat['wins'];
+    }
+    delete round['mode'];
+    delete round['stairs'];
+    table.store.put('room', JSON.stringify(stored));
+    table.store.put('game', JSON.stringify(round));
+
+    table.hibernate([
+      { socket: creator.client, playerId: creator.playerId },
+      { socket: guest.client, playerId: guest.playerId },
+    ]);
+    creator.client.forget();
+    const back = table.client('Yoni-back');
+    back.say('resumeRequest', { playerId: guest.playerId, resumeToken: guest.resumeToken });
+
+    // The round is still in play, as the classic round it was being played as, and
+    // nobody has won anything yet.
+    const lobby = back.expect('joinAccepted').payload.lobby;
+    expect(lobby.phase).toBe('inGame');
+    expect(lobby.gameMode).toBe('classic');
+    expect(lobby.players.every((player) => (player.wins ?? 0) === 0)).toBe(true);
+    expect(back.expect('publicState').payload.state.mode).toBe('classic');
+    expect(back.hand.length).toBeGreaterThan(0);
   });
 
   it('asks to be forgotten once nobody has been here for the whole TTL', () => {

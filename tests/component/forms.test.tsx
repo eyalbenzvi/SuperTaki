@@ -29,7 +29,33 @@ describe('create room form', () => {
     await user.click(screen.getByRole('radio', { name: '6' }));
     await user.click(screen.getByRole('button', { name: 'יצירת חדר' }));
 
-    expect(createRoom).toHaveBeenCalledWith({ name: 'דנה', maxPlayers: 6, tableLanguage: 'he' });
+    expect(createRoom).toHaveBeenCalledWith({
+      name: 'דנה',
+      maxPlayers: 6,
+      tableLanguage: 'he',
+      // The default, chosen by nobody: a table that says nothing gets the game it
+      // has always played.
+      gameMode: 'classic',
+    });
+  });
+
+  it('opens a table in stairs mode when that is what was picked', async () => {
+    const createRoom = vi.fn().mockResolvedValue(undefined);
+    setState({ screen: 'create', createRoom });
+    const { user } = renderApp();
+
+    await user.type(screen.getByLabelText('השם שיוצג'), 'דנה');
+    await user.click(screen.getByRole('radio', { name: 'טאקי מדרגות' }));
+    // The hint changes with the choice, because "stairs" means nothing on its own.
+    expect(screen.getByText(/מי שנגמרים לו הקלפים מקבל יד חדשה/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'יצירת חדר' }));
+    expect(createRoom).toHaveBeenCalledWith({
+      name: 'דנה',
+      maxPlayers: 4,
+      tableLanguage: 'he',
+      gameMode: 'stairs',
+    });
   });
 
   it('caps the name length in the input itself', () => {

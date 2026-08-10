@@ -178,8 +178,35 @@ describe('host message validation', () => {
       { type: 'drawPileRecycled', count: 12 },
       { type: 'drawPileExhausted' },
       { type: 'playerWon', playerId: 'p-alice' },
+      { type: 'stairsAdvanced', playerId: 'p-alice', stage: 3, dealt: 5 },
     ];
     expect(parseRoomMessage(envelope('gameEvents', { version: 3, events })).ok).toBe(true);
+  });
+
+  it('carries a stairs round: the mode, and each seat’s step', () => {
+    const stairs = createGame(players('Alice', 'Bob'), 99, 1, 0, 'stairs');
+    if (!stairs.ok) {
+      throw new Error('fixture failed');
+    }
+    const view = toPublicGameState(stairs.state);
+    const parsed = publicGameStateSchema.safeParse(view);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.mode).toBe('stairs');
+    expect(parsed.success && parsed.data.players.every((player) => player.stairsStep === 0)).toBe(true);
+  });
+
+  it('refuses a step outside the staircase', () => {
+    // Nought is not a step that happened, and the eighth is a win rather than one.
+    for (const stage of [0, 8]) {
+      expect(
+        parseRoomMessage(
+          envelope('gameEvents', {
+            version: 3,
+            events: [{ type: 'stairsAdvanced', playerId: 'p-alice', stage, dealt: 1 }],
+          }),
+        ),
+      ).toMatchObject({ ok: false, error: 'invalidPayload' });
+    }
   });
 
   it('rejects a rejection code that is not part of the engine', () => {

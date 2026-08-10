@@ -72,6 +72,23 @@ export interface PlusThreeState {
 export type GamePhase = 'playing' | 'finished';
 
 /**
+ * How a round is won.
+ *
+ * `classic` is the game as it has always been: empty your hand and the round is
+ * yours. `stairs` — "טאקי מדרגות" — makes emptying it a *step* rather than a win:
+ * whoever runs out is dealt a fresh hand one card smaller than the last, eight
+ * cards down to one, and the round is won by the player who empties the hand of
+ * one. Everything else about the game is untouched; the mode changes only what
+ * running out of cards means.
+ *
+ * A property of the round rather than of the table, and it lives in `GameState`
+ * for that reason: the mode a round was dealt under has to survive a hibernation
+ * and reach every client, and a round already in play must not change its own
+ * winning condition because somebody opened the room settings.
+ */
+export type GameMode = 'classic' | 'stairs';
+
+/**
  * Why a round ended.
  *
  * `abandoned` exists because "the last player standing wins" is not a result. A
@@ -89,6 +106,19 @@ export interface GameState {
   /** Monotonic version, incremented on every accepted command. */
   readonly version: number;
   readonly phase: GamePhase;
+  /** How this round is won. Fixed when the round is dealt; see {@link GameMode}. */
+  readonly mode: GameMode;
+  /**
+   * How many hands each player has emptied, for "stairs".
+   *
+   * Keyed by player and counted from nought, so the next hand a player is dealt is
+   * `stairsHandSize(stairs[playerId])` and the round is won at
+   * {@link STAIRS_STAGES}. Present in both modes — a classic round simply leaves
+   * every entry at nought — because a mode-dependent field is one every reader has
+   * to remember to guard, and the standings, the wire and storage would each have
+   * to guard it separately.
+   */
+  readonly stairs: Readonly<Record<PlayerId, number>>;
   readonly players: readonly EnginePlayer[];
   /** Hands keyed by player id. Private information. */
   readonly hands: Readonly<Record<PlayerId, readonly Card[]>>;
@@ -261,6 +291,22 @@ export type GameEvent =
   | { readonly type: 'drawPileRecycled'; readonly count: number }
   | { readonly type: 'drawPileExhausted' }
   | { readonly type: 'playerWon'; readonly playerId: PlayerId }
+  /**
+   * A player emptied their hand in "stairs" and came straight back with a smaller
+   * one. `stage` is how many hands they have now finished, out of
+   * {@link STAIRS_STAGES}, and `dealt` is how many cards they actually received —
+   * which is the same as the next step's size unless the pile had nothing left.
+   *
+   * It carries both numbers rather than letting the log read them off the state,
+   * because by the time a line is rendered the table has moved on, and "Dana
+   * finished her fifth hand" is the whole content of the moment.
+   */
+  | {
+      readonly type: 'stairsAdvanced';
+      readonly playerId: PlayerId;
+      readonly stage: number;
+      readonly dealt: number;
+    }
   /** A turn was passed for somebody who was not there. `drew` is what they owed. */
   | { readonly type: 'turnSkipped'; readonly playerId: PlayerId; readonly drew: number }
   | { readonly type: 'playerLeft'; readonly playerId: PlayerId }

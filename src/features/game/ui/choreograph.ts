@@ -97,7 +97,7 @@ export const CATCH_UP_LAG = 2;
  *
  * Pure and separate from the motion plan, because sound answers a different
  * question: motion says *where* something happened, sound says *that something
- * happened to me*. Seven of the twenty-four events make a noise. The rest are
+ * happened to me*. Seven of the twenty-five events make a noise. The rest are
  * silent on purpose — an opponent's draw happens several times a minute and would
  * become wallpaper, and an illegal card says nothing at all, because a buzzer for a
  * mistap is punishment for a UI we designed.
@@ -329,6 +329,23 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
         pulse(id(`won:${event.playerId}`), seatAnchor(event.playerId, me), 'success', {
           intensity: 3,
           durationMs: WIN_MS,
+        }),
+      ];
+
+    /*
+     * A step of the staircase: the same shape as a win, quieter, because there are
+     * seven of them before the one that ends the round.
+     *
+     * No flights for the cards that arrive. The engine folds the deal into this
+     * event and drops its `cardDrawn`, so there is nothing here to fly from — and
+     * eight cards crossing the screen would bury the moment they belong to. It makes
+     * no sound of its own either: a step always lands in the same beat as the card
+     * that caused it, and that card is already audible.
+     */
+    case 'stairsAdvanced':
+      return [
+        pulse(id(`stairs:${event.playerId}:${event.stage}`), seatAnchor(event.playerId, me), 'success', {
+          intensity: 2,
         }),
       ];
 

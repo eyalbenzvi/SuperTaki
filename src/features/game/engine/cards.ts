@@ -76,6 +76,27 @@ export const DECK_COMPOSITION = {
 
 export const CARDS_DEALT_PER_PLAYER = 8;
 
+/**
+ * How many hands a player must empty to win a round of "stairs".
+ *
+ * Eight, because the staircase is the deal itself walked down one card at a time:
+ * eight cards, then seven, then six, and so on to the single card of the last
+ * step. Derived from the opening deal rather than written as its own number, so a
+ * table that ever changes how much it deals gets a staircase of the same height.
+ */
+export const STAIRS_STAGES = CARDS_DEALT_PER_PLAYER;
+
+/**
+ * The size of the hand dealt after `completed` hands have been emptied.
+ *
+ * `0` completed is the opening deal of eight; `STAIRS_STAGES - 1` completed is the
+ * final hand of one. There is no step beyond that — emptying it wins the round —
+ * so the caller checks `completed` against {@link STAIRS_STAGES} first.
+ */
+export function stairsHandSize(completed: number): number {
+  return CARDS_DEALT_PER_PLAYER - completed;
+}
+
 /** How many cards a +2 adds to the running penalty. */
 export const PLUS_TWO_PENALTY = 2;
 

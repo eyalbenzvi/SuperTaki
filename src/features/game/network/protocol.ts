@@ -42,8 +42,15 @@ import { REJECTION_CODES } from '../engine/state.ts';
  * used to be method calls on a local object travel as `roomCommand`. Seat health
  * is what the runtime reports about a socket, so `'unstable'` — the state that
  * meant "we are inferring and unsure" — has nothing left to describe.
+ *
+ * 7 — a round has a *mode*. In `stairs` an empty hand is a step rather than a win,
+ * so two peers on either side of this disagree about the single most important
+ * thing at a table: whether the round is over. A stale tab would announce a winner
+ * and then watch the game carry on without it, which is precisely what the gate
+ * exists to prevent. The running score a room keeps across rounds rides along with
+ * it.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /**
  * Versions this build will *accept*, as opposed to the one it sends.
@@ -101,6 +108,18 @@ const displayNameSchema = z.string().min(1).max(DISPLAY_NAME_MAX_LENGTH);
 const resumeTokenSchema = z.string().min(8).max(64);
 const directionSchema = z.union([z.literal(1), z.literal(-1)]);
 const rejectionCodeSchema = z.enum(REJECTION_CODES);
+/**
+ * How a round is won: the ordinary game, or the staircase.
+ *
+ * Optional wherever it appears on the wire, and absent always means `classic` —
+ * the game as it was before the modes existed. That is what keeps a snapshot
+ * written by an older room readable, and it is the safe reading either way: a
+ * client that assumes the staircase where there is none would refuse to believe a
+ * round had been won.
+ */
+const gameModeSchema = z.enum(['classic', 'stairs']);
+/** Hands emptied so far, out of the eight a staircase has. */
+const stairsStepSchema = z.number().int().min(0).max(8);
 
 export const takiModeSchema = z.object({
   color: colorSchema,
@@ -125,12 +144,21 @@ export const publicGameStateSchema = z.object({
   turnSeq: z.number().int().nonnegative().optional(),
   phase: z.enum(['playing', 'finished']),
   endReason: z.enum(['won', 'abandoned']).optional(),
+  /** How this round is won; see {@link gameModeSchema}. */
+  mode: gameModeSchema.optional(),
   players: z
     .array(
       z.object({
         id: playerIdSchema,
         name: displayNameSchema,
         cardCount: z.number().int().min(0).max(200),
+        /**
+         * How many hands this seat has emptied, in a stairs round.
+         *
+         * Absent in a classic round rather than nought, so a screen cannot draw a
+         * staircase for a table that is not playing one.
+         */
+        stairsStep: stairsStepSchema.optional(),
         /**
          * True for a seat that has left the round for good.
          *
@@ -227,6 +255,13 @@ export const gameEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('drawPileExhausted') }),
   z.object({ type: z.literal('playerWon'), playerId: playerIdSchema }),
   z.object({
+    type: z.literal('stairsAdvanced'),
+    playerId: playerIdSchema,
+    /** The step just finished, so never nought and never the eighth — that is a win. */
+    stage: z.number().int().min(1).max(7),
+    dealt: z.number().int().min(0).max(8),
+  }),
+  z.object({
     type: z.literal('turnSkipped'),
     playerId: playerIdSchema,
     drew: z.number().int().min(0).max(200),
@@ -278,6 +313,20 @@ export const lobbyPlayerSchema = z.object({
    * up the player is usually back — so the live flag would have cleared.
    */
   robotPlayed: z.boolean().optional(),
+  /**
+   * Rounds this seat has won since the room opened.
+   *
+   * The whole of the scoring: wins, not cards. Counting the cards left in everybody
+   * else's hands would make the score a measure of how badly the losers lost, which
+   * is a different game from the one being played — and it would need a rule for an
+   * abandoned round, where nobody lost anything.
+   *
+   * It belongs to the *seat*, so it lives exactly as long as the seat does: a room
+   * that closes takes every score with it, and a player who leaves for good and
+   * comes back arrives on nought. Optional on the wire, and absent reads as nought,
+   * so a snapshot from a room that predates the score still parses.
+   */
+  wins: z.number().int().min(0).max(10_000).optional(),
 });
 
 export const lobbySnapshotSchema = z.object({
@@ -297,6 +346,14 @@ export const lobbySnapshotSchema = z.object({
   players: z.array(lobbyPlayerSchema).max(6).readonly(),
   /** Table language the room suggests; clients may override locally. */
   tableLanguage: z.enum(['he', 'en']),
+  /**
+   * How the *next* round will be won, chosen when the table is set up.
+   *
+   * On the wire because it is a fact about the table every player is entitled to
+   * know before the deal, not only the seat that chose it — and because a round in
+   * play carries its own mode in the game state, which this must never contradict.
+   */
+  gameMode: gameModeSchema.optional(),
   /** The room's clock when this snapshot was built. */
   sentAt: z.number().int().min(0),
   /**
@@ -431,6 +488,8 @@ export const roomCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('startGame') }),
   z.object({ type: z.literal('setMaxPlayers'), maxPlayers: z.number().int().min(2).max(6) }),
   z.object({ type: z.literal('setTableLanguage'), language: z.enum(['he', 'en']) }),
+  /** Picks the mode for the next round. Refused once cards are dealt. */
+  z.object({ type: z.literal('setGameMode'), mode: gameModeSchema }),
   z.object({ type: z.literal('kickPlayer'), playerId: playerIdSchema }),
   z.object({ type: z.literal('addBot') }),
   z.object({ type: z.literal('setStandInEnabled'), enabled: z.boolean() }),
@@ -460,6 +519,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
         .object({
           maxPlayers: z.number().int().min(2).max(6),
           tableLanguage: z.enum(['he', 'en']),
+          /** Chosen in the create-a-table settings; `classic` when a client omits it. */
+          gameMode: gameModeSchema.optional(),
         })
         .optional(),
     }),

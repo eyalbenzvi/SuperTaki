@@ -3,6 +3,7 @@ import {
   LAST_CARD_PENALTY,
   PLUS_THREE_PENALTY,
   PLUS_TWO_PENALTY,
+  STAIRS_STAGES,
   buildDeck,
   cardColor,
   isCardColor,
@@ -10,6 +11,7 @@ import {
   isTakiCard,
   isWildCard,
   requiresColorChoice,
+  stairsHandSize,
   type Card,
   type CardColor,
 } from './cards.ts';
@@ -23,6 +25,7 @@ import {
   type GameCommand,
   type GameEndReason,
   type GameEvent,
+  type GameMode,
   type GameState,
   type PlayerId,
   type RejectionCode,
@@ -37,6 +40,8 @@ function reject(code: RejectionCode): CommandResult {
 interface Draft {
   version: number;
   phase: GameState['phase'];
+  mode: GameMode;
+  stairs: Record<PlayerId, number>;
   players: readonly EnginePlayer[];
   hands: Record<PlayerId, Card[]>;
   drawPile: Card[];
@@ -65,6 +70,8 @@ function toDraft(state: GameState): Draft {
   return {
     version: state.version,
     phase: state.phase,
+    mode: state.mode,
+    stairs: { ...state.stairs },
     players: state.players,
     hands,
     drawPile: state.drawPile.slice(),
@@ -105,6 +112,8 @@ function freeze(draft: Draft): GameState {
   return {
     version: draft.version,
     phase: draft.phase,
+    mode: draft.mode,
+    stairs: draft.stairs,
     players: draft.players,
     hands: draft.hands,
     drawPile: draft.drawPile,
@@ -161,12 +170,18 @@ export function playContextFromState(state: GameState): PlayContext {
  * `initialVersion` lets a second round continue the version sequence of the
  * first. Clients drop snapshots older than the newest one they applied, so a
  * new round must never restart numbering.
+ *
+ * `mode` is fixed here and never again: a round is won the way it was dealt. Both
+ * modes open with the same eight cards, so nothing about this function's deal
+ * depends on it — in "stairs" the difference begins the first time somebody runs
+ * out. See {@link GameMode}.
  */
 export function createGame(
   players: readonly EnginePlayer[],
   seed: number,
   initialVersion = 1,
   startingSeat = 0,
+  mode: GameMode = 'classic',
 ): CommandResult {
   if (players.length < MIN_PLAYERS) {
     return reject('notEnoughPlayers');
@@ -218,9 +233,15 @@ export function createGame(
    * about the fifth round.
    */
   const firstIndex = ((startingSeat % players.length) + players.length) % players.length;
+  const stairs: Record<PlayerId, number> = {};
+  for (const player of players) {
+    stairs[player.id] = 0;
+  }
   const state: GameState = {
     version: initialVersion,
     phase: 'playing',
+    mode,
+    stairs,
     players,
     hands,
     drawPile,
@@ -517,17 +538,53 @@ function applyPlayCard(
     events.push({ type: 'breakerSpent', playerId, penalty }, ...penaltyEvents);
   }
 
+  /*
+   * The hand is empty. In a classic round that is the round; in "stairs" it is one
+   * step of it, and only the eighth step wins.
+   *
+   * The step is taken *here*, in the gap the win check used to occupy, because
+   * everything below this point assumes a settled hand — the shout, the sequence
+   * bookkeeping, the card's own effect. A redealt player carries on with the turn
+   * they were in the middle of: a Plus still buys them another card to play, a
+   * Taki still opens a sequence, a Stop still skips the next seat. That is the
+   * whole reason the redeal is not a separate command.
+   */
+  let redealt = false;
   if ((draft.hands[playerId] ?? []).length === 0) {
-    draft.phase = 'finished';
-    draft.winnerId = playerId;
-    draft.endReason = 'won';
-    draft.takiMode = null;
-    draft.pendingPlus = false;
-    draft.pendingDraw = 0;
-    draft.plusThree = null;
-    events.push({ type: 'playerWon', playerId });
-    draft.version += 1;
-    return { ok: true, state: freeze(draft), events };
+    // `null` in a classic round: there is no staircase to be a step of.
+    const step = draft.mode === 'stairs' ? (draft.stairs[playerId] ?? 0) + 1 : null;
+    if (step !== null) {
+      draft.stairs = { ...draft.stairs, [playerId]: step };
+    }
+    if (step !== null && step < STAIRS_STAGES) {
+      redealt = true;
+      /*
+       * The declaration goes with the card that was in the hand, and that card has
+       * just been played. A step down to a single card — the last one — therefore
+       * needs its own shout, or `syncDeclarations` would keep the old one alive for
+       * a card nobody has claimed and hand out a protection that was never earned.
+       */
+      draft.declaredLastCard = draft.declaredLastCard.filter((candidate) => candidate !== playerId);
+      const dealEvents: GameEvent[] = [];
+      const dealt = drawCards(draft, playerId, stairsHandSize(step), dealEvents);
+      events.push(
+        { type: 'stairsAdvanced', playerId, stage: step, dealt },
+        // `dealt` already says how many cards arrived, so the draw's own line would
+        // say it twice. What is kept is what the *pile* did, which is nobody's move.
+        ...dealEvents.filter((event) => event.type !== 'cardDrawn'),
+      );
+    } else {
+      draft.phase = 'finished';
+      draft.winnerId = playerId;
+      draft.endReason = 'won';
+      draft.takiMode = null;
+      draft.pendingPlus = false;
+      draft.pendingDraw = 0;
+      draft.plusThree = null;
+      events.push({ type: 'playerWon', playerId });
+      draft.version += 1;
+      return { ok: true, state: freeze(draft), events };
+    }
   }
 
   /*
@@ -538,9 +595,14 @@ function applyPlayCard(
    * win check above has already taken the case where nothing is left to declare.
    * Nothing below this point adds to or removes from *this* player's hand, so the
    * count cannot change again inside this command.
+   *
+   * A hand that arrived from a step of the staircase is not covered by it: the
+   * shout was armed about the card going down, not about eight new ones, and a
+   * player looking at a fresh hand of one has a fresh declaration to make.
    */
   if (
     declareLastCard &&
+    !redealt &&
     (draft.hands[playerId] ?? []).length === 1 &&
     !draft.declaredLastCard.includes(playerId)
   ) {

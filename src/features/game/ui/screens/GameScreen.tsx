@@ -13,6 +13,7 @@ import {
   isMyTurn,
   isTakiOpenForMe,
   mustDeclareLastCard,
+  myStairsStep,
   opponents,
   playableCardIds,
   playerName,
@@ -414,6 +415,7 @@ export function GameScreen(): ReactNode {
           onRefuse={onRefuse}
           locked={actionPending}
           disabledReason={myTurn ? t('game.notPlayable') : t('game.notYourTurn')}
+          stairsStep={myStairsStep(table)}
         />
       </div>
 

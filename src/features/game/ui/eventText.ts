@@ -76,6 +76,17 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
       return t('event.drawPileExhausted');
     case 'playerWon':
       return t('event.playerWon', { name: nameOf(event.playerId) });
+    case 'stairsAdvanced':
+      /*
+       * The step, and the hand it bought. `dealt` is normally the next step's size,
+       * and is smaller only when the pile could not cover it — which is worth saying
+       * plainly rather than quietly printing a number that does not match the rule.
+       */
+      return t(event.dealt === 1 ? 'event.stairsAdvanced.one' : 'event.stairsAdvanced.other', {
+        name: nameOf(event.playerId),
+        stage: event.stage,
+        count: event.dealt,
+      });
     case 'turnSkipped':
       // The draw count matters: a passed turn costs the one card the turn itself
       // would have cost, or the whole run when the seat owed one, and a returning

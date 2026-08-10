@@ -217,6 +217,36 @@ describe('lobby', () => {
     await user.click(within(group).getByRole('radio', { name: '5' }));
     expect(setMaxPlayers).toHaveBeenCalledWith(5);
   });
+
+  it('lets the host still switch the mode before the deal', async () => {
+    const setGameMode = vi.fn();
+    enterLobby({ setGameMode });
+    const { user } = renderApp();
+
+    await user.click(screen.getByText('הגדרות החדר'));
+    const group = screen.getByRole('radiogroup', { name: 'סוג המשחק' });
+    await user.click(within(group).getByRole('radio', { name: 'טאקי מדרגות' }));
+    expect(setGameMode).toHaveBeenCalledWith('stairs');
+  });
+
+  /*
+   * The settings panel is the creator's, and the mode is not: it changes what
+   * winning means, so the rest of the table has to know before the cards come out
+   * rather than halfway through the first hand.
+   */
+  it('tells every seat when the table is playing stairs', () => {
+    enterLobby({ lobby: lobbyFixture({ gameMode: 'stairs' }), localPlayerId: GUEST_ID });
+    renderApp();
+
+    expect(screen.getByText('טאקי מדרגות')).toBeInTheDocument();
+    expect(screen.getByText(/מי שנגמרים לו הקלפים מקבל יד חדשה/)).toBeInTheDocument();
+  });
+
+  it('says nothing about a mode at an ordinary table', () => {
+    enterLobby({ localPlayerId: GUEST_ID });
+    renderApp();
+    expect(screen.queryByText('טאקי מדרגות')).not.toBeInTheDocument();
+  });
 });
 
 describe('sharing the invite', () => {
