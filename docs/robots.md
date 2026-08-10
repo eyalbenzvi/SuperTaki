@@ -102,6 +102,14 @@ it closes.
 **A +2 run** is raised with another +2 if it holds one, cancelled with a King if not, and
 otherwise paid in full.
 
+**In stairs** nothing about the policy changes, and that is not an oversight. Emptying the
+hand is worth taking on sight whether it wins the round or takes a step of the staircase, so
+the "play the card that empties the hand" branch is right in both modes; the fresh hand
+arrives as an ordinary state change, which the robot re-reads like any other. The one thing
+worth stating is that the step down to a final single card puts the robot on a declarable last
+card, and it declares it at the speed of a tap like any other — see below. `worker/test`
+plays a whole staircase out against one.
+
 ## Deliberately not an oracle
 
 - It never reasons about cards it has not seen, and does not count the discard pile to infer
