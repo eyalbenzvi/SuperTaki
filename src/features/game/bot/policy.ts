@@ -249,7 +249,8 @@ function sequenceAction(view: BotView): GameAction {
     return { type: 'closeTaki' };
   }
   if (hand.length === 1) {
-    // Emptying the hand inside a sequence wins immediately.
+    // Emptying the hand inside a sequence takes the round — or, in stairs, a step
+    // of it and a fresh hand. Both are worth having at once.
     return play(legal[0] as Card);
   }
   const ordered = legal
@@ -283,7 +284,14 @@ function turnAction(view: BotView, random: () => number): GameAction {
   return playChoice(pickBest(playable, view, random), view);
 }
 
-/** The single playable card that would end the round, if the robot holds one. */
+/**
+ * The single playable card that would empty the hand, if the robot holds one.
+ *
+ * In a classic round that is the round won. In stairs it is a step down the
+ * staircase and a new hand — the eighth of which is the win — and it is played on
+ * sight either way, for the same reason: an empty hand is never worse than a full
+ * one, and nothing can be caught out of a hand that does not exist.
+ */
 function winningCard(view: BotView): Card | null {
   if (view.hand.length !== 1) {
     return null;
@@ -328,8 +336,9 @@ function silentSeat(view: BotView): string | null {
  * 1. A +3 freezes the whole table, so answering it comes before everything. While
  *    it is open, the only other legal moves are the two shouts — declaring and
  *    calling somebody out — and they stay available.
- * 2. A card that ends the round is played immediately. The declaration is not what
- *    wins, so pausing to shout first would only give the table time to catch it.
+ * 2. A card that empties the hand is played immediately — the round in a classic
+ *    game, a step of the staircase in stairs. The declaration is not what wins, so
+ *    pausing to shout first would only give the table time to catch it.
  * 3. Declaring a last card is free and does not touch the turn, so it comes before
  *    playing: a robot that played first would spend the round being caught.
  * 4. Then the turn.

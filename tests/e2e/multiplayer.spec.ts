@@ -143,7 +143,23 @@ test.describe('a two-player game, against the real room', () => {
         continue;
       }
       before = await creator.locator('.hand .card').count();
-      if ((await creator.locator('.hand .card--playable').count()) > 0) {
+      const playable = creator.locator('.hand .card--playable');
+      /*
+       * One card in the deck is not an ordinary play, and this loop selects for it.
+       *
+       * A +3 Breaker played with no +3 to break is legal and costs its owner three
+       * cards, so the hand *grows* by two — while the assertion below is about a card
+       * leaving a hand. Drawing until something is playable makes an all-wild hand far
+       * likelier than it is in a real game, and the breaker sorts last, so
+       * `playAnyLegalCard` reaches for it exactly when it is the only playable card.
+       * That was a real failure at about one run in fifty, and it read as the hand
+       * mysteriously gaining cards. So: keep drawing until there is a card whose play
+       * is a plain play.
+       */
+      const labels = await playable.evaluateAll((cards) =>
+        cards.map((card) => card.getAttribute('aria-label') ?? ''),
+      );
+      if (labels.some((label) => !label.includes('Break +3'))) {
         ready = true;
         break;
       }

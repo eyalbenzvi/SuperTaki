@@ -58,6 +58,9 @@ export function players(...names: string[]): EnginePlayer[] {
 
 export interface StateOverrides {
   players?: EnginePlayer[];
+  mode?: GameState['mode'];
+  /** Hands already emptied, for a stairs round. Defaults to nought for every seat. */
+  stairs?: Record<PlayerId, number>;
   hands?: Record<PlayerId, Card[]>;
   drawPile?: Card[];
   discardPile?: Card[];
@@ -81,8 +84,10 @@ export interface StateOverrides {
 export function makeState(overrides: StateOverrides = {}): GameState {
   const list = overrides.players ?? players('Alice', 'Bob');
   const hands: Record<PlayerId, Card[]> = {};
+  const stairs: Record<PlayerId, number> = {};
   for (const player of list) {
     hands[player.id] = overrides.hands?.[player.id] ?? cards('red:1');
+    stairs[player.id] = overrides.stairs?.[player.id] ?? 0;
   }
   const discardPile = overrides.discardPile ?? cards('red:9');
   const top = discardPile[discardPile.length - 1];
@@ -91,6 +96,8 @@ export function makeState(overrides: StateOverrides = {}): GameState {
   return {
     version: overrides.version ?? 1,
     phase: overrides.phase ?? 'playing',
+    mode: overrides.mode ?? 'classic',
+    stairs,
     players: list,
     hands,
     drawPile: overrides.drawPile ?? cards('green:4', 'green:5', 'green:6'),

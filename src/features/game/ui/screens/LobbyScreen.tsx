@@ -6,9 +6,15 @@ import { QrCode } from '../../../../components/QrCode.tsx';
 import { SegmentedControl } from '../../../../components/SegmentedControl.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { canShare, copyText, shareLink } from '../../../../lib/share.ts';
-import { MAX_PLAYERS, MIN_PLAYERS } from '../../engine/state.ts';
+import { MAX_PLAYERS, MIN_PLAYERS, type GameMode } from '../../engine/state.ts';
 import type { LobbyPlayer } from '../../network/protocol.ts';
-import { amCreator, everyoneConnected, seatedPlayers, standInEnabled } from '../../state/selectors.ts';
+import {
+  amCreator,
+  everyoneConnected,
+  seatedPlayers,
+  standInEnabled,
+  tableGameMode,
+} from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 import { HealthBadge } from '../components/TableParts.tsx';
@@ -47,6 +53,7 @@ export function LobbyScreen(): ReactNode {
   const roomLimit = state.lobby?.maxPlayers ?? MAX_PLAYERS;
   const canStart = host && players.length >= MIN_PLAYERS;
   const standIn = standInEnabled(state);
+  const mode = tableGameMode(state);
 
   useEffect(() => {
     if (!copied) {
@@ -164,6 +171,17 @@ export function LobbyScreen(): ReactNode {
           })}
         </h2>
 
+        {/*
+         * Said to the whole table, not only to the seat that chose it: the settings
+         * panel above is the creator's, and a mode that changes what winning means
+         * is not something the others should meet for the first time mid-round.
+         */}
+        {mode === 'stairs' ? (
+          <p className="text-small muted">
+            <Badge icon="stairs">{t('mode.stairs')}</Badge> {t('mode.stairsHint')}
+          </p>
+        ) : null}
+
         <ul className="player-list">
           {players.map((player, index) => (
             <li className="player-list__item" key={player.id}>
@@ -267,6 +285,27 @@ export function LobbyScreen(): ReactNode {
               }))}
             />
             <span className="field__hint">{t('lobby.maxPlayersLocked')}</span>
+
+            {/*
+             * The same choice the create screen offers, still open until the deal.
+             * It is here rather than only there because a table that has just filled
+             * up is exactly when somebody says "let's play stairs this time", and the
+             * alternative was closing the room and opening another one.
+             */}
+            <span className="field__label">{t('mode.label')}</span>
+            <SegmentedControl<GameMode>
+              block
+              label={t('mode.label')}
+              value={mode}
+              onChange={state.setGameMode}
+              options={[
+                { value: 'classic', label: t('mode.classic') },
+                { value: 'stairs', label: t('mode.stairs') },
+              ]}
+            />
+            <span className="field__hint">
+              {mode === 'stairs' ? t('mode.stairsHint') : t('mode.classicHint')}
+            </span>
 
             {/*
               Playing somebody's hand for them is the table's decision, so it is

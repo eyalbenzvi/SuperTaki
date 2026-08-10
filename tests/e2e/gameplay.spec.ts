@@ -122,8 +122,12 @@ test.describe('a complete round', () => {
     await expect(host.getByRole('heading', { name: 'Final standings' })).toBeVisible();
     await expect(guest.getByRole('heading', { name: 'Round finished' })).toBeVisible();
 
-    // Exactly one player finished with zero cards.
-    const counts = await host.locator('.standings tbody tr td:last-child').allTextContents();
+    // Exactly one player finished with zero cards. Scoped to the round's own table:
+    // the room's running score is a second table of the same shape below it, whose
+    // last column counts wins rather than cards.
+    const counts = await host
+      .locator('.standings:not(.standings--score) tbody tr td:last-child')
+      .allTextContents();
     expect(counts.filter((value) => value.trim() === '0')).toHaveLength(1);
     await expect(host.getByText('Nothing is saved')).toBeVisible();
 

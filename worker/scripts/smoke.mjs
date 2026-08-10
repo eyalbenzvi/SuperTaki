@@ -15,11 +15,34 @@
  */
 
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 const PORT = 8917;
 const BASE = `ws://127.0.0.1:${PORT}`;
-const PROTOCOL_VERSION = 6;
+
+/**
+ * Read out of the protocol module rather than written down here.
+ *
+ * This is a plain `.mjs` script — it cannot import the TypeScript that owns the
+ * number — and the copy it used to keep went stale the first time the version moved:
+ * the room correctly answered `protocolMismatch`, the script waited for a
+ * `joinAccepted` that was never coming, and the failure it reported was a timeout
+ * rather than the one-line cause. A regex over the source is a small ugliness that
+ * cannot go out of date.
+ */
+const PROTOCOL_VERSION = (() => {
+  const source = readFileSync(
+    new URL('../../src/features/game/network/protocol.ts', import.meta.url),
+    'utf8',
+  );
+  const match = /export const PROTOCOL_VERSION = (\d+)/.exec(source);
+  if (match === null) {
+    console.error('SMOKE FAIL: could not read PROTOCOL_VERSION from the protocol module');
+    process.exit(1);
+  }
+  return Number(match[1]);
+})();
 
 /** Rooms are per-run, so a re-run never meets its own leftovers. */
 const ROOM = String(100000 + Math.floor(Math.random() * 900000));

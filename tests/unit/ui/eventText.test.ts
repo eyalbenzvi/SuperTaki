@@ -65,6 +65,15 @@ describe('event descriptions', () => {
     [{ type: 'drawPileRecycled', count: 12 }, 'The discard pile was shuffled back in (12 cards).'],
     [{ type: 'drawPileExhausted' }, 'There are no cards left to draw.'],
     [{ type: 'playerWon', playerId: 'p1' }, 'Dana has no cards left and wins!'],
+    [
+      { type: 'stairsAdvanced', playerId: 'p1', stage: 3, dealt: 5 },
+      'Dana finished hand 3 of 8 and takes 5 new cards.',
+    ],
+    [
+      // The last step of the staircase is a single card, and it is spelled out.
+      { type: 'stairsAdvanced', playerId: 'p2', stage: 7, dealt: 1 },
+      'Eli finished hand 7 of 8 and takes the last card of the staircase.',
+    ],
   ];
 
   it.each(cases)('describes %j', (event, expected) => {

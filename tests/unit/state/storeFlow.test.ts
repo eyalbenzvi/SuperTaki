@@ -41,7 +41,7 @@ function store(): Store {
 
 /** Opens a room as its creator, the way the create screen does. */
 async function createRoom(): Promise<void> {
-  await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he' });
+  await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he', gameMode: 'classic' });
   await flush();
 }
 
@@ -121,7 +121,7 @@ describe('creating a room through the store', () => {
       }
       return room.connect(code);
     });
-    await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he' });
+    await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he', gameMode: 'classic' });
     await flush();
 
     expect(attempts).toBeGreaterThan(1);
@@ -132,7 +132,7 @@ describe('creating a room through the store', () => {
 
   it('surfaces a failure instead of pretending to be connected', async () => {
     __setChannelFactoryForTests(() => Promise.reject(new RoomError('notConfigured', 'no relay')));
-    await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he' });
+    await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he', gameMode: 'classic' });
     await flush();
     expect(store().phase).toBe('failed');
     expect(store().error?.code).toBe('notConfigured');
@@ -140,8 +140,13 @@ describe('creating a room through the store', () => {
   });
 
   it('ignores a second create while one is in flight', async () => {
-    const first = store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he' });
-    await store().createRoom({ name: 'אחר', maxPlayers: 4, tableLanguage: 'he' });
+    const first = store().createRoom({
+      name: 'דנה',
+      maxPlayers: 4,
+      tableLanguage: 'he',
+      gameMode: 'classic',
+    });
+    await store().createRoom({ name: 'אחר', maxPlayers: 4, tableLanguage: 'he', gameMode: 'classic' });
     await first;
     await flush();
     expect(store().displayName).toBe('דנה');
@@ -157,6 +162,18 @@ describe('creating a room through the store', () => {
     store().addBot();
     await flush();
     expect(store().lobby?.players.filter((player) => player.bot === true)).toHaveLength(1);
+  });
+
+  it('carries the game mode from the create screen to the room, and can change it', async () => {
+    await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he', gameMode: 'stairs' });
+    await flush();
+    // The room's own answer, not the value the screen sent: it comes back in the
+    // lobby snapshot every seat receives.
+    expect(store().lobby?.gameMode).toBe('stairs');
+
+    store().setGameMode('classic');
+    await flush();
+    expect(store().lobby?.gameMode).toBe('classic');
   });
 });
 
@@ -387,7 +404,7 @@ describe('preferences and navigation', () => {
   });
 
   it('locks the table while a move is unanswered, so one tap cannot become two', async () => {
-    await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he' });
+    await store().createRoom({ name: 'דנה', maxPlayers: 4, tableLanguage: 'he', gameMode: 'classic' });
     await flush();
     await seatGuest();
     store().startGame();

@@ -186,6 +186,48 @@ describe('the other players', () => {
 });
 
 /**
+ * In a stairs round the card count stops being the score.
+ *
+ * Two cards left may mean one step from winning or nothing at all, so how far down
+ * the staircase each seat is has to be on the table beside the counts — including
+ * the player's own, which is the one number they cannot read off anybody's seat.
+ */
+describe('the staircase, on the table', () => {
+  function stairsTable(steps: { me: number; them: number }): void {
+    table({
+      hand: [red5, red7],
+      patch: {
+        mode: 'stairs',
+        players: [
+          { id: HOST_ID, name: 'דנה', cardCount: 2, stairsStep: steps.me },
+          { id: GUEST_ID, name: 'אלי', cardCount: 5, stairsStep: steps.them },
+        ],
+      },
+    });
+  }
+
+  it('shows every seat’s step, and the player’s own beside their hand', () => {
+    stairsTable({ me: 3, them: 6 });
+    renderApp();
+
+    const seats = screen.getByRole('region', { name: 'שאר השחקנים' });
+    expect(within(seats).getByText('6/8')).toBeInTheDocument();
+    // Spelled out for anybody who cannot see the staircase glyph beside it.
+    expect(within(seats).getByText('מדרגות: 6 מתוך 8 ידיים הושלמו')).toBeInTheDocument();
+
+    const hand = screen.getByRole('region', { name: 'הקלפים שלך' });
+    expect(within(hand).getByText('3/8')).toBeInTheDocument();
+  });
+
+  it('says nothing about a staircase in a classic round', () => {
+    table({ hand: [red5, red7] });
+    renderApp();
+    expect(screen.queryByText(/\d\/8/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/מדרגות/)).not.toBeInTheDocument();
+  });
+});
+
+/**
  * A catch is the one penalty another player hands out, and with three at the
  * table "somebody drew four" does not say who called it. The log cannot carry it:
  * its visible line is the newest, and the draw follows the catch immediately.

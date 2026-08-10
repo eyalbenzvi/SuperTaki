@@ -287,14 +287,51 @@ lost — a test asserts the full set of card ids is conserved.
 If there is genuinely nothing left to draw (an empty draw pile and only one discard), the
 turn simply passes. No player is ever stuck.
 
+### Game modes
+
+The mode is chosen when the table is set up — on the create-a-table screen, and still
+changeable in the room settings until the cards are dealt. It is fixed for the round the
+moment the deal happens: a round is won the way it was dealt, whatever the table's setting
+says afterwards.
+
+| Mode                     | An empty hand means                                                   |
+| ------------------------ | --------------------------------------------------------------------- |
+| **Classic**              | You have won the round.                                               |
+| **Stairs** (טאקי מדרגות) | You have finished one hand of eight, and are dealt the next one down. |
+
+**Stairs**, in full:
+
+- The round opens exactly like a classic one: **8 cards** each.
+- Empty your hand and you are immediately dealt a fresh one, **one card smaller**: 8, then
+  7, 6, 5, 4, 3, 2, and finally 1.
+- Emptying the hand of **one** — the eighth hand you have finished — wins the round.
+- The new cards come off the draw pile, which recycles the discard pile as usual, so a
+  staircase is roughly thirty-six cards a player rather than eight.
+- Nothing else changes. The step happens in the middle of the turn that caused it, and the
+  rest of that turn plays out exactly as it would have: a Plus still gives you another
+  card to play, a Stop still skips the next seat, and a Taki sequence you had open is
+  still open — you carry on with the hand you have just been dealt.
+- One consequence worth stating: the step down to the final hand of one puts you on a
+  single card, so **"last card" applies to it like any other single card** — declare it or
+  be caught. A declaration made for the card you have just played does _not_ carry over;
+  the new hand needs its own shout.
+- The standings for a stairs round are ordered by **hands finished** first and cards left
+  second, because a player one step from the end may be holding more cards than somebody
+  who has finished nothing.
+
 ### End of the round
 
-- The first player to empty their hand wins.
-- The final table lists everyone by remaining cards, fewest first; ties share a place.
-- There is no point scoring. Each game is one round.
+- The round is won by emptying your hand — in **stairs**, by emptying the eighth of them.
+- The final table lists everyone by remaining cards, fewest first; ties share a place. A
+  stairs round adds a column for how far down the staircase each player got, and ranks by
+  that first.
+- **Score.** The room keeps a running total of **rounds won** — wins only, no points for
+  the cards anybody was left holding — and shows it beside the standings at the end of
+  every round. It belongs to the room: it starts at nought when the room is opened, a seat
+  that leaves for good takes its score with it, and closing the room clears it entirely.
 - **Play again** starts a new round when **every connected player agrees**. Players who
   never reconnected are dropped from the new deal. Nothing is saved between rounds beyond
-  the seating.
+  the seating and the score.
 
 ### Two-player behaviour, stated explicitly
 
@@ -648,13 +685,43 @@ opened it in. One turn is one sequence, and one colour.
 
 אם באמת לא נשאר מה למשוך, התור פשוט עובר. אף שחקן לא נתקע.
 
+### סוגי משחק
+
+סוג המשחק נבחר בהגדרות בעת פתיחת השולחן, וניתן לשנות אותו בהגדרות החדר עד לחלוקת הקלפים.
+ברגע החלוקה הוא נקבע לסבב: סבב מנוצח לפי הסוג שבו הוא חולק, גם אם ההגדרה של השולחן משתנה
+אחר כך.
+
+| סוג             | מה זה אומר להישאר בלי קלפים                               |
+| --------------- | --------------------------------------------------------- |
+| **רגיל**        | ניצחת בסבב.                                               |
+| **טאקי מדרגות** | סיימת יד אחת מתוך שמונה, ומקבל/ת את היד הבאה — קטנה באחד. |
+
+**טאקי מדרגות**, במלואו:
+
+- הסבב נפתח בדיוק כמו סבב רגיל: **8 קלפים** לכל שחקן.
+- מי שנגמרים לו הקלפים מקבל מיד יד חדשה, **קטנה באחד**: 8, אחר כך 7, 6, 5, 4, 3, 2, ולבסוף 1.
+- מי שמסיים גם את היד של **קלף אחד** — כלומר סיים שמונה ידיים — מנצח בסבב.
+- הקלפים החדשים נלקחים מחבילת המשיכה, שמתמלאת מערמת ההשלכה כרגיל, כך שמדרגות הן בערך
+  שלושים ושישה קלפים לשחקן ולא שמונה.
+- שום דבר אחר לא משתנה. המדרגה קורית בתוך התור שגרם לה, ושאר התור נמשך בדיוק כרגיל: פלוס
+  עוד נותן קלף נוסף לשחק, עצור עוד מדלג על המושב הבא, ורצף טאקי שהיה פתוח נשאר פתוח —
+  ממשיכים אותו עם היד שהתקבלה עכשיו.
+- נקודה שכדאי לומר במפורש: המדרגה אל היד האחרונה משאירה קלף בודד ביד, ולכן **הכלל של
+  "אחרון בידי" חל עליו כמו על כל קלף בודד** — צריך להכריז, או שאפשר להיתפס. הכרזה שנעשתה
+  על הקלף שהונח _אינה_ עוברת ליד החדשה; היד החדשה דורשת הכרזה משלה.
+- הטבלה המסכמת של סבב מדרגות מסודרת לפי **ידיים שהושלמו** קודם, ולפי הקלפים שנשארו אחר כך,
+  כי שחקן במדרגה אחת מהסוף יכול להחזיק יותר קלפים ממי שלא סיים אף יד.
+
 ### סוף הסבב
 
-- השחקן הראשון שנשאר בלי קלפים מנצח.
+- הסבב מנוצח על ידי סיום הקלפים ביד — ובמדרגות, על ידי סיום היד השמינית.
 - הטבלה המסכמת מציגה את כולם לפי מספר הקלפים שנשארו, מהמעט לרב; תוצאות שוות חולקות מקום.
-- אין ניקוד בנקודות. כל משחק הוא סבב אחד.
+  בסבב מדרגות נוספת עמודה של ידיים שהושלמו, והדירוג נקבע לפיה קודם.
+- **ניקוד.** החדר שומר ניקוד מצטבר של **סבבים שנוצחו** — רק נצחונות, בלי נקודות על הקלפים
+  שנשארו למפסידים — ומציג אותו לצד הטבלה המסכמת בסוף כל סבב. הניקוד שייך לחדר: הוא מתחיל
+  מאפס כשהחדר נפתח, מי שעוזב לגמרי לוקח את הניקוד שלו איתו, וסגירת החדר מאפסת אותו לחלוטין.
 - **סבב נוסף** מתחיל כשכל השחקנים המחוברים מסכימים. מי שלא חזר מנותק מהחלוקה החדשה. שום
-  דבר לא נשמר בין סבבים חוץ מסדר המושבים.
+  דבר לא נשמר בין סבבים חוץ מסדר המושבים והניקוד.
 
 ### התנהגות בשני שחקנים
 

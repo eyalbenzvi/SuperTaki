@@ -3,6 +3,7 @@ import { randomHex } from '../../../lib/id.ts';
 import { onSleep, onWake } from '../../../lib/lifecycle.ts';
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
+import type { GameMode } from '../engine/state.ts';
 import { probeReachability } from './reachability.ts';
 import { MessageDeduplicator, clientMessage, type MessageContext } from './envelope.ts';
 import {
@@ -43,6 +44,8 @@ export interface ResumeCredentials {
 export interface CreateRoomOptions {
   readonly maxPlayers: number;
   readonly tableLanguage: 'he' | 'en';
+  /** How rounds at this table are won. Chosen in the create-a-table settings. */
+  readonly gameMode?: GameMode;
 }
 
 export interface ClientSessionOptions {

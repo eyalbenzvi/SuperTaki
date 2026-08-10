@@ -1,6 +1,6 @@
 # Wire protocol
 
-Version: **6** sent, **6 only** accepted (`PROTOCOL_VERSION` and
+Version: **7** sent, **7 only** accepted (`PROTOCOL_VERSION` and
 `SUPPORTED_PROTOCOL_VERSIONS` in `src/features/game/network/protocol.ts`)
 
 Every message is JSON, travels directly over a player's WebSocket to their room, and is
@@ -111,6 +111,7 @@ would wake the room, on a cadence, for every player, for as long as the room liv
 | { type: 'startGame' }
 | { type: 'setMaxPlayers'; maxPlayers: number }
 | { type: 'setTableLanguage'; language: 'he' | 'en' }
+| { type: 'setGameMode'; mode: 'classic' | 'stairs' }
 | { type: 'kickPlayer'; playerId: string }
 | { type: 'addBot' }
 | { type: 'setStandInEnabled'; enabled: boolean }
@@ -120,7 +121,7 @@ would wake the room, on a cadence, for every player, for as long as the room liv
 | { type: 'removeFromRound'; playerId: string }
 ```
 
-All ten used to be method calls on a local `HostSession`, which is why they were never on the
+All but the newest used to be method calls on a local `HostSession`, which is why they were never on the
 wire: the person with the buttons was, by construction, the person running the game. They are
 messages now, and the room authorises each against `creatorPlayerId` — so the buttons follow a
 credential rather than whichever device happens to be serving. One message type rather than
@@ -459,6 +460,37 @@ it — the reasoning is recorded in [server-game-plan.md](server-game-plan.md) �
 **not** checked for `declareLastCard`, `catchLastCard`, `passBreak`, or a breaker played into
 an open `+3`: those are legal at any moment, they race each other on purpose, and gating them
 on a turn would hand every tie to whichever player broke the rule.
+
+## Version 7: game modes, and a score that outlives a round
+
+Two additions, both of which change meaning rather than merely adding a field — which is why
+the version moved rather than the fields being made quietly optional.
+
+**The mode.** A round now carries a `mode`: `classic`, or `stairs`, where an empty hand is a
+step down a staircase rather than a win. Two peers on either side of this disagree about the
+single most important thing at a table — whether the round is over — so a stale tab would
+announce a winner and then watch the game carry on without it. See
+[rules.md](rules.md#game-modes).
+
+**The score.** A seat carries `wins`: rounds it has won since the room opened. It belongs to
+the room and to the seat, so it lives exactly as long as they do.
+
+### Added
+
+| Direction     | What                               | Purpose                                                                                                    |
+| ------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| client → room | `joinRequest.create.gameMode`      | The mode chosen on the create-a-table screen. Absent means `classic`.                                      |
+| client → room | `roomCommand(setGameMode)`         | Changes the mode for the next deal. Refused once cards are out; a round keeps the mode it was dealt under. |
+| room → client | `lobby.gameMode`                   | How the next round will be won. Every seat is told, not only the one that chose.                           |
+| room → client | `lobby.players[].wins`             | Rounds this seat has won since the room opened.                                                            |
+| room → client | `publicState.mode`                 | How the round _on the table_ is won. Distinct from `lobby.gameMode`, which describes the next deal.        |
+| room → client | `publicState.players[].stairsStep` | Hands that seat has emptied, 0–8. Sent only in a stairs round: in a classic one there is no staircase.     |
+| room → client | `gameEvents(stairsAdvanced)`       | `{playerId, stage, dealt}` — a hand finished, and the size of the one that replaced it.                    |
+
+Every one of these is `optional` on the wire, and absent always reads as the game before the
+modes existed: `classic`, no staircase, nobody has won anything. That is what keeps a stored
+round written by an older deployment readable — see the note on `emptySince` in
+`worker/src/storage.ts`, which is the same rule applied to durable state.
 
 ## Version compatibility strategy
 

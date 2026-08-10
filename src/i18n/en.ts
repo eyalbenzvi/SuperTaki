@@ -65,6 +65,17 @@ export const en = {
   'create.maxPlayers': 'Maximum players',
   'create.tableLanguage': 'Table language',
   'create.tableLanguageHint': 'A suggestion for the table. Each player can still pick their own.',
+  /*
+   * The two ways a round can be won. `mode.*` rather than `create.*`, because the
+   * same strings label the choice on the create screen, in the room settings and on
+   * the table itself.
+   */
+  'mode.label': 'Game mode',
+  'mode.classic': 'Classic',
+  'mode.stairs': 'Stairs Taki',
+  'mode.classicHint': 'The first player to empty their hand wins the round.',
+  'mode.stairsHint':
+    'Empty your hand and you are dealt a new one, one card smaller: 8, then 7, then 6, down to 1. Whoever finishes all eight hands wins the round.',
   'create.submit': 'Create room',
   'create.creating': 'Opening the room…',
   'create.nameRequired': 'Please enter a display name.',
@@ -132,6 +143,9 @@ export const en = {
   'game.handCount.other': '{count} cards',
   'game.cardsLeft.one': '1 card',
   'game.cardsLeft.other': '{count} cards',
+  /* The staircase, as a fraction. Shown beside a card count, so it stays this short. */
+  'game.stairsStep': '{done}/{total}',
+  'game.stairsStepAria': 'Stairs: {done} of {total} hands finished',
   'game.lastCard': 'Last card!',
   'game.declareLastCard': 'Last card!',
   'game.declareLastCardBody': 'Declare, or be caught for {count} cards.',
@@ -181,6 +195,12 @@ export const en = {
   'over.rank': 'Place',
   'over.player': 'Player',
   'over.cardsLeft': 'Cards left',
+  'over.stairsStep': 'Hands finished',
+  'over.stairsStepValue': '{done}/{total}',
+  /* The room's running total, which is why it is not called "the score of this round". */
+  'over.scoreTitle': 'Score so far',
+  'over.wins': 'Rounds won',
+  'over.scoreHint': 'Rounds won since this room opened. Closing the room clears it.',
   'over.playAgain': 'Play again',
   'over.playAgainWaiting': 'Waiting for everyone: {agreed} of {required} agreed.',
   'over.playAgainHint': 'A new round starts when every connected player agrees.',
@@ -295,6 +315,8 @@ export const en = {
   'event.drawPileRecycled': 'The discard pile was shuffled back in ({count} cards).',
   'event.drawPileExhausted': 'There are no cards left to draw.',
   'event.playerWon': '{name} has no cards left and wins!',
+  'event.stairsAdvanced.one': '{name} finished hand {stage} of 8 and takes the last card of the staircase.',
+  'event.stairsAdvanced.other': '{name} finished hand {stage} of 8 and takes {count} new cards.',
   'event.turnSkipped': '{name} was away, so their turn was passed.',
   'event.turnSkippedDrew.one': '{name} was away, so their turn was passed and they drew a card.',
   'event.turnSkippedDrew.other': '{name} was away, so their turn was passed and they drew {count} cards.',

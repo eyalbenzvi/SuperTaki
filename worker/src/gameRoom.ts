@@ -37,6 +37,7 @@ import {
   type EnginePlayer,
   type GameCommand,
   type GameEvent,
+  type GameMode,
   type GameState,
   type RejectionCode,
 } from '../../src/features/game/engine/state.ts';
@@ -214,6 +215,7 @@ function freshSeat(
     saidGoodbye: false,
     lastRequestId: null,
     lastRequestVersion: null,
+    wins: 0,
     ...overrides,
   };
 }
@@ -594,6 +596,7 @@ export class GameRoom {
         ...(seat.bot ? { bot: true } : {}),
         ...(seat.standIn !== null ? { standIn: true } : {}),
         ...(seat.robotPlayedThisRound && !seat.bot ? { robotPlayed: true } : {}),
+        wins: seat.wins,
       }));
     const waiting = this.waiting();
     return {
@@ -603,6 +606,7 @@ export class GameRoom {
       phase: record.phase,
       players,
       tableLanguage: record.tableLanguage,
+      gameMode: record.gameMode,
       sentAt: this.now(),
       seatGraceMs: SEAT_GRACE_MS,
       pausedBy: record.pausedBy,
@@ -799,7 +803,7 @@ export class GameRoom {
     connection: Connection,
     payload: {
       readonly displayName: string;
-      readonly create?: { maxPlayers: number; tableLanguage: 'he' | 'en' };
+      readonly create?: { maxPlayers: number; tableLanguage: 'he' | 'en'; gameMode?: GameMode };
     },
   ): void {
     if (connection.playerId !== null) {
@@ -870,7 +874,7 @@ export class GameRoom {
   private createRoom(
     connection: Connection,
     name: string,
-    options: { maxPlayers: number; tableLanguage: 'he' | 'en' },
+    options: { maxPlayers: number; tableLanguage: 'he' | 'en'; gameMode?: GameMode },
   ): void {
     const seat = freshSeat({
       playerId: createPlayerId(),
@@ -884,6 +888,8 @@ export class GameRoom {
       phase: 'lobby',
       maxPlayers: Math.min(Math.max(options.maxPlayers, MIN_PLAYERS), MAX_PLAYERS),
       tableLanguage: options.tableLanguage,
+      // A client that says nothing is asking for the game as it has always been.
+      gameMode: options.gameMode ?? 'classic',
       versionFloor: 0,
       round: 0,
       standInEnabled: true,
@@ -1270,6 +1276,22 @@ export class GameRoom {
     this.broadcastGameState();
     this.emitEvents(events);
     if (state.phase === 'finished') {
+      /*
+       * The score, counted exactly once per round.
+       *
+       * Guarded on the *record's* phase rather than the game's, because the game is
+       * already finished by the time this runs and every later commit against it
+       * would see the same finished round. The transition is the event, and it
+       * happens on the line below. A round with no winner — abandoned, or run out of
+       * players — scores nothing, which is what `winnerId` being null says.
+       */
+      if (record.phase !== 'finished' && state.winnerId !== null) {
+        const winner = this.seatFor(state.winnerId);
+        if (winner !== undefined) {
+          winner.wins += 1;
+          this.log('a round was won', { seat: winner.seat, name: winner.name, wins: winner.wins });
+        }
+      }
       record.phase = 'finished';
       record.playAgainVotes = [];
       record.abandonVotes = [];
@@ -1307,7 +1329,13 @@ export class GameRoom {
       .sort((a, b) => a.seat - b.seat)
       .map((seat) => ({ id: seat.playerId, name: seat.name }));
 
-    const result = createGame(players, this.seedFactory(), record.versionFloor + 1, record.round);
+    const result = createGame(
+      players,
+      this.seedFactory(),
+      record.versionFloor + 1,
+      record.round,
+      record.gameMode,
+    );
     if (!result.ok) {
       this.log('could not deal a round', { code: result.rejection.code });
       return;
@@ -1550,6 +1578,20 @@ export class GameRoom {
       case 'setTableLanguage':
         record.tableLanguage = command.language;
         this.roomDirty = true;
+        this.emitLobby();
+        return;
+      case 'setGameMode':
+        /*
+         * The lobby only. A round is won the way it was dealt — its mode is in the
+         * game state, not here — so changing this mid-round would do nothing to the
+         * round in play while telling every screen that something had changed.
+         */
+        if (record.phase !== 'lobby' || record.gameMode === command.mode) {
+          return;
+        }
+        record.gameMode = command.mode;
+        this.roomDirty = true;
+        this.log('the table changed mode', { mode: command.mode });
         this.emitLobby();
         return;
       case 'kickPlayer':

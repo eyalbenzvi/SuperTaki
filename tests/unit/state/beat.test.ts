@@ -230,7 +230,7 @@ describe('the beat', () => {
      * being asserted is that asking for one clears the beat, which happens before any
      * answer could arrive.
      */
-    void store().createRoom({ name: 'Dana', maxPlayers: 2, tableLanguage: 'he' });
+    void store().createRoom({ name: 'Dana', maxPlayers: 2, tableLanguage: 'he', gameMode: 'classic' });
     await flush(1);
     expect(store().beat).toBeNull();
     store().leaveRoom();

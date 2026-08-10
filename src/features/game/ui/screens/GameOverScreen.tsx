@@ -3,7 +3,15 @@ import { Badge } from '../../../../components/Badge.tsx';
 import { Button } from '../../../../components/Button.tsx';
 import { Icon } from '../../../../components/Icon.tsx';
 import { useT } from '../../../../app/useT.ts';
-import { robotSeat, standings, wasAbandoned, winnerName } from '../../state/selectors.ts';
+import { STAIRS_STAGES } from '../../engine/cards.ts';
+import {
+  robotSeat,
+  roundGameMode,
+  scoreboard,
+  standings,
+  wasAbandoned,
+  winnerName,
+} from '../../state/selectors.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 
@@ -18,6 +26,8 @@ export function GameOverScreen(): ReactNode {
   const t = useT();
   const state = useAppStore();
   const rows = standings(state);
+  const scores = scoreboard(state);
+  const stairs = roundGameMode(state) === 'stairs';
   const winner = state.publicState?.winnerId ?? null;
   const abandoned = wasAbandoned(state);
   const iWon = winner !== null && winner === state.localPlayerId;
@@ -63,6 +73,10 @@ export function GameOverScreen(): ReactNode {
             <tr>
               <th scope="col">{t('over.rank')}</th>
               <th scope="col">{t('over.player')}</th>
+              {/* Only where it means something. In a stairs round it is the result
+                  and the cards left are the detail; in a classic one there is no
+                  staircase to report. */}
+              {stairs ? <th scope="col">{t('over.stairsStep')}</th> : null}
               <th scope="col">{t('over.cardsLeft')}</th>
             </tr>
           </thead>
@@ -90,6 +104,14 @@ export function GameOverScreen(): ReactNode {
                     {robotSeat(state, row.playerId) ? <Badge icon="robot">{t('robot.badge')}</Badge> : null}
                   </span>
                 </td>
+                {stairs ? (
+                  <td className="standings__count">
+                    {t('over.stairsStepValue', {
+                      done: row.stairsStep ?? 0,
+                      total: STAIRS_STAGES,
+                    })}
+                  </td>
+                ) : null}
                 {/* The column header carries the unit; repeating it in every
                     cell just makes the table harder to scan. */}
                 <td className="standings__count">{row.cardCount}</td>
@@ -98,6 +120,53 @@ export function GameOverScreen(): ReactNode {
           </tbody>
         </table>
       </section>
+
+      {/*
+       * The evening, next to the round.
+       *
+       * Only once somebody has actually won something: a column of noughts after the
+       * first round would be a scoreboard that says nothing, and it would push the
+       * two decisions this screen exists for further down the page. Wins only — no
+       * points for the cards anybody was left holding — so a round lost by one card
+       * and a round lost by twelve cost exactly the same, which is what "we are
+       * playing best of five" already means to a table.
+       */}
+      {scores.length > 0 ? (
+        <section className="panel">
+          <h2 className="panel__title">{t('over.scoreTitle')}</h2>
+          {/* Same table styling, its own name: two tables of the same shape on one
+              screen otherwise leave "the standings" ambiguous to a stylesheet and to
+              anything selecting a row — which is exactly how the end-to-end test
+              that counts empty hands started counting wins as well. */}
+          <table className="standings standings--score">
+            <thead>
+              <tr>
+                <th scope="col">{t('over.rank')}</th>
+                <th scope="col">{t('over.player')}</th>
+                <th scope="col">{t('over.wins')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scores.map((row) => (
+                <tr key={row.playerId}>
+                  <td>{row.rank}</td>
+                  <td>
+                    <span className="cluster">
+                      <span className="truncate">{row.name}</span>
+                      {row.playerId === state.localPlayerId ? (
+                        <span className="text-small muted">({t('common.you')})</span>
+                      ) : null}
+                    </span>
+                  </td>
+                  <td className="standings__count">{row.wins}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* The one thing about the score worth promising, said where the score is. */}
+          <p className="text-small muted">{t('over.scoreHint')}</p>
+        </section>
+      ) : null}
 
       <div className="action-bar">
         <Button

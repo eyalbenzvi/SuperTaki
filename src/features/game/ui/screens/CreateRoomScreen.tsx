@@ -5,7 +5,7 @@ import { SegmentedControl } from '../../../../components/SegmentedControl.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { LANGUAGES, type Language } from '../../../../i18n/index.ts';
 import { DISPLAY_NAME_MAX_LENGTH, sanitizeDisplayName } from '../../../../lib/sanitize.ts';
-import { MAX_PLAYERS, MIN_PLAYERS } from '../../engine/state.ts';
+import { MAX_PLAYERS, MIN_PLAYERS, type GameMode } from '../../engine/state.ts';
 import { useAppStore } from '../../state/store.ts';
 import { ConnectionPhaseNotice } from '../components/ConnectionPhaseNotice.tsx';
 
@@ -25,6 +25,7 @@ export function CreateRoomScreen(): ReactNode {
   const [name, setName] = useState(storedName);
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [tableLanguage, setTableLanguage] = useState<Language>(language);
+  const [gameMode, setGameMode] = useState<GameMode>('classic');
   const [error, setError] = useState<string | null>(null);
 
   const submit = (): void => {
@@ -34,7 +35,7 @@ export function CreateRoomScreen(): ReactNode {
       return;
     }
     setError(null);
-    void createRoom({ name: cleaned, maxPlayers, tableLanguage });
+    void createRoom({ name: cleaned, maxPlayers, tableLanguage, gameMode });
   };
 
   return (
@@ -77,6 +78,30 @@ export function CreateRoomScreen(): ReactNode {
             onChange={setMaxPlayers}
             options={PLAYER_COUNTS.map((count) => ({ value: count, label: String(count) }))}
           />
+        </div>
+
+        {/*
+         * How the round is won, decided before the table exists rather than
+         * mid-game: it changes what running out of cards means, so it is not a thing
+         * to discover halfway through a hand. The hint under it says what the choice
+         * actually does, because "stairs" means nothing to somebody who has not
+         * played it.
+         */}
+        <div className="field">
+          <span className="field__label">{t('mode.label')}</span>
+          <SegmentedControl<GameMode>
+            block
+            label={t('mode.label')}
+            value={gameMode}
+            onChange={setGameMode}
+            options={[
+              { value: 'classic', label: t('mode.classic') },
+              { value: 'stairs', label: t('mode.stairs') },
+            ]}
+          />
+          <span className="field__hint">
+            {gameMode === 'stairs' ? t('mode.stairsHint') : t('mode.classicHint')}
+          </span>
         </div>
 
         <div className="field">

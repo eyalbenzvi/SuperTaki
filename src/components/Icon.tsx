@@ -30,6 +30,7 @@ export type IconName =
   | 'hourglass'
   | 'trophy'
   | 'link'
+  | 'stairs'
   | 'robot';
 
 /** Paths are stroked, not filled, so one weight reads at every size. */
@@ -147,6 +148,8 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1" />
     </>
   ),
+  // Three descending steps: the staircase the mode is named after, walked down.
+  stairs: <path d="M3 20h5v-5h5v-5h5V5h3" />,
   // A head with an aerial: the one glyph nobody mistakes for a person.
   robot: (
     <>

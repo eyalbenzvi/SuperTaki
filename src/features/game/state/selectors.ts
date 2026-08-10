@@ -1,6 +1,7 @@
 import type { Card, CardColor, CardKind } from '../engine/cards.ts';
 import { cardColor, isNumberCard, requiresColorChoice } from '../engine/cards.ts';
 import { getPlayableCardIds } from '../engine/rules.ts';
+import type { GameMode } from '../engine/state.ts';
 import { computeStandings, playContextFromPublic, type StandingRow } from '../engine/views.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import type { LobbyPlayer, LobbySnapshot } from '../network/protocol.ts';
@@ -51,6 +52,32 @@ export function localLobbyPlayer(state: Pick<TableSnapshot, 'lobby' | 'localPlay
 
 export function seatedPlayers(state: Pick<TableSnapshot, 'lobby'>): readonly LobbyPlayer[] {
   return state.lobby?.players ?? [];
+}
+
+/**
+ * How the *round on the table* is won.
+ *
+ * Read off the game state rather than the lobby, because those two can honestly
+ * disagree: the lobby carries the mode the next deal will use, and a table that
+ * changed its setting between rounds must not relabel the round being played. The
+ * lobby's answer is `tableGameMode`, below, and it is only ever used before a deal.
+ */
+export function roundGameMode(state: Pick<TableSnapshot, 'publicState'>): GameMode {
+  return state.publicState?.mode ?? 'classic';
+}
+
+/** How the next round will be won, as the room currently intends. */
+export function tableGameMode(state: Pick<TableSnapshot, 'lobby'>): GameMode {
+  return state.lobby?.gameMode ?? 'classic';
+}
+
+/** Hands the local player has emptied in a stairs round, or `null` in a classic one. */
+export function myStairsStep(state: Pick<TableSnapshot, 'publicState' | 'localPlayerId'>): number | null {
+  if (roundGameMode(state) !== 'stairs') {
+    return null;
+  }
+  const me = state.publicState?.players.find((player) => player.id === state.localPlayerId);
+  return me?.stairsStep ?? 0;
 }
 
 export function isMyTurn(state: Pick<TableSnapshot, 'publicState' | 'localPlayerId'>): boolean {
@@ -192,6 +219,13 @@ export interface OpponentView {
   readonly bot: boolean;
   /** A robot is playing this human's seat while nobody answers for it. */
   readonly standIn: boolean;
+  /**
+   * Hands this seat has emptied in a stairs round, or `null` in a classic one.
+   *
+   * `null` rather than nought, so the seat can tell "no staircase is being played"
+   * from "this player has not finished a hand yet" without asking about the mode.
+   */
+  readonly stairsStep: number | null;
 }
 
 /**
@@ -210,6 +244,7 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
   const ordered =
     localIndex >= 0 ? [...players.slice(localIndex + 1), ...players.slice(0, localIndex)] : [...players];
 
+  const stairs = publicState.mode === 'stairs';
   return ordered
     .filter((player) => player.id !== localPlayerId)
     .map((player) => {
@@ -218,6 +253,7 @@ export function opponents(state: TableSnapshot): readonly OpponentView[] {
         id: player.id,
         name: player.name,
         cardCount: player.cardCount,
+        stairsStep: stairs ? (player.stairsStep ?? 0) : null,
         isCurrent: publicState.currentPlayerId === player.id,
         health: lobbyPlayer?.health ?? 'connected',
         isCreator: lobbyPlayer?.isCreator ?? false,
@@ -332,6 +368,45 @@ export function playerName(state: Pick<TableSnapshot, 'publicState' | 'lobby'>, 
 
 export function standings(state: Pick<TableSnapshot, 'publicState'>): readonly StandingRow[] {
   return state.publicState ? computeStandings(state.publicState) : [];
+}
+
+export interface ScoreRow {
+  readonly playerId: string;
+  readonly name: string;
+  readonly wins: number;
+  readonly rank: number;
+}
+
+/**
+ * The room's running score: rounds won, most first.
+ *
+ * Built from the lobby rather than from the round, because it belongs to the room
+ * and not to any one deal — a seat that sat out the round that just ended still has
+ * the wins it collected before it. Seats that have left the room are not in the
+ * lobby at all, which is exactly right: their score left with them.
+ *
+ * A table where nobody has won anything yet — the first round of an evening — gets
+ * an empty list rather than a column of noughts, so the screen can leave the whole
+ * thing out until there is something to say.
+ */
+export function scoreboard(state: Pick<TableSnapshot, 'lobby'>): readonly ScoreRow[] {
+  const players = state.lobby?.players ?? [];
+  if (!players.some((player) => (player.wins ?? 0) > 0)) {
+    return [];
+  }
+  const sorted = players
+    .map((player) => ({ playerId: player.id, name: player.name, wins: player.wins ?? 0 }))
+    .sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name));
+
+  let rank = 0;
+  let previous: number | null = null;
+  return sorted.map((row, index) => {
+    if (previous === null || row.wins !== previous) {
+      rank = index + 1;
+      previous = row.wins;
+    }
+    return { ...row, rank };
+  });
 }
 
 export function winnerName(state: Pick<TableSnapshot, 'publicState' | 'lobby'>): string | null {

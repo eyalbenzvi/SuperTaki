@@ -8,12 +8,16 @@ import {
   isMyTurn,
   isTakiOpenForMe,
   localLobbyPlayer,
+  myStairsStep,
   needsColorChoice,
   opponents,
   playableCardIds,
   playerName,
+  roundGameMode,
+  scoreboard,
   sortHandForDisplay,
   standings,
+  tableGameMode,
   winnerName,
 } from '../../../src/features/game/state/selectors.ts';
 import type { AppState } from '../../../src/features/game/state/store.ts';
@@ -258,5 +262,77 @@ describe('hand display order', () => {
     ];
     expect(sortHandForDisplay(hand).map((card) => card.id)).toEqual(['x', 'y']);
     expect(sortHandForDisplay(sortHandForDisplay(hand)).map((card) => card.id)).toEqual(['x', 'y']);
+  });
+});
+
+/**
+ * The room's running score, and the round's mode.
+ *
+ * Both are read from the place that owns them, and that distinction is the point of
+ * these tests: the score belongs to the room and travels in the lobby, while the
+ * mode a round is *being played under* belongs to the round and travels in the game
+ * state. Reading either from the other is wrong in a way that only shows up between
+ * rounds, which is exactly when nobody is looking.
+ */
+describe('mode and score selectors', () => {
+  it('reads the round’s mode from the round, and the table’s from the lobby', () => {
+    // A table that switched to stairs for the *next* deal, while a classic round is
+    // still on screen. The two answers must not be the same one.
+    const between = state({
+      lobby: { ...lobby, gameMode: 'stairs' },
+      publicState: { ...publicState, mode: 'classic' },
+    });
+    expect(roundGameMode(between)).toBe('classic');
+    expect(tableGameMode(between)).toBe('stairs');
+
+    // And a peer that says nothing means the game as it always was.
+    expect(roundGameMode(state())).toBe('classic');
+    expect(tableGameMode(state())).toBe('classic');
+  });
+
+  it('answers with a step only while a staircase is being played', () => {
+    expect(myStairsStep(state())).toBeNull();
+    const stairs = state({
+      publicState: {
+        ...publicState,
+        mode: 'stairs',
+        players: [
+          { id: 'a', name: 'Ann', cardCount: 3, stairsStep: 2 },
+          { id: 'b', name: 'Ben', cardCount: 2, stairsStep: 5 },
+          { id: 'c', name: 'Cat', cardCount: 7, stairsStep: 0 },
+        ],
+      },
+    });
+    // The local seat is Ben's.
+    expect(myStairsStep(stairs)).toBe(5);
+    expect(opponents(stairs).map((seat) => seat.stairsStep)).toEqual([0, 2]);
+    expect(opponents(state()).map((seat) => seat.stairsStep)).toEqual([null, null]);
+  });
+
+  it('ranks the score by wins, sharing a place on a tie', () => {
+    const scored = state({
+      lobby: {
+        ...lobby,
+        players: [
+          { ...lobby.players[0]!, wins: 1 },
+          { ...lobby.players[1]!, wins: 3 },
+          { ...lobby.players[2]!, wins: 1 },
+        ],
+      },
+    });
+    expect(scoreboard(scored)).toEqual([
+      { playerId: 'b', name: 'Ben', wins: 3, rank: 1 },
+      { playerId: 'a', name: 'Ann', wins: 1, rank: 2 },
+      { playerId: 'c', name: 'Cat', wins: 1, rank: 2 },
+    ]);
+  });
+
+  it('has nothing to say until a round has been won', () => {
+    // A first round, and a snapshot from a room with no score at all: both are
+    // "nothing to show" rather than a column of noughts.
+    expect(scoreboard(state())).toEqual([]);
+    expect(scoreboard(state({ lobby: { ...lobby, players: [{ ...lobby.players[0]!, wins: 0 }] } }))).toEqual(
+      [],
+    );
   });
 });

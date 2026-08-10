@@ -12,7 +12,7 @@ import {
 import { Badge } from '../../../../components/Badge.tsx';
 import { Icon } from '../../../../components/Icon.tsx';
 import { countLabel, type TextDirection, type Translator } from '../../../../i18n/index.ts';
-import type { Card, CardColor } from '../../engine/cards.ts';
+import { STAIRS_STAGES, type Card, type CardColor } from '../../engine/cards.ts';
 import type { ConnectionHealth } from '../../network/protocol.ts';
 import type { OpponentView } from '../../state/selectors.ts';
 import { colorName } from '../cardText.ts';
@@ -140,6 +140,37 @@ export function HealthBadge({
   );
 }
 
+/**
+ * Progress down the staircase: hands finished, out of the eight there are.
+ *
+ * One component for a seat and for the player's own hand, because the two have to
+ * be read against each other — "I am on four, she is on six" is the whole state of
+ * a stairs round, and two differently-worded versions of the same number would
+ * make that comparison work.
+ *
+ * The icon is decoration; the accessible name spells the fraction out, because
+ * "3/8" beside a card count is ambiguous to anybody who cannot see the staircase
+ * glyph next to it.
+ */
+export function StairsProgress({
+  step,
+  t,
+  extraClass,
+}: {
+  readonly step: number;
+  readonly t: Translator;
+  readonly extraClass?: string;
+}): ReactNode {
+  const label = t('game.stairsStepAria', { done: step, total: STAIRS_STAGES });
+  return (
+    <span className={extraClass ? `stairs-chip ${extraClass}` : 'stairs-chip'} title={label}>
+      <Icon name="stairs" size={0.9} />
+      <span aria-hidden="true">{t('game.stairsStep', { done: step, total: STAIRS_STAGES })}</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 const OpponentSeat = memo(function OpponentSeat({
   opponent,
   t,
@@ -180,6 +211,16 @@ const OpponentSeat = memo(function OpponentSeat({
       <span className={`seat__count ${lastCard ? 'seat__count--low' : ''}`.trim()}>
         {countLabel(t, 'game.cardsLeft', opponent.cardCount)}
       </span>
+      {/*
+       * How far down the staircase this seat is, in a stairs round.
+       *
+       * Beside the card count rather than instead of it, because in that mode the two
+       * facts answer different questions: the step says who is winning, and the count
+       * says how close they are to taking the next one.
+       */}
+      {opponent.stairsStep === null ? null : (
+        <StairsProgress step={opponent.stairsStep} t={t} extraClass="seat__stairs" />
+      )}
       {/*
        * The declaration is the difference between a seat that is safe on one card
        * and a seat that can be called out for it. Calling it out is the other
@@ -392,6 +433,8 @@ export interface HandProps {
   readonly disabledReason: string;
   readonly locked?: boolean;
   readonly registry?: AnchorRegistry | undefined;
+  /** Hands emptied so far in a stairs round; `null` in a classic one. */
+  readonly stairsStep?: number | null;
 }
 
 /**
@@ -628,6 +671,7 @@ export function Hand({
   disabledReason,
   locked = false,
   registry,
+  stairsStep = null,
 }: HandProps): ReactNode {
   const playable = new Set(playableIds);
   const { layout, solvedCount, areaRef, listRef } = useHandLayout(cards.length);
@@ -730,6 +774,8 @@ export function Hand({
     >
       <div className="hand-area__head">
         <h2 className="hand-area__title">{t('game.yourHand')}</h2>
+        {/* My own step, in the one place I am already looking to count my cards. */}
+        {stairsStep === null ? null : <StairsProgress step={stairsStep} t={t} />}
         <span className="hand-area__count">{countLabel(t, 'game.handCount', cards.length)}</span>
       </div>
       <ul

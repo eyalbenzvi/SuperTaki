@@ -19,7 +19,7 @@ import {
  * Every decision about what animates lives in this one pure function, which is
  * the point: a table-driven test over the whole event vocabulary is possible
  * here and would not be possible if the same decisions were spread through the
- * view. The event union has 23 members and every one of them is named below —
+ * view. The event union has 24 members and every one of them is named below —
  * including the nine that are deliberately silent, because "we chose not to
  * animate this" is a decision worth defending in a test rather than an omission.
  */
@@ -104,16 +104,21 @@ describe('what each event is worth', () => {
     { event: { type: 'drawPileRecycled', count: 30 }, count: 1, note: 'the deck is rebuilt' },
     { event: { type: 'drawPileExhausted' }, count: 0, note: 'nothing to show' },
     { event: { type: 'playerWon', playerId: THEM }, count: 1, note: 'the payoff' },
+    {
+      event: { type: 'stairsAdvanced', playerId: THEM, stage: 3, dealt: 5 },
+      count: 1,
+      note: 'a step of the staircase, felt at the seat that took it',
+    },
     { event: { type: 'turnSkipped', playerId: THEM, drew: 0 }, count: 1, note: 'somebody was away' },
     { event: { type: 'playerLeft', playerId: THEM }, count: 0, note: 'bookkeeping' },
     { event: { type: 'roundAbandoned' }, count: 0, note: 'the screen changes instead' },
   ];
 
-  it('covers all 23 members of the event union', () => {
+  it('covers all 24 members of the event union', () => {
     const covered = new Set(table.map((row) => row.event.type));
     // Kept honest by a compile-time exhaustive map, below.
-    expect(covered.size).toBe(23);
-    expect(table).toHaveLength(23);
+    expect(covered.size).toBe(24);
+    expect(table).toHaveLength(24);
   });
 
   for (const row of table) {
@@ -145,11 +150,12 @@ describe('what each event is worth', () => {
       drawPileRecycled: true,
       drawPileExhausted: true,
       playerWon: true,
+      stairsAdvanced: true,
       turnSkipped: true,
       playerLeft: true,
       roundAbandoned: true,
     };
-    expect(Object.keys(decided)).toHaveLength(23);
+    expect(Object.keys(decided)).toHaveLength(24);
   });
 });
 
