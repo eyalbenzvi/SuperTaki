@@ -110,8 +110,12 @@ export interface GameRoomOptions {
    * Robot pacing override.
    *
    * A test that had to wait out a human-shaped thinking pause for every move of a
-   * six-card Taki sequence would be minutes long. With this it is instant, and the
-   * decisions are identical because they come from the seeded stream either way.
+   * six-card Taki sequence would be minutes long. With this it is instant.
+   *
+   * Worth knowing when reading a test against a fixed seed: the room's own pacing
+   * *draws* its jitter from the seat's stream and this does not, so the same deal
+   * played at overridden pacing takes a different set of decisions from the same
+   * deal played at the room's. Neither is more correct — they are two rounds.
    */
   readonly botPauseMs?: (kind: BotMoveKind, inSequence: boolean) => number;
   /** Where a room reports things worth knowing. Wired to `console` by the adapter. */
@@ -1927,6 +1931,33 @@ export class GameRoom {
     this.alarms.set(kind, Math.max(atMs, this.now() + ALARM_FLOOR_MS));
   }
 
+  /**
+   * Drops a robot's pause — from *both* places that know about one.
+   *
+   * `botMove` is the one deadline `BotRunner` owns, and it is the one this class must
+   * never simply delete. The runner keeps the key it armed in memory and skips
+   * re-arming an identical duty, so that a burst of snapshots does not restart a pause
+   * a robot is already in the middle of. Clearing the row alone left those two
+   * disagreeing: the queue had no pause and the runner believed it had one, so the very
+   * next `bots.schedule()` — the one on the way back in — recognised the duty, said
+   * nothing needed doing, and armed nothing. The robot then owed a move that no alarm
+   * would ever come round for, and the round moved on only when `botStall` passed the
+   * seat fifteen seconds later and charged it a card from the pile.
+   *
+   * A phone was all it took: closing the last socket makes the room unwatched, which is
+   * one of the two states `reschedule` drops these deadlines in, and a reconnect a
+   * moment later is the same object with the same runner.
+   *
+   * So both halves, in this order. `cancel()` forgets the key and clears the row it
+   * armed; the `clear` after it is for a row the runner cannot know about, which is the
+   * one a hibernation left in storage while the runner came back with nothing pending —
+   * without it, a paused table would still wake to play a card.
+   */
+  private clearBotPause(): void {
+    this.bots.cancel();
+    this.alarms.clear('botMove');
+  }
+
   private reschedule(): void {
     const record = this.record;
     if (record === null) {
@@ -1967,10 +1998,10 @@ export class GameRoom {
         this.roomDirty = true;
       }
       this.book('ttl', record.emptySince + ROOM_IDLE_TTL_MS);
+      this.clearBotPause();
       for (const kind of [
         'absentTurn',
         'botStall',
-        'botMove',
         'standIn',
         'lastCard',
         'idleNudge',
@@ -2019,21 +2050,8 @@ export class GameRoom {
     // --- everything that only means something during a live, unpaused round
     const live = record.phase === 'inGame' && this.game !== null && record.pausedBy === null;
     if (!live) {
-      /*
-       * `botMove` is cleared here too, even though `BotRunner` owns it everywhere else.
-       * The runner cancels its own pause when `blocked()` turns true — but only if this
-       * instance is the one that armed it, and after a hibernation it is not: the alarm
-       * row survived in storage and the runner came back with nothing pending. Left
-       * alone, a paused table would wake to play a card.
-       */
-      for (const kind of [
-        'absentTurn',
-        'botStall',
-        'botMove',
-        'standIn',
-        'lastCard',
-        'idleNudge',
-      ] as AlarmKind[]) {
+      this.clearBotPause();
+      for (const kind of ['absentTurn', 'botStall', 'standIn', 'lastCard', 'idleNudge'] as AlarmKind[]) {
         this.alarms.clear(kind);
       }
       return;

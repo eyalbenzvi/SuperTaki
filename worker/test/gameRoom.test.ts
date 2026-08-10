@@ -975,6 +975,39 @@ describe('robots', () => {
     expect(creator.client.state?.winnerId).not.toBeNull();
   });
 
+  it('keeps a robot moving through a socket that dropped and came straight back', () => {
+    /*
+     * The pause a robot is in the middle of lives in two places — the alarm row and the
+     * key the runner remembers arming, which is what stops a burst of snapshots from
+     * restarting a pause. Closing the last socket makes the room unwatched, which drops
+     * every deadline it keeps; if that took the row and left the key, the reconnect a
+     * moment later found a duty it thought was already waiting and armed nothing. The
+     * robot then owed a move no alarm would ever come round for, and the round moved on
+     * only when the stall backstop passed its seat and charged it a card.
+     *
+     * One object throughout, deliberately: a hibernation in the gap would clear the
+     * runner's memory for us and hide the bug.
+     */
+    const table = new Harness({ seed: 7, botPauseMs: () => 1_500 });
+    const creator = table.join('Dana', CREATE);
+    creator.client.say('roomCommand', { command: { type: 'addBot' } });
+    creator.client.say('roomCommand', { command: { type: 'startGame' } });
+    for (let move = 0; move < 20 && currentPlayerId(creator.client) === creator.playerId; move += 1) {
+      creator.client.takeTurn();
+    }
+    expect(currentPlayerId(creator.client), 'the robot is the seat on turn').not.toBe(creator.playerId);
+    expect(table.pendingAlarms().map((alarm) => alarm.kind)).toContain('botMove');
+
+    table.room.handleClose(creator.client);
+    const back = table.client('Dana-back');
+    back.say('resumeRequest', { playerId: creator.playerId, resumeToken: creator.resumeToken });
+
+    expect(table.pendingAlarms().map((alarm) => alarm.kind)).toContain('botMove');
+    table.advance(BOT_STALL_MS + 2_000);
+    expect(table.logs.filter((line) => line.includes('did not move'))).toEqual([]);
+    expect(currentPlayerId(back), 'the robot played, so the turn came back').toBe(creator.playerId);
+  });
+
   it('lets a robot cover a seat nobody has answered for in a long time', () => {
     const { table, creator, guest } = dealtTable();
     table.room.handleClose(guest.client);
