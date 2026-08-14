@@ -147,6 +147,46 @@ describe('the staircase', () => {
     expect(stop.state.currentPlayerIndex).toBe(0);
   });
 
+  /*
+   * The rule that a round cannot be won on a Plus reaches exactly one hand of the
+   * staircase: the eighth. Every earlier one is a step, and a step is not a win —
+   * there is a whole new hand to play the Plus's extra card from, so nothing about
+   * it is incoherent and it empties the hand like any other card.
+   */
+  it('is stepped by a Plus like any other card, but is not finished by one', () => {
+    const stepped = expectOk(
+      playFirst(
+        aboutToStep({
+          stairs: { 'p-alice': 3 },
+          hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') },
+        }),
+        'p-alice',
+      ),
+    ).state;
+    expect(stepped.stairs['p-alice']).toBe(4);
+    expect(handOf(stepped, 'p-alice')).toHaveLength(4);
+    expect(stepped.pendingPlus).toBe(true);
+
+    // The eighth hand is the round, so the Plus takes its card from the pile
+    // instead and leaves her one step short, holding it.
+    const { state: last, events } = expectOk(
+      playFirst(
+        aboutToStep({
+          stairs: { 'p-alice': 7 },
+          hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') },
+        }),
+        'p-alice',
+      ),
+    );
+    expect(last.phase).toBe('playing');
+    expect(last.winnerId).toBeNull();
+    expect(last.stairs['p-alice']).toBe(7);
+    expect(handOf(last, 'p-alice')).toHaveLength(1);
+    expect(last.pendingPlus).toBe(false);
+    expect(last.currentPlayerIndex).toBe(1);
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'plusRefilled', 'cardDrawn', 'turnChanged']);
+  });
+
   it('keeps an open Taki sequence open across the step', () => {
     const state = aboutToStep({
       takiMode: {

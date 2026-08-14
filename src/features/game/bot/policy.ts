@@ -291,6 +291,12 @@ function turnAction(view: BotView, random: () => number): GameAction {
  * staircase and a new hand — the eighth of which is the win — and it is played on
  * sight either way, for the same reason: an empty hand is never worse than a full
  * one, and nothing can be caught out of a hand that does not exist.
+ *
+ * A Plus is the one card here that wins nothing: it takes its card from the pile
+ * rather than emptying a hand. Playing it is still right, and for a plainer reason
+ * — the alternative is drawing that same card *and* keeping the Plus — so it is
+ * not filtered out. What follows is an ordinary undeclared last card, which the
+ * shout below picks up on the next decision.
  */
 function winningCard(view: BotView): Card | null {
   if (view.hand.length !== 1) {

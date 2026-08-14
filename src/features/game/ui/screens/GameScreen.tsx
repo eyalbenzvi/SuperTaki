@@ -103,13 +103,11 @@ export function GameScreen(): ReactNode {
   const [registry] = useState(() => new AnchorRegistry());
 
   /*
-   * The wild card waiting for a colour, and whether its owner has armed the shout
-   * that goes with it. One piece of state, because the arming belongs to that one
-   * card: cancelling the dialog or picking a different card has to forget it.
+   * The wild card waiting for a colour. Nothing has been played while it sits
+   * here: the card is still in hand, the table has not moved, and neither the
+   * declaration nor the catch that may follow it exists yet.
    */
-  const [pendingWild, setPendingWild] = useState<{ readonly card: Card; readonly declaring: boolean } | null>(
-    null,
-  );
+  const [pendingWild, setPendingWild] = useState<Card | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const refusalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -218,7 +216,7 @@ export function GameScreen(): ReactNode {
 
   const onPlay = (card: Card): void => {
     if (requiresColorChoice(card)) {
-      setPendingWild({ card, declaring: false });
+      setPendingWild(card);
       return;
     }
     playCard(card.id);
@@ -241,13 +239,13 @@ export function GameScreen(): ReactNode {
   };
 
   /*
-   * The colour, and with it the shout if it was armed. Both travel in the one
-   * action, so the room applies them together and there is no instant in which
-   * the hand is down to a card nobody has claimed.
+   * The colour is what sends the card. Until this runs the move has not been made
+   * at all, which is what keeps a card that leaves its owner on one from exposing
+   * them — or letting them shout — before the table can see anything.
    */
   const onChooseColor = (color: CardColor): void => {
     if (pendingWild) {
-      playCard(pendingWild.card.id, color, pendingWild.declaring);
+      playCard(pendingWild.id, color);
       setPendingWild(null);
     }
   };
@@ -424,16 +422,8 @@ export function GameScreen(): ReactNode {
 
       <ColorPickerModal
         open={pendingWild !== null}
-        card={pendingWild?.card ?? null}
+        card={pendingWild}
         t={t}
-        // Two in hand means this card is the second to last: playing it leaves one.
-        lastCardNext={table.hand.length === 2}
-        declaring={pendingWild?.declaring === true}
-        onToggleDeclare={() => {
-          setPendingWild((current) =>
-            current === null ? null : { ...current, declaring: !current.declaring },
-          );
-        }}
         onChoose={onChooseColor}
         onCancel={() => {
           setPendingWild(null);

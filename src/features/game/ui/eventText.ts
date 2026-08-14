@@ -64,6 +64,8 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
         name: nameOf(event.playerId),
         count: event.penalty,
       });
+    case 'plusRefilled':
+      return t('event.plusRefilled', { name: nameOf(event.playerId) });
     case 'directionChanged':
       return t(event.direction === 1 ? 'event.directionChangedCw' : 'event.directionChangedCcw');
     case 'extraTurn':

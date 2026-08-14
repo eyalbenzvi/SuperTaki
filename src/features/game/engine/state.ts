@@ -285,6 +285,13 @@ export type GameEvent =
    * cards instead. `penalty` is how many they actually drew.
    */
   | { readonly type: 'breakerSpent'; readonly playerId: PlayerId; readonly penalty: number }
+  /**
+   * A Plus emptied its owner's hand, so they took the card it owed from the pile
+   * instead of winning. Its own line because the table has just watched somebody
+   * put their last card down and *not* win the round, and the draw that follows
+   * does not say why on its own.
+   */
+  | { readonly type: 'plusRefilled'; readonly playerId: PlayerId }
   | { readonly type: 'directionChanged'; readonly direction: TurnDirection }
   | { readonly type: 'extraTurn'; readonly playerId: PlayerId }
   | { readonly type: 'turnChanged'; readonly playerId: PlayerId }

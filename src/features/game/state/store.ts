@@ -178,16 +178,14 @@ export interface AppActions {
   readonly voteAbandon: (agree: boolean) => void;
   readonly nudgePlayer: (playerId: string) => void;
   /**
-   * Plays a card, optionally shouting "last card" in the same move.
+   * Plays a card, naming a colour when the card asks for one.
    *
-   * The shout is only honoured by the engine when the play really does leave one
-   * card in hand, so passing it is never a way of declaring early.
+   * No shout travels with it. The room still accepts one — the wire keeps the
+   * field, so a client from an older build is not broken by this — but nothing
+   * here sends it: the declaration opens after the card has landed, alongside the
+   * catch it exposes its owner to, and never before.
    */
-  readonly playCard: (
-    cardId: string,
-    chosenColor?: 'red' | 'blue' | 'green' | 'yellow',
-    declareLastCard?: boolean,
-  ) => void;
+  readonly playCard: (cardId: string, chosenColor?: 'red' | 'blue' | 'green' | 'yellow') => void;
   readonly drawCard: () => void;
   readonly closeTaki: () => void;
   readonly passBreak: () => void;
@@ -833,13 +831,8 @@ export const useAppStore = create<AppStore>((set, get) => {
       session?.nudge(playerId);
     },
 
-    playCard: (cardId, chosenColor, declareLastCard) => {
-      submit({
-        type: 'playCard',
-        cardId,
-        ...(chosenColor ? { chosenColor } : {}),
-        ...(declareLastCard === true ? { declareLastCard: true } : {}),
-      });
+    playCard: (cardId, chosenColor) => {
+      submit({ type: 'playCard', cardId, ...(chosenColor ? { chosenColor } : {}) });
     },
 
     drawCard: () => {

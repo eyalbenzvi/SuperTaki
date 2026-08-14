@@ -248,6 +248,7 @@ export const gameEventSchema = z.discriminatedUnion('type', [
     playerId: playerIdSchema,
     penalty: z.number().int().min(0).max(200),
   }),
+  z.object({ type: z.literal('plusRefilled'), playerId: playerIdSchema }),
   z.object({ type: z.literal('directionChanged'), direction: directionSchema }),
   z.object({ type: z.literal('extraTurn'), playerId: playerIdSchema }),
   z.object({ type: z.literal('turnChanged'), playerId: playerIdSchema }),

@@ -450,6 +450,19 @@ function resolveCardEffect(draft: Draft, card: Card, events: GameEvent[]): void 
   }
 }
 
+/**
+ * Whether emptying this player's hand right now would end the round for them.
+ *
+ * Always, in a classic round. In "stairs" only on the eighth hand: every earlier
+ * one is a step, and a step ends nothing.
+ */
+function emptyHandEndsRound(draft: Draft, playerId: PlayerId): boolean {
+  if (draft.mode !== 'stairs') {
+    return true;
+  }
+  return (draft.stairs[playerId] ?? 0) + 1 >= STAIRS_STAGES;
+}
+
 function applyPlayCard(
   state: GameState,
   playerId: PlayerId,
@@ -539,6 +552,50 @@ function applyPlayCard(
   }
 
   /*
+   * A round cannot be won on a Plus.
+   *
+   * A Plus is an obligation to play again, and an empty hand has nothing to meet it
+   * with — so instead of ending the round it takes from the pile the card the
+   * obligation is worth, a Plus being payable that way on any turn, and the turn
+   * moves on with its owner holding the single card they have just drawn.
+   *
+   * Only a *winning* hand. In "stairs" an empty hand is usually a step rather than
+   * the end, and a step is nothing for a Plus to be incoherent about: the hand
+   * empties, the next one is dealt, and the Plus goes on to buy a turn to play it
+   * with, exactly as it would mid-hand. It is the eighth hand — the one that ends
+   * the round — that a Plus cannot finish, for the same reason as in a classic
+   * round.
+   *
+   * The one case where the hand stays empty is a pile with nothing in it, discard
+   * included. Nothing can be taken, so nothing is, and the win check below takes
+   * the moment instead — a round that cannot go on has to end somewhere, and the
+   * player holding no cards is where.
+   */
+  let refilledOnPlus = false;
+  if (
+    card.kind === 'plus' &&
+    (draft.hands[playerId] ?? []).length === 0 &&
+    emptyHandEndsRound(draft, playerId)
+  ) {
+    const refillEvents: GameEvent[] = [];
+    if (drawCards(draft, playerId, 1, refillEvents) === 0) {
+      // Nothing anywhere to take. The pile says so — the line is the only
+      // explanation the table gets for a round that ended on a Plus after all.
+      events.push(...refillEvents);
+    } else {
+      refilledOnPlus = true;
+      /*
+       * The declaration went with the card that has just gone down, and that card
+       * was their last. What replaces it is a card nobody has claimed, so the
+       * shout is owed again — `syncDeclarations` would otherwise keep the old one
+       * alive for it, the hand being a single card either way.
+       */
+      draft.declaredLastCard = draft.declaredLastCard.filter((candidate) => candidate !== playerId);
+      events.push({ type: 'plusRefilled', playerId }, ...refillEvents);
+    }
+  }
+
+  /*
    * The hand is empty. In a classic round that is the round; in "stairs" it is one
    * step of it, and only the eighth step wins.
    *
@@ -596,13 +653,15 @@ function applyPlayCard(
    * Nothing below this point adds to or removes from *this* player's hand, so the
    * count cannot change again inside this command.
    *
-   * A hand that arrived from a step of the staircase is not covered by it: the
-   * shout was armed about the card going down, not about eight new ones, and a
-   * player looking at a fresh hand of one has a fresh declaration to make.
+   * A hand that arrived from a step of the staircase is not covered by it, and
+   * neither is the card a Plus took from the pile: the shout was armed about the
+   * card going down, not about whatever replaced it, and a player looking at a
+   * card they have only just drawn has a fresh declaration to make.
    */
   if (
     declareLastCard &&
     !redealt &&
+    !refilledOnPlus &&
     (draft.hands[playerId] ?? []).length === 1 &&
     !draft.declaredLastCard.includes(playerId)
   ) {
@@ -648,6 +707,14 @@ function applyPlayCard(
       color: resultingColor,
       superTaki: card.kind === 'superTaki',
     });
+  } else if (refilledOnPlus) {
+    /*
+     * The card this Plus owed came from the pile, and a Plus paid from the pile
+     * ends the turn — which is what the obligation says on every other turn too.
+     * Calling `resolveCardEffect` here would hand its owner a free turn for
+     * having run out, and the drawn card back as a win.
+     */
+    advanceTurn(draft, events);
   } else {
     resolveCardEffect(draft, card, events);
   }
