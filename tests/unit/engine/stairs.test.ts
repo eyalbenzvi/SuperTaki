@@ -19,10 +19,13 @@ import { cards, eventTypes, expectOk, handOf, makeState, players } from '../help
  *
  * That "exactly one thing" is what most of this file is about. A step happens in the
  * middle of a turn that is still being resolved, so the interesting cases are all
- * about what the *rest* of the turn does afterwards: a Plus still buys another card
- * to play, a Stop still skips the next seat, an open Taki sequence is still open, and
- * a declaration made about the card that has just gone down does not follow its owner
- * into the new hand.
+ * about what the *rest* of the turn does afterwards: a King still buys a free turn to
+ * play the new hand with, a Stop still skips the next seat, an open Taki sequence is
+ * still open, and a declaration made about the card that has just gone down does not
+ * follow its owner into the new hand.
+ *
+ * The one card that never empties a hand is a Plus, in this mode as in the other: it
+ * takes its card from the pile instead, so it is neither a step nor a win.
  */
 
 function totalCards(state: GameState): number {
@@ -130,13 +133,14 @@ describe('the staircase', () => {
   });
 
   it('leaves the turn where the played card leaves it', () => {
-    // A Plus emptied the hand: the extra turn it bought is played with the new one.
-    const plus = expectOk(
-      playFirst(aboutToStep({ hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') } }), 'p-alice'),
+    // A King emptied the hand: the free turn it bought is played with the new one.
+    const king = expectOk(
+      playFirst(aboutToStep({ hands: { 'p-alice': cards('king'), 'p-bob': cards('red:1') } }), 'p-alice'),
     ).state;
-    expect(plus.pendingPlus).toBe(true);
-    expect(plus.currentPlayerIndex).toBe(0);
-    expect(handOf(plus, 'p-alice')).toHaveLength(7);
+    expect(king.pendingPlus).toBe(true);
+    expect(king.freePlay).toBe(true);
+    expect(king.currentPlayerIndex).toBe(0);
+    expect(handOf(king, 'p-alice')).toHaveLength(7);
 
     // A Stop still skips the seat it lands on, which at two players is the turn
     // coming straight back.
@@ -145,6 +149,18 @@ describe('the staircase', () => {
     );
     expect(eventTypes(stop.events)).toEqual(['cardPlayed', 'stairsAdvanced', 'playerSkipped', 'turnChanged']);
     expect(stop.state.currentPlayerIndex).toBe(0);
+  });
+
+  it('is not stepped by a Plus, which takes its card from the pile instead', () => {
+    const { state: next, events } = expectOk(
+      playFirst(aboutToStep({ hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') } }), 'p-alice'),
+    );
+    // No step, no new hand of seven: one card off the pile, and the turn moves on.
+    expect(next.stairs['p-alice']).toBe(0);
+    expect(handOf(next, 'p-alice')).toHaveLength(1);
+    expect(next.pendingPlus).toBe(false);
+    expect(next.currentPlayerIndex).toBe(1);
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'plusRefilled', 'cardDrawn', 'turnChanged']);
   });
 
   it('keeps an open Taki sequence open across the step', () => {

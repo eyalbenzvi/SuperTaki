@@ -83,14 +83,16 @@ showing TAKI refusing a hand holding TAKI.
 if it is legal. (Chosen for clarity; some variants allow it.)
 
 **Playing your last card wins the round**, declared or not. What an undeclared last card
-risks is being caught before you get to play it — see "Last card" below.
+risks is being caught before you get to play it — see "Last card" below. The one card this
+is not true of is a **Plus**: it owes another card, and a hand with nothing left cannot pay
+it, so the Plus takes its card from the draw pile instead and the round goes on.
 
 ### Special cards
 
 | Card                 | Effect                                                                                                                                                                                                        |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Stop**             | The next player loses their turn. With two players the turn comes straight back to you.                                                                                                                       |
-| **Plus**             | You owe one more card: play it, or take one from the draw pile instead. A second Plus repeats the obligation.                                                                                                 |
+| **Plus**             | You owe one more card: play it, or take one from the draw pile instead. A second Plus repeats the obligation. It never empties your hand — see below.                                                         |
 | **+2**               | The next player owes two cards — unless they add a +2 of their own, which raises the run by two and passes it on. See below.                                                                                  |
 | **Change Direction** | The play order reverses. With two players the turn still passes to your opponent.                                                                                                                             |
 | **Change Colour**    | Playable on anything. You choose the next colour, and your turn ends.                                                                                                                                         |
@@ -106,6 +108,15 @@ turn. The card you play instead follows normal matching rules — it does not ha
 same colour as the Plus. The same is true of the free turn a King grants, which is the same
 flag: you may decline it by drawing. So the draw pile is open on every turn of yours but
 one, and the exception is an open Taki sequence.
+
+**A Plus cannot be your last card.** Playing one that would leave your hand empty does not
+win the round: you take the card the Plus owes from the pile, and — a Plus paid from the
+pile ending a turn as it always does — the turn moves on, with you holding the single card
+you have just drawn. The declaration you may have made went down with the Plus, so that new
+card is an undeclared last card like any other: shout for it, or be caught. In **stairs** it
+is not a step of the staircase either, for the same reason. The one exception is a draw pile
+with nothing in it and a discard pile with nothing to shuffle back: nothing can be taken, so
+the hand really is empty and the round is won after all.
 
 ### "Last card"
 
@@ -130,30 +141,32 @@ other players are the ones who enforce it.
    rejected with `nothingToCatch`. **Every seat is told who called it**, in a banner as well
    as in the log: from three players up, "somebody drew four" does not say whose call it was.
 6. **The first instant belongs to the player.** From the moment a hand comes down to one
-   card, nobody may call that player out for **100 ms**. It exists because the two halves of
+   card, nobody may call that player out for **200 ms**. It exists because the two halves of
    the moment are not simultaneous on a screen the way they are at a table: the play has to
    reach the host, the new hand has to come back, and only then does a declare button appear
    where nothing was — while every opponent's catch button is already on screen, already
    under a thumb. 30 ms sat here first, which was under a round trip and handed the
-   difference to whoever happened to be watching; 300 ms sat here next, which covered more of
-   the reach than a window settling an ordering has any business covering. A round trip is
-   the measure, and the reach itself is answered by rule 8 below. It is the host's clock that
-   measures it, and a catch made inside the window is refused with `nothingToCatch` — there
-   is nothing to catch _yet_. The button does not appear on the other players' screens until
-   it has passed. Coming back down to one card later buys a fresh window, exactly as it needs
-   a fresh declaration.
+   difference to whoever happened to be watching; then 300, then 100 — the last of those on
+   the understanding that the colour dialog carried its own shout, so the window only had to
+   cover the wire. It carries none now (rule 8), so the window covers the whole gap again:
+   the round trip _and_ the moment it takes to see a button appear and reach it. It is the
+   host's clock that measures it, and a catch made inside the window is refused with
+   `nothingToCatch` — there is nothing to catch _yet_. The button does not appear on the
+   other players' screens until it has passed. Coming back down to one card later buys a
+   fresh window, exactly as it needs a fresh declaration.
 7. **It is public.** Who has declared is part of the table state everyone sees, the same
    way a shout at a real table is heard by everyone. That is what makes catching possible at
    all, and it is why every seat on one card shows either "declared" or a button to call it.
-8. **You may shout with the card.** A card that asks for a colour — Change Colour — puts a
-   dialog between the play and the declaration, so the head start above is spent choosing a
-   colour rather than reaching for the button. When such a card would leave you on one, the
-   colour dialog offers the shout beside the four colours: arm it, pick a colour, and the
-   play and the declaration are one move, applied together, with no instant in between for
-   anyone to catch. It is **off by default** — the rule being enforced is remembering, and a
-   box that remembers for you is a different game — and the host honours it only when the
-   play really does leave exactly one card in hand. A play that empties the hand wins instead,
-   and a +3 Breaker spent on nothing draws its three cards first, so neither declares.
+8. **Nothing opens before the colour is chosen.** A card that asks for a colour — Change
+   Colour — puts a dialog between picking the card up and playing it. While that dialog is
+   open **nothing has happened**: the card is still in your hand, the table has not moved,
+   and neither the declaration nor the catch it may expose you to exists yet. Choosing a
+   colour is what plays the card, and both windows open together at that moment — your
+   declare button and everybody else's catch, separated only by the head start in rule 6.
+   The dialog used to offer the shout beside the four colours, armed ahead of the colour so
+   that play and declaration travelled as one move. It no longer does: that opened the
+   declaration before the card had been played at all, which is earlier than the rest of the
+   table can see anything, and the head start is the right answer to the reach instead.
 
 ### +2 runs
 
@@ -308,9 +321,12 @@ says afterwards.
 - The new cards come off the draw pile, which recycles the discard pile as usual, so a
   staircase is roughly thirty-six cards a player rather than eight.
 - Nothing else changes. The step happens in the middle of the turn that caused it, and the
-  rest of that turn plays out exactly as it would have: a Plus still gives you another
-  card to play, a Stop still skips the next seat, and a Taki sequence you had open is
-  still open — you carry on with the hand you have just been dealt.
+  rest of that turn plays out exactly as it would have: a King still gives you the free turn
+  to play the new hand with, a Stop still skips the next seat, and a Taki sequence you had
+  open is still open — you carry on with the hand you have just been dealt.
+- A **Plus** is not a step, because it never empties a hand in the first place: it takes its
+  card from the pile and the turn moves on, leaving you on that one card with the staircase
+  exactly where it was.
 - One consequence worth stating: the step down to the final hand of one puts you on a
   single card, so **"last card" applies to it like any other single card** — declare it or
   be caught. A declaration made for the card you have just played does _not_ carry over;
@@ -368,12 +384,13 @@ Each of these is a genuine fork. We picked one, implemented it, and tested it.
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | May a card drawn this turn be played immediately? | **No.** Drawing ends the turn.                                                                                                 | Simplest to explain and to see on screen; no "you could have played that" ambiguity.                                                                                                  |
 | Must the card owed after a Plus be played?        | **No.** It may be paid from the draw pile, whatever the hand holds.                                                            | It was the one place in the game where a lit draw pile refused a tap, to enforce something no table enforces.                                                                         |
-| How long is a last card safe from being called?   | **30 ms**, measured on the host's clock from when the hand reached one card.                                                   | Only enough to settle the ordering between the card landing and the button appearing; anything longer protects silence itself.                                                        |
+| How long is a last card safe from being called?   | **200 ms**, measured on the host's clock from when the hand reached one card.                                                  | The round trip plus the moment it takes to see a declare button appear and reach it; anything longer protects silence itself.                                                         |
 | Does Super Taki change the colour?                | **No.** It takes the leading colour.                                                                                           | The reading that came in with the King, and the one the current edition prints.                                                                                                       |
 | Does the +3 change the colour?                    | **No.**                                                                                                                        | Same principle: Change Colour is the only card that repaints the table.                                                                                                               |
 | Who may answer a +3, and when?                    | **Any holder of a breaker, out of turn**, in a window that closes on the first answer.                                         | This is the card's whole point; restricting it to the next player would make it an ordinary defensive card.                                                                           |
 | Change Direction with two players                 | **Turn passes to the opponent.**                                                                                               | Follows directly from the modular next-player calculation instead of adding a special case.                                                                                           |
-| Can you win on a Plus, +2, +3 or Taki card?       | **Yes.** Any outstanding obligation is void.                                                                                   | An empty hand ends the round; requiring a further card from an empty hand is incoherent.                                                                                              |
+| Can you win on a +2, +3 or Taki card?             | **Yes.** Any outstanding obligation is void.                                                                                   | An empty hand ends the round; requiring a further card from an empty hand is incoherent.                                                                                              |
+| Can you win on a Plus?                            | **No.** It takes its card from the pile, and the turn moves on.                                                                | A Plus is an obligation to act, and it is the one obligation the player themselves still owes — voiding it would let the card that says "play again" end the round.                   |
 | Colourless cards inside a Taki sequence           | **Not allowed.**                                                                                                               | A sequence is defined by a colour, and a colourless card has none.                                                                                                                    |
 | Which effects apply when a sequence closes?       | **Only the last card's.**                                                                                                      | Otherwise a long sequence could chain several Stops, which no edition intends.                                                                                                        |
 | Does a +2 run stack?                              | **Yes, by two per card, with no cap.**                                                                                         | This is the printed rule. There is no release valve: a run is answered with a +2 or paid for.                                                                                         |
@@ -507,14 +524,16 @@ opened it in. One turn is one sequence, and one colour.
 **משיכה מסיימת את התור.** קלף שנמשך עכשיו לא נכנס לשולחן באותו תור, גם אם הוא חוקי.
 
 **הנחת הקלף האחרון מנצחת בסבב**, עם הכרזה או בלעדיה. מה שקלף אחרון בלי הכרזה מסכן הוא
-להיתפס לפני שמספיקים להניח אותו — ראו "אחרון בידי" למטה.
+להיתפס לפני שמספיקים להניח אותו — ראו "אחרון בידי" למטה. הקלף היחיד שזה לא נכון לגביו הוא
+**פלוס**: הוא חייב עוד קלף, ויד שלא נשאר בה כלום לא יכולה לשלם אותו — ולכן הפלוס לוקח את
+הקלף שלו מהקופה, והסבב ממשיך.
 
 ### קלפים מיוחדים
 
 | קלף              | השפעה                                                                                                                                                                       |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **עצור**         | השחקן הבא מפסיד את תורו. בשני שחקנים התור חוזר מיד אליך.                                                                                                                    |
-| **פלוס**         | חייבים עוד קלף אחד: אפשר להניח אותו, ואפשר לקחת קלף מהקופה במקום. פלוס נוסף מחדש את החובה.                                                                                  |
+| **פלוס**         | חייבים עוד קלף אחד: אפשר להניח אותו, ואפשר לקחת קלף מהקופה במקום. פלוס נוסף מחדש את החובה. הוא אף פעם לא מרוקן את היד — ראו למטה.                                           |
 | **קח 2**         | השחקן הבא חייב שני קלפים — אלא אם יניח קח 2 משלו, שמעלה את הקנס בשניים ומעביר אותו הלאה.                                                                                    |
 | **שינוי כיוון**  | סדר המשחק מתהפך. בשני שחקנים התור עובר בכל מקרה ליריב.                                                                                                                      |
 | **שינוי צבע**    | אפשר להניח על כל קלף. בוחרים את הצבע הבא והתור עובר.                                                                                                                        |
@@ -529,6 +548,13 @@ opened it in. One turn is one sequence, and one colour.
 הרגילים, ולא חייב להיות באותו צבע. אותו דבר נכון לתור החופשי שהמלך נותן, שהוא אותו דגל:
 אפשר לוותר עליו במשיכה. כלומר חבילת המשיכה פתוחה בכל תור שלכם חוץ ממצב אחד — רצף טאקי
 פתוח.
+
+**פלוס לא יכול להיות הקלף האחרון שלכם.** הנחה שלו כשהיא עומדת לרוקן את היד לא מנצחת בסבב:
+לוקחים מהקופה את הקלף שהפלוס חייב, ומכיוון שתשלום פלוס מהקופה מסיים תור כמו תמיד — התור
+עובר, ואתם נשארים עם הקלף היחיד שבדיוק משכתם. ההכרזה שאולי הכרזתם ירדה עם הפלוס, ולכן הקלף
+החדש הוא קלף אחרון בלי הכרזה ככל קלף אחרון אחר: מכריזים עליו, או נתפסים. ב**מדרגות** הוא גם
+לא מדרגה, מאותה סיבה. היוצא מן הכלל היחיד הוא קופה ריקה שאין מתחתיה ערמה לערבב בחזרה: אז
+באמת אין מה לקחת, היד באמת ריקה, והסבב נגמר בניצחון אחרי הכול.
 
 ### "אחרון בידי"
 
@@ -549,23 +575,25 @@ opened it in. One turn is one sequence, and one colour.
    בקוד `nothingToCatch`. **כל השולחן מקבל הודעה מי תפס**, לא רק ביומן: משלושה שחקנים ומעלה
    "מישהו לקח ארבעה" לא אומר של מי הייתה הקריאה.
 6. **הרגע הראשון שייך לשחקן.** מרגע שהיד יורדת לקלף אחד, אי אפשר לתפוס אותו במשך
-   **100 מילישניות**. החלון קיים כי שני חצאי הרגע אינם בו-זמניים על מסך כמו שהם בשולחן
+   **200 מילישניות**. החלון קיים כי שני חצאי הרגע אינם בו-זמניים על מסך כמו שהם בשולחן
    אמיתי: ההנחה צריכה להגיע למנחה, היד החדשה צריכה לחזור, ורק אז מופיע כפתור הכרזה במקום
    שהיה ריק — בזמן שכפתור התפיסה של כל יריב כבר על המסך וכבר מתחת לאצבע. קודם עמדו כאן
-   30 מילישניות, שהיו קצרות מהלוך-חזור אחד ומסרו את ההפרש למי שבמקרה הסתכל; אחר כך עמדו כאן
-   300, שכיסו מהדרך אל הכפתור יותר משחלון שמסדר סדר אמור לכסות. המידה היא הלוך-חזור, והדרך
-   אל הכפתור נענית בסעיף 8 למטה. השעון של המנחה הוא זה שמודד, ותפיסה בתוך החלון נדחית בקוד
+   30 מילישניות, שהיו קצרות מהלוך-חזור אחד ומסרו את ההפרש למי שבמקרה הסתכל; אחר כך 300,
+   ואחר כך 100 — האחרונות מתוך הנחה שחלון הצבעים נושא הכרזה משלו, ולכן די שהחלון יכסה את
+   הרשת. הוא כבר לא נושא הכרזה (סעיף 8), ולכן החלון חוזר לכסות את כל הפער: גם הלוך-חזור וגם
+   הרגע שלוקח לראות כפתור מופיע ולהגיע אליו. השעון של המנחה הוא זה שמודד, ותפיסה בתוך החלון נדחית בקוד
    `nothingToCatch` — עדיין אין את מי לתפוס. הכפתור לא מופיע אצל השאר עד שהחלון נסגר. חזרה
    לקלף בודד בהמשך קונה חלון חדש, בדיוק כמו שהיא דורשת הכרזה חדשה.
 7. **ההכרזה פומבית.** מי שהכריז מופיע במצב השולחן שכולם רואים, בדיוק כמו הכרזה בקול בשולחן
    אמיתי. זה מה שמאפשר לתפוס בכלל, ולכן כל מושב עם קלף בודד מציג או "הכריז/ה" או כפתור לתפוס.
-8. **אפשר להכריז יחד עם הקלף.** קלף שדורש בחירת צבע — שינוי צבע — מכניס חלון בחירה בין ההנחה
-   לבין ההכרזה, כך שהחלון שבסעיף 6 נשרף על בחירת צבע במקום על הדרך לכפתור. כשקלף כזה עומד
-   להשאיר אתכם עם קלף אחד, חלון הצבעים מציע גם את ההכרזה לצד ארבעת הצבעים: מדליקים אותה,
-   בוחרים צבע, וההנחה וההכרזה הן מהלך אחד שמוחל יחד — בלי רגע ביניים שבו אפשר לתפוס.
-   ההכרזה **כבויה כברירת מחדל**, כי הכלל שנאכף כאן הוא לזכור, ותיבה שזוכרת במקומכם היא כבר
-   משחק אחר. המנחה מכבד אותה רק כשההנחה באמת משאירה קלף אחד ביד: הנחה שמרוקנת את היד מנצחת
-   ממילא, ושבירת פלוס 3 שהונחה לריק מושכת קודם שלושה קלפים — בשני המקרים אין מה להכריז.
+8. **שום דבר לא נפתח לפני בחירת הצבע.** קלף שדורש בחירת צבע — שינוי צבע — מכניס חלון בחירה
+   בין הרמת הקלף לבין הנחתו. כל עוד החלון פתוח **עוד לא קרה כלום**: הקלף עדיין ביד, השולחן
+   לא זז, ולא קיימות עדיין לא ההכרזה ולא התפיסה שהיא חושפת אליה. בחירת הצבע היא מה שמניח את
+   הקלף, ושתי האפשרויות נפתחות יחד באותו רגע — כפתור ההכרזה שלכם וכפתור התפיסה של כל השאר,
+   כשביניהם רק חלון החסד שבסעיף 6. פעם חלון הצבעים הציע גם את ההכרזה לצד ארבעת הצבעים,
+   כדי שההנחה וההכרזה ייסעו כמהלך אחד. הוא כבר לא מציע: זה פתח את ההכרזה עוד לפני שהקלף
+   הונח בכלל, כלומר מוקדם יותר משאר השולחן יכול לראות משהו — והתשובה הנכונה לדרך אל הכפתור
+   היא חלון החסד.
 
 ### רצפי קח 2
 
@@ -703,9 +731,11 @@ opened it in. One turn is one sequence, and one colour.
 - מי שמסיים גם את היד של **קלף אחד** — כלומר סיים שמונה ידיים — מנצח בסבב.
 - הקלפים החדשים נלקחים מחבילת המשיכה, שמתמלאת מערמת ההשלכה כרגיל, כך שמדרגות הן בערך
   שלושים ושישה קלפים לשחקן ולא שמונה.
-- שום דבר אחר לא משתנה. המדרגה קורית בתוך התור שגרם לה, ושאר התור נמשך בדיוק כרגיל: פלוס
-  עוד נותן קלף נוסף לשחק, עצור עוד מדלג על המושב הבא, ורצף טאקי שהיה פתוח נשאר פתוח —
-  ממשיכים אותו עם היד שהתקבלה עכשיו.
+- שום דבר אחר לא משתנה. המדרגה קורית בתוך התור שגרם לה, ושאר התור נמשך בדיוק כרגיל: מלך
+  עוד נותן את התור החופשי לשחק בו את היד החדשה, עצור עוד מדלג על המושב הבא, ורצף טאקי שהיה
+  פתוח נשאר פתוח — ממשיכים אותו עם היד שהתקבלה עכשיו.
+- **פלוס** אינו מדרגה, פשוט כי הוא אף פעם לא מרוקן יד: הוא לוקח את הקלף שלו מהקופה והתור
+  עובר, ואתם נשארים על אותו קלף בודד כשהמדרגה נשארה בדיוק איפה שהייתה.
 - נקודה שכדאי לומר במפורש: המדרגה אל היד האחרונה משאירה קלף בודד ביד, ולכן **הכלל של
   "אחרון בידי" חל עליו כמו על כל קלף בודד** — צריך להכריז, או שאפשר להיתפס. הכרזה שנעשתה
   על הקלף שהונח _אינה_ עוברת ליד החדשה; היד החדשה דורשת הכרזה משלה.
@@ -738,12 +768,13 @@ opened it in. One turn is one sequence, and one colour.
 | ------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | האם קלף שנמשך עכשיו אפשר להניח מיד?         | **לא.** משיכה מסיימת את התור.                                                    | הכי פשוט להסביר ולראות על המסך.                                                                                                               |
 | האם חייבים להניח את הקלף שחייבים אחרי פלוס? | **לא.** אפשר לשלם אותו מהקופה, לא משנה מה ביד.                                   | זה היה המקום היחיד במשחק שבו חבילת משיכה דלוקה סירבה ללחיצה.                                                                                  |
-| כמה זמן קלף אחרון מוגן מתפיסה?              | **30 מילישניות**, לפי שעון המנחה מרגע שהיד ירדה לקלף אחד.                        | רק כדי לסדר את הסדר בין נחיתת הקלף להופעת הכפתור; כל חלון ארוך יותר מגן על השתיקה עצמה.                                                       |
+| כמה זמן קלף אחרון מוגן מתפיסה?              | **200 מילישניות**, לפי שעון המנחה מרגע שהיד ירדה לקלף אחד.                       | הלוך-חזור ברשת ועוד הרגע שלוקח לראות כפתור הכרזה מופיע ולהגיע אליו; כל חלון ארוך יותר מגן על השתיקה עצמה.                                     |
 | האם סופר טאקי משנה צבע?                     | **לא.** הוא מקבל את הצבע המוביל.                                                 | הקריאה שנכנסה עם קלף המלך, וזו שבמהדורה הנוכחית.                                                                                              |
 | האם פלוס 3 משנה צבע?                        | **לא.**                                                                          | אותו עיקרון: רק שינוי צבע צובע מחדש את השולחן.                                                                                                |
 | מי יכול לענות לפלוס 3, ומתי?                | **כל מחזיק שבירה, שלא בתור**, עד לתשובה הראשונה.                                 | זה כל הרעיון של הקלף; הגבלה לשחקן הבא הייתה הופכת אותו לקלף רגיל.                                                                             |
 | שינוי כיוון בשני שחקנים                     | **התור עובר ליריב.**                                                             | נובע ישירות מחישוב השחקן הבא, בלי מקרה מיוחד.                                                                                                 |
-| ניצחון בקלף פלוס, קח 2, פלוס 3 או טאקי      | **מנצחים.** כל חובה שנותרה מתבטלת.                                               | יד ריקה מסיימת את הסבב; דרישה לקלף נוסף מיד ריקה חסרת משמעות.                                                                                 |
+| ניצחון בקלף קח 2, פלוס 3 או טאקי            | **מנצחים.** כל חובה שנותרה מתבטלת.                                               | יד ריקה מסיימת את הסבב; דרישה לקלף נוסף מיד ריקה חסרת משמעות.                                                                                 |
+| ניצחון בקלף פלוס                            | **לא מנצחים.** לוקחים את הקלף שלו מהקופה, והתור עובר.                            | פלוס הוא חובה לפעול, והיחידה שהשחקן עצמו עדיין חייב; ביטול שלה היה נותן לקלף שאומר "שחק שוב" לסיים את הסבב.                                   |
 | קלפים ללא צבע בתוך רצף                      | **אסור.**                                                                        | רצף מוגדר על ידי צבע, ולקלף ללא צבע אין.                                                                                                      |
 | טאקי בצבע אחר בתוך רצף פתוח                 | **מותר ישירות על טאקי, ומעביר את הרצף לצבע שלו; אסור אחרי שקלף רגיל נכנס לרצף.** | מה שקובע הוא הרצף ולא הקלף העליון — אחרת טאקי אדום ← אדום 3 ← טאקי אדום ← טאקי צהוב היה מחליף צבע, וזה בדיוק המקרה ששחקנים אומרים שאינו חוקי. |
 | סופר טאקי בתוך רצף פתוח                     | **מותר ישירות על טאקי, באותם תנאים, ומשאיר את הצבע כמו שהוא.**                   | טאקי צבעוני חוקי על סופר טאקי; התמונה ההפוכה חייבת להתקיים גם היא, אחרת "טאקי על טאקי" היה אומר דבר אחד בכיוון אחד ודבר אחר בכיוון השני.      |

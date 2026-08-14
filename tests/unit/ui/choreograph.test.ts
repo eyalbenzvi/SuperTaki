@@ -110,15 +110,20 @@ describe('what each event is worth', () => {
       note: 'a step of the staircase, felt at the seat that took it',
     },
     { event: { type: 'turnSkipped', playerId: THEM, drew: 0 }, count: 1, note: 'somebody was away' },
+    {
+      event: { type: 'plusRefilled', playerId: THEM },
+      count: 0,
+      note: 'the draw it explains is already flying',
+    },
     { event: { type: 'playerLeft', playerId: THEM }, count: 0, note: 'bookkeeping' },
     { event: { type: 'roundAbandoned' }, count: 0, note: 'the screen changes instead' },
   ];
 
-  it('covers all 24 members of the event union', () => {
+  it('covers all 25 members of the event union', () => {
     const covered = new Set(table.map((row) => row.event.type));
     // Kept honest by a compile-time exhaustive map, below.
-    expect(covered.size).toBe(24);
-    expect(table).toHaveLength(24);
+    expect(covered.size).toBe(25);
+    expect(table).toHaveLength(25);
   });
 
   for (const row of table) {
@@ -144,6 +149,7 @@ describe('what each event is worth', () => {
       lastCardDeclared: true,
       lastCardCaught: true,
       breakerSpent: true,
+      plusRefilled: true,
       directionChanged: true,
       extraTurn: true,
       turnChanged: true,
@@ -155,7 +161,7 @@ describe('what each event is worth', () => {
       playerLeft: true,
       roundAbandoned: true,
     };
-    expect(Object.keys(decided)).toHaveLength(24);
+    expect(Object.keys(decided)).toHaveLength(25);
   });
 });
 

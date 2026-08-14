@@ -145,6 +145,12 @@ remaining seat, so a table can always be started.
 the other colourless ones; the engine rejects both mistakes (`colorRequired`,
 `colorNotAllowed`).
 
+`playCard` also accepts an optional `declareLastCard: boolean`, honoured only when the play
+really does leave exactly one card in hand. Nothing in the current client sends it: the
+declaration opens after the card has landed, alongside the catch it exposes its owner to,
+never before — see rule 8 in `docs/rules.md`. The field stays on the wire because a client
+from an older build still sends it, and dropping it would silently swallow their shout.
+
 `passBreak` declines to answer an open +3. It, and a `playCard` naming a +3 Breaker, are
 accepted **from a player whose turn it is not** — and only while a +3 is open. Everything
 else from another seat is `notYourTurn`, and everything at all while a +3 is open is

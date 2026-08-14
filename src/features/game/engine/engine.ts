@@ -539,6 +539,40 @@ function applyPlayCard(
   }
 
   /*
+   * A Plus is an obligation to play again, and an empty hand has nothing to meet
+   * it with. So a Plus never empties a hand: its owner takes from the pile the
+   * card the obligation is worth — a Plus may always be paid that way — and the
+   * turn moves on with them holding the single card they have just drawn. A round
+   * therefore cannot be won on a Plus, and in "stairs" a Plus is not a step of the
+   * staircase either. Both would be the same incoherence: an obligation to act
+   * met by having nothing left to act with.
+   *
+   * The one case where the hand stays empty is a pile with nothing in it, discard
+   * included. Nothing can be taken, so nothing is, and the win check below takes
+   * the moment instead — a round that cannot go on has to end somewhere, and the
+   * player holding no cards is where.
+   */
+  let refilledOnPlus = false;
+  if (card.kind === 'plus' && (draft.hands[playerId] ?? []).length === 0) {
+    const refillEvents: GameEvent[] = [];
+    if (drawCards(draft, playerId, 1, refillEvents) === 0) {
+      // Nothing anywhere to take. The pile says so — the line is the only
+      // explanation the table gets for a round that ended on a Plus after all.
+      events.push(...refillEvents);
+    } else {
+      refilledOnPlus = true;
+      /*
+       * The declaration went with the card that has just gone down, and that card
+       * was their last. What replaces it is a card nobody has claimed, so the
+       * shout is owed again — `syncDeclarations` would otherwise keep the old one
+       * alive for it, the hand being a single card either way.
+       */
+      draft.declaredLastCard = draft.declaredLastCard.filter((candidate) => candidate !== playerId);
+      events.push({ type: 'plusRefilled', playerId }, ...refillEvents);
+    }
+  }
+
+  /*
    * The hand is empty. In a classic round that is the round; in "stairs" it is one
    * step of it, and only the eighth step wins.
    *
@@ -596,13 +630,15 @@ function applyPlayCard(
    * Nothing below this point adds to or removes from *this* player's hand, so the
    * count cannot change again inside this command.
    *
-   * A hand that arrived from a step of the staircase is not covered by it: the
-   * shout was armed about the card going down, not about eight new ones, and a
-   * player looking at a fresh hand of one has a fresh declaration to make.
+   * A hand that arrived from a step of the staircase is not covered by it, and
+   * neither is the card a Plus took from the pile: the shout was armed about the
+   * card going down, not about whatever replaced it, and a player looking at a
+   * card they have only just drawn has a fresh declaration to make.
    */
   if (
     declareLastCard &&
     !redealt &&
+    !refilledOnPlus &&
     (draft.hands[playerId] ?? []).length === 1 &&
     !draft.declaredLastCard.includes(playerId)
   ) {
@@ -648,6 +684,14 @@ function applyPlayCard(
       color: resultingColor,
       superTaki: card.kind === 'superTaki',
     });
+  } else if (refilledOnPlus) {
+    /*
+     * The card this Plus owed came from the pile, and a Plus paid from the pile
+     * ends the turn — which is what the obligation says on every other turn too.
+     * Calling `resolveCardEffect` here would hand its owner a free turn for
+     * having run out, and the drawn card back as a win.
+     */
+    advanceTurn(draft, events);
   } else {
     resolveCardEffect(draft, card, events);
   }

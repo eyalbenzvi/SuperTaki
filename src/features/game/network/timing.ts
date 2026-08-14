@@ -151,15 +151,21 @@ export const CAUGHT_NOTICE_MS = 8_000;
  * under a finger. A window narrower than that difference hands every last card to
  * whoever was watching rather than to whoever was playing.
  *
- * A hundred milliseconds: enough for a round trip on a table sitting on the same
- * network, and short enough that nobody watching the seat drop to one card can feel
- * it. Three hundred sat here briefly and covered more of the reach, but the reach is
- * not what this window is for — the colour dialog now carries the shout for the one
- * card that made the reach impossible, and past a round trip the window stops
- * settling an ordering and starts buying silence time. A genuinely silent player
- * stays exposed for as long as they stay silent either way.
+ * A hundred milliseconds sat here next: enough for a round trip on a table sitting
+ * on the same network, on the understanding that the reach itself was somebody
+ * else's problem — the colour dialog carried the shout for the one card that made
+ * the reach impossible, so the window only had to cover the wire.
+ *
+ * It carries no shout now. The declaration opens where every other card's does,
+ * after the colour has been chosen and the card has landed, so the window is back
+ * to covering the whole gap: the round trip *and* the moment it takes to see a
+ * button appear and reach it. Two hundred milliseconds — double what covered the
+ * wire alone — is what that costs, and it is still short enough that nobody
+ * watching a seat drop to one card can feel it. A genuinely silent player stays
+ * exposed for as long as they stay silent either way, which is the rule this
+ * window exists to leave alone.
  */
-export const LAST_CARD_GRACE_MS = 100;
+export const LAST_CARD_GRACE_MS = 200;
 
 /**
  * How long a robot appears to think before it plays.

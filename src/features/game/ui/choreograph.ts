@@ -355,11 +355,13 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
      * `colorChosen` repaints the table, and the colour rail
      * around the discard pile already cross-fades — animating them again would be
      * two answers to one question. `takiOpened` and `takiClosed` are bracketed by
-     * the `cardPlayed` events that caused them. `gameStarted` deals instantly on
-     * purpose: a dealing animation looks magnificent once and costs two seconds
-     * before every round of a game people play five rounds of. The rest are
-     * bookkeeping with nothing to show.
+     * the `cardPlayed` events that caused them. `plusRefilled` always lands in the
+     * same beat as the `cardDrawn` it explains, and that draw already flies a card
+     * to the seat. `gameStarted` deals instantly on purpose: a dealing animation
+     * looks magnificent once and costs two seconds before every round of a game
+     * people play five rounds of. The rest are bookkeeping with nothing to show.
      */
+    case 'plusRefilled':
     case 'gameStarted':
     case 'takiOpened':
     case 'takiClosed':
