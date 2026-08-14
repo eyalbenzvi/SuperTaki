@@ -359,7 +359,6 @@
   }
 }
 
-.game__hand,
 .game__declare,
 .turn-row,
 .ticker,
@@ -369,21 +368,40 @@
 }
 
 /*
- * The hand never gives up height. It is the whole interaction, and a card half
- * below the fold is the bug this layout exists to prevent — so when the rows above
- * ask for more than the screen has, they are the ones that give way, in this
- * order: the table scales its cards down, and then the prompt scrolls.
+ * The hand takes the height that is left, up to 52svh — and it is the last row to
+ * give any of it back.
+ *
+ * It used to refuse to shrink at all, which sounds like the right priority and is
+ * not: a hand of forty cards asked for 52svh, the table was already at its floor,
+ * and the only row left with any give was the prompt — which has no floor of its
+ * own, so it collapsed to nothing. A player holding a big hand mid-Taki was left
+ * with no Close Taki button anywhere on the screen and no way to end their turn.
+ *
+ * So the order in which rows give way is now: the table scales its cards down to
+ * its floor, and then the hand — which past 52svh is a scrolling region anyway, so
+ * what it gives up is scrollback rather than a card that was on screen. The prompt
+ * gives up nothing; it is the one row that says how to get out of the current
+ * state, and a control that is not on the screen does not exist.
  */
 .game__hand {
+  flex: 0 1 auto;
+  min-width: 0;
   max-block-size: 52svh;
+  /* Never squeezed below a card and the labels above it, whatever is above. */
+  min-block-size: 6rem;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .game__action {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
-  min-height: 0;
+  /*
+   * A ceiling rather than a licence to shrink: the prompt is one callout, so this
+   * is only reached by a wrapped notice on a very short screen — and there it
+   * scrolls with its buttons still in reach instead of taking the hand's room.
+   */
+  max-block-size: 45svh;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -940,6 +958,9 @@
   .game__hand {
     grid-area: hand;
     max-block-size: none;
+    /* Its own row here, sized by the cards in it: the portrait floor would be
+       taller than a landscape hand needs and would cost the table the difference. */
+    min-block-size: 0;
   }
 
   /* The wordmark is the tallest thing in the bar, and the least needed mid-game. */
