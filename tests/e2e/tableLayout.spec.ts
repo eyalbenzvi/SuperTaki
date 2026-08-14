@@ -4,11 +4,13 @@ import { awaitSettled, canDrawFrom, createRoom, joinRoom, onTurn, openApp } from
 /**
  * The table has to fit the screen it is on.
  *
- * Two reports drove this file, both of them "cut off": the pile panel sliced in
- * half by the bottom of its own region, and — in landscape, and with a big hand
- * upright — cards that were simply not on the screen. Neither is visible to a test
- * that only asks whether an element exists, so these measure geometry: every card
- * inside the viewport, and the panel inside the region that holds it.
+ * Three reports drove this file, all of them "cut off": the pile panel sliced in
+ * half by the bottom of its own region; in landscape, and with a big hand upright,
+ * cards that were simply not on the screen; and — under a hand of forty — the
+ * prompt squeezed to nothing, taking the Close Taki button with it. None of the
+ * three is visible to a test that only asks whether an element exists, so these
+ * measure geometry: every card inside the viewport, the panel inside the region
+ * that holds it, and the whole prompt inside its own row.
  */
 
 /**
@@ -31,6 +33,7 @@ interface Report {
   readonly panelOverflow: number;
   readonly handCards: number;
   readonly handRows: number;
+  readonly promptHidden: number;
 }
 
 async function measure(page: Page): Promise<Report> {
@@ -60,6 +63,23 @@ async function measure(page: Page): Promise<Report> {
     );
     const region = rect('.game__table');
     const panel = rect('.piles');
+    /*
+     * How much of the prompt is not on the screen.
+     *
+     * Its region scrolls as a last resort, so a clipped prompt is measured from the
+     * region rather than from the callout: the callout keeps its full height and is
+     * simply cut off by the region, so its own rectangle reports nothing wrong even
+     * when none of it is visible. Anything below the fold of the page counts too —
+     * the region can be pushed off the bottom instead of squeezed.
+     */
+    const prompt = document.querySelector<HTMLElement>('.game__action');
+    const promptBox = rect('.game__action');
+    const promptHidden = prompt
+      ? Math.round(
+          Math.max(0, prompt.scrollHeight - prompt.clientHeight) +
+            Math.max(0, (promptBox?.bottom ?? 0) - window.innerHeight),
+        )
+      : 0;
     return {
       cardsOutsideViewport: cards.filter(
         (card) =>
@@ -69,6 +89,7 @@ async function measure(page: Page): Promise<Report> {
           card.right > window.innerWidth + 0.5,
       ).length,
       panelOverflow: region && panel ? Math.round(panel.height - region.height) : 0,
+      promptHidden,
       handCards: cards.length,
       // Rounded into 6 px buckets: a fanned row is not pixel-aligned.
       handRows: new Set(slots.map((slot) => Math.round(slot.top / 6))).size,
@@ -138,6 +159,7 @@ test.describe('the table fits the screen', () => {
     expect(report.handCards).toBe(held);
     expect(report.cardsOutsideViewport, 'big hand, upright').toBe(0);
     expect(report.panelOverflow, 'pile panel under a big hand').toBeLessThanOrEqual(0);
+    expect(report.promptHidden, 'prompt under a big hand').toBe(0);
     // Wrapped rather than scrolled sideways: that is what puts them all on screen.
     expect(report.handRows).toBeGreaterThan(1);
 
@@ -177,6 +199,7 @@ test.describe('the table fits the screen', () => {
       seen.add(report.handCards);
       expect(report.cardsOutsideViewport, `hand of ${report.handCards}`).toBe(0);
       expect(report.panelOverflow, `pile panel under a hand of ${report.handCards}`).toBeLessThanOrEqual(0);
+      expect(report.promptHidden, `prompt under a hand of ${report.handCards}`).toBe(0);
       if (!(await playOrDraw(host)) && !(await playOrDraw(guest))) {
         break;
       }
@@ -192,6 +215,50 @@ test.describe('the table fits the screen', () => {
 
     // A single hand size would pass the loop above without testing anything.
     expect(seen.size, `hand sizes seen: ${[...seen].join(', ')}`).toBeGreaterThan(3);
+  });
+
+  /*
+   * The prompt is the one row that may never be squeezed out.
+   *
+   * Reported from a real game: a player holding a fat hand played a Taki, and the
+   * Close Taki button was nowhere on the screen — so there was no way to end the
+   * turn at all. The hand had asked for its full 52svh, the table was already at
+   * its floor, and the prompt was the only row left with any give and no floor of
+   * its own, so it was squeezed to nothing. Nothing about that is specific to Taki:
+   * every prompt on this table shares the row, and each of them is the only way out
+   * of the state it describes.
+   *
+   * Driven by shortening the screen rather than by drawing thirty cards: the squeeze
+   * is a sum of heights, and this way the same arithmetic is reached in seconds
+   * instead of sixty round trips to the room. The last tier is a phone in split
+   * view, and it is where the prompt used to disappear completely.
+   */
+  test('never squeezes the prompt off the screen, however little height is left', async ({ context }) => {
+    const host = await context.newPage();
+    const guest = await context.newPage();
+
+    await openApp(host, '/');
+    const roomCode = await createRoom(host, 'Dana', 2);
+    await openApp(guest, '/');
+    await joinRoom(guest, 'Eli', roomCode);
+    await expect(host.getByText('2 of 2 players')).toBeVisible();
+    await host.bringToFront();
+    await host.getByRole('button', { name: 'Start game' }).click();
+    await expect(host.locator('.hand .card')).toHaveCount(8);
+
+    await resize(host, { width: 390, height: 664 });
+    const held = await growHand(host, guest, 14);
+    expect(held, 'the hand did not grow enough to fill the screen').toBeGreaterThanOrEqual(12);
+    await host.bringToFront();
+    await awaitSettled(host);
+
+    for (const height of [664, 560, 480, 430]) {
+      await resize(host, { width: 390, height });
+      const report = await measure(host);
+      expect(report.promptHidden, `prompt at 390x${height} under a hand of ${report.handCards}`).toBe(0);
+      // Whatever it had to give up, the hand still shows cards to give up from.
+      expect(await host.locator('.hand .card').first().isVisible(), `hand at 390x${height}`).toBe(true);
+    }
   });
 });
 
