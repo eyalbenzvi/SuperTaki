@@ -19,13 +19,10 @@ import { cards, eventTypes, expectOk, handOf, makeState, players } from '../help
  *
  * That "exactly one thing" is what most of this file is about. A step happens in the
  * middle of a turn that is still being resolved, so the interesting cases are all
- * about what the *rest* of the turn does afterwards: a King still buys a free turn to
- * play the new hand with, a Stop still skips the next seat, an open Taki sequence is
- * still open, and a declaration made about the card that has just gone down does not
- * follow its owner into the new hand.
- *
- * The one card that never empties a hand is a Plus, in this mode as in the other: it
- * takes its card from the pile instead, so it is neither a step nor a win.
+ * about what the *rest* of the turn does afterwards: a Plus still buys another card
+ * to play, a Stop still skips the next seat, an open Taki sequence is still open, and
+ * a declaration made about the card that has just gone down does not follow its owner
+ * into the new hand.
  */
 
 function totalCards(state: GameState): number {
@@ -133,14 +130,13 @@ describe('the staircase', () => {
   });
 
   it('leaves the turn where the played card leaves it', () => {
-    // A King emptied the hand: the free turn it bought is played with the new one.
-    const king = expectOk(
-      playFirst(aboutToStep({ hands: { 'p-alice': cards('king'), 'p-bob': cards('red:1') } }), 'p-alice'),
+    // A Plus emptied the hand: the extra turn it bought is played with the new one.
+    const plus = expectOk(
+      playFirst(aboutToStep({ hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') } }), 'p-alice'),
     ).state;
-    expect(king.pendingPlus).toBe(true);
-    expect(king.freePlay).toBe(true);
-    expect(king.currentPlayerIndex).toBe(0);
-    expect(handOf(king, 'p-alice')).toHaveLength(7);
+    expect(plus.pendingPlus).toBe(true);
+    expect(plus.currentPlayerIndex).toBe(0);
+    expect(handOf(plus, 'p-alice')).toHaveLength(7);
 
     // A Stop still skips the seat it lands on, which at two players is the turn
     // coming straight back.
@@ -151,15 +147,43 @@ describe('the staircase', () => {
     expect(stop.state.currentPlayerIndex).toBe(0);
   });
 
-  it('is not stepped by a Plus, which takes its card from the pile instead', () => {
-    const { state: next, events } = expectOk(
-      playFirst(aboutToStep({ hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') } }), 'p-alice'),
+  /*
+   * The rule that a round cannot be won on a Plus reaches exactly one hand of the
+   * staircase: the eighth. Every earlier one is a step, and a step is not a win —
+   * there is a whole new hand to play the Plus's extra card from, so nothing about
+   * it is incoherent and it empties the hand like any other card.
+   */
+  it('is stepped by a Plus like any other card, but is not finished by one', () => {
+    const stepped = expectOk(
+      playFirst(
+        aboutToStep({
+          stairs: { 'p-alice': 3 },
+          hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') },
+        }),
+        'p-alice',
+      ),
+    ).state;
+    expect(stepped.stairs['p-alice']).toBe(4);
+    expect(handOf(stepped, 'p-alice')).toHaveLength(4);
+    expect(stepped.pendingPlus).toBe(true);
+
+    // The eighth hand is the round, so the Plus takes its card from the pile
+    // instead and leaves her one step short, holding it.
+    const { state: last, events } = expectOk(
+      playFirst(
+        aboutToStep({
+          stairs: { 'p-alice': 7 },
+          hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') },
+        }),
+        'p-alice',
+      ),
     );
-    // No step, no new hand of seven: one card off the pile, and the turn moves on.
-    expect(next.stairs['p-alice']).toBe(0);
-    expect(handOf(next, 'p-alice')).toHaveLength(1);
-    expect(next.pendingPlus).toBe(false);
-    expect(next.currentPlayerIndex).toBe(1);
+    expect(last.phase).toBe('playing');
+    expect(last.winnerId).toBeNull();
+    expect(last.stairs['p-alice']).toBe(7);
+    expect(handOf(last, 'p-alice')).toHaveLength(1);
+    expect(last.pendingPlus).toBe(false);
+    expect(last.currentPlayerIndex).toBe(1);
     expect(eventTypes(events)).toEqual(['cardPlayed', 'plusRefilled', 'cardDrawn', 'turnChanged']);
   });
 

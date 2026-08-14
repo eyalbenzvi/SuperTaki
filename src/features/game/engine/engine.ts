@@ -450,6 +450,19 @@ function resolveCardEffect(draft: Draft, card: Card, events: GameEvent[]): void 
   }
 }
 
+/**
+ * Whether emptying this player's hand right now would end the round for them.
+ *
+ * Always, in a classic round. In "stairs" only on the eighth hand: every earlier
+ * one is a step, and a step ends nothing.
+ */
+function emptyHandEndsRound(draft: Draft, playerId: PlayerId): boolean {
+  if (draft.mode !== 'stairs') {
+    return true;
+  }
+  return (draft.stairs[playerId] ?? 0) + 1 >= STAIRS_STAGES;
+}
+
 function applyPlayCard(
   state: GameState,
   playerId: PlayerId,
@@ -539,13 +552,19 @@ function applyPlayCard(
   }
 
   /*
-   * A Plus is an obligation to play again, and an empty hand has nothing to meet
-   * it with. So a Plus never empties a hand: its owner takes from the pile the
-   * card the obligation is worth — a Plus may always be paid that way — and the
-   * turn moves on with them holding the single card they have just drawn. A round
-   * therefore cannot be won on a Plus, and in "stairs" a Plus is not a step of the
-   * staircase either. Both would be the same incoherence: an obligation to act
-   * met by having nothing left to act with.
+   * A round cannot be won on a Plus.
+   *
+   * A Plus is an obligation to play again, and an empty hand has nothing to meet it
+   * with — so instead of ending the round it takes from the pile the card the
+   * obligation is worth, a Plus being payable that way on any turn, and the turn
+   * moves on with its owner holding the single card they have just drawn.
+   *
+   * Only a *winning* hand. In "stairs" an empty hand is usually a step rather than
+   * the end, and a step is nothing for a Plus to be incoherent about: the hand
+   * empties, the next one is dealt, and the Plus goes on to buy a turn to play it
+   * with, exactly as it would mid-hand. It is the eighth hand — the one that ends
+   * the round — that a Plus cannot finish, for the same reason as in a classic
+   * round.
    *
    * The one case where the hand stays empty is a pile with nothing in it, discard
    * included. Nothing can be taken, so nothing is, and the win check below takes
@@ -553,7 +572,11 @@ function applyPlayCard(
    * player holding no cards is where.
    */
   let refilledOnPlus = false;
-  if (card.kind === 'plus' && (draft.hands[playerId] ?? []).length === 0) {
+  if (
+    card.kind === 'plus' &&
+    (draft.hands[playerId] ?? []).length === 0 &&
+    emptyHandEndsRound(draft, playerId)
+  ) {
     const refillEvents: GameEvent[] = [];
     if (drawCards(draft, playerId, 1, refillEvents) === 0) {
       // Nothing anywhere to take. The pile says so — the line is the only
