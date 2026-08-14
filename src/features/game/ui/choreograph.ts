@@ -307,6 +307,14 @@ function motionsFor(event: GameEvent, seq: number, options: ChoreographOptions):
     case 'extraTurn':
       return [pulse(id(`extra:${event.playerId}`), seatAnchor(event.playerId, me), 'success')];
 
+    /*
+     * The seat that did not win after all. Neutral, and at the seat rather than on
+     * the pile: the card coming back off the pile is already flying there from the
+     * `cardDrawn` in the same beat, and what this marks is the hand it lands in.
+     */
+    case 'plusLastCardDrawn':
+      return [pulse(id(`plusLast:${event.playerId}`), seatAnchor(event.playerId, me), 'neutral')];
+
     case 'directionChanged':
       return [{ kind: 'sweep', key: id('direction'), direction: event.direction, durationMs: SWEEP_MS }];
 

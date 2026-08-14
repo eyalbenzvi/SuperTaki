@@ -64,6 +64,10 @@ export function describeEvent(t: Translator, event: GameEvent, nameOf: (playerId
         name: nameOf(event.playerId),
         count: event.penalty,
       });
+    case 'plusLastCardDrawn':
+      // The rule, not the card: the draw itself gets its own line from `cardDrawn`
+      // in the same beat, and what needs saying here is why the round goes on.
+      return t('event.plusLastCardDrawn', { name: nameOf(event.playerId) });
     case 'directionChanged':
       return t(event.direction === 1 ? 'event.directionChangedCw' : 'event.directionChangedCcw');
     case 'extraTurn':

@@ -129,6 +129,42 @@ describe('the staircase', () => {
     expect(eventTypes(events)).not.toContain('stairsAdvanced');
   });
 
+  it('will not end the staircase on a plus, and takes a card instead of the eighth hand', () => {
+    /*
+     * The one place the Plus rule bites in this mode. Seven hands are finished and
+     * the eighth is a single Plus: emptying the hand here would win the round, so
+     * the Plus is what it always is — one more card owed, taken from the pile
+     * because there is nothing left to play. The staircase stays at seven.
+     */
+    const state = aboutToStep({
+      stairs: { 'p-alice': 7 },
+      hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') },
+    });
+    const { state: next, events } = expectOk(playFirst(state, 'p-alice'));
+
+    expect(next.phase).toBe('playing');
+    expect(next.winnerId).toBeNull();
+    expect(next.stairs['p-alice']).toBe(7);
+    expect(handOf(next, 'p-alice')).toHaveLength(1);
+    expect(eventTypes(events)).toEqual(['cardPlayed', 'plusLastCardDrawn', 'cardDrawn', 'turnChanged']);
+  });
+
+  it('takes a step on a plus while there are steps left, and plays the new hand', () => {
+    // Below the last step nothing changes: the step deals seven cards, and the
+    // Plus is paid out of them like any other obligation.
+    const state = aboutToStep({
+      stairs: { 'p-alice': 5 },
+      hands: { 'p-alice': cards('red:plus'), 'p-bob': cards('red:1') },
+    });
+    const { state: next, events } = expectOk(playFirst(state, 'p-alice'));
+
+    expect(next.stairs['p-alice']).toBe(6);
+    expect(handOf(next, 'p-alice')).toHaveLength(2);
+    expect(next.pendingPlus).toBe(true);
+    expect(next.currentPlayerIndex).toBe(0);
+    expect(eventTypes(events)).not.toContain('plusLastCardDrawn');
+  });
+
   it('leaves the turn where the played card leaves it', () => {
     // A Plus emptied the hand: the extra turn it bought is played with the new one.
     const plus = expectOk(

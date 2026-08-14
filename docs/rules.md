@@ -85,12 +85,16 @@ if it is legal. (Chosen for clarity; some variants allow it.)
 **Playing your last card wins the round**, declared or not. What an undeclared last card
 risks is being caught before you get to play it — see "Last card" below.
 
+**Except a Plus.** A Plus owes one more card, and a hand you have just emptied has none to
+give — so a Plus played as your last card does not win: you take one card from the draw
+pile and the turn passes. It is the one card in the deck that cannot end a round.
+
 ### Special cards
 
 | Card                 | Effect                                                                                                                                                                                                        |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Stop**             | The next player loses their turn. With two players the turn comes straight back to you.                                                                                                                       |
-| **Plus**             | You owe one more card: play it, or take one from the draw pile instead. A second Plus repeats the obligation.                                                                                                 |
+| **Plus**             | You owe one more card: play it, or take one from the draw pile instead. A second Plus repeats the obligation. Played as your last card it does not win — you take the card you owe.                           |
 | **+2**               | The next player owes two cards — unless they add a +2 of their own, which raises the run by two and passes it on. See below.                                                                                  |
 | **Change Direction** | The play order reverses. With two players the turn still passes to your opponent.                                                                                                                             |
 | **Change Colour**    | Playable on anything. You choose the next colour, and your turn ends.                                                                                                                                         |
@@ -243,7 +247,9 @@ works out whether it may answer by looking at its own hand, which it already kno
     matching);
   - last card **+2** → a run of two opens against the next player;
   - last card **Change Direction** → the order reverses, then the turn passes.
-- Emptying your hand during a sequence wins immediately.
+- Emptying your hand during a sequence wins immediately — unless the card that emptied it
+  was a **Plus**, which owes one more card. Then the sequence closes, you take a card from
+  the pile for the Plus, and the turn passes.
 
 ### Super Taki
 
@@ -269,7 +275,9 @@ Super Taki is a colourless Taki that takes the colour already in play:
 1. The card leaves your hand and goes on top of the discard pile.
 2. The current colour becomes the card's colour, your chosen colour for a Change Colour, or
    stays as it was for any other colourless card.
-3. **Win check:** hand empty → the round ends, you win, nothing else resolves.
+3. **Win check:** hand empty → the round ends, you win, nothing else resolves. The one
+   exception is a **Plus**: the hand still owes a card, so one is drawn from the pile, any
+   sequence of yours closes, and the turn passes instead of the round ending.
 4. If the card was a +3 Breaker → the open +3 settles and the turn moves on.
 5. If a sequence is open → the card only joins the sequence; no effect resolves yet.
 6. Otherwise, if the card is a Taki or Super Taki → a sequence opens; the turn stays with
@@ -304,13 +312,16 @@ says afterwards.
 - The round opens exactly like a classic one: **8 cards** each.
 - Empty your hand and you are immediately dealt a fresh one, **one card smaller**: 8, then
   7, 6, 5, 4, 3, 2, and finally 1.
-- Emptying the hand of **one** — the eighth hand you have finished — wins the round.
+- Emptying the hand of **one** — the eighth hand you have finished — wins the round. A Plus
+  cannot be the card that does it: as in a classic round it owes one more card, so you take
+  one from the pile and stay on the last step.
 - The new cards come off the draw pile, which recycles the discard pile as usual, so a
   staircase is roughly thirty-six cards a player rather than eight.
 - Nothing else changes. The step happens in the middle of the turn that caused it, and the
   rest of that turn plays out exactly as it would have: a Plus still gives you another
   card to play, a Stop still skips the next seat, and a Taki sequence you had open is
-  still open — you carry on with the hand you have just been dealt.
+  still open — you carry on with the hand you have just been dealt. A Plus is only refused
+  on the step that would have **won**: everywhere else the new hand is what pays for it.
 - One consequence worth stating: the step down to the final hand of one puts you on a
   single card, so **"last card" applies to it like any other single card** — declare it or
   be caught. A declaration made for the card you have just played does _not_ carry over;
@@ -321,7 +332,8 @@ says afterwards.
 
 ### End of the round
 
-- The round is won by emptying your hand — in **stairs**, by emptying the eighth of them.
+- The round is won by emptying your hand — in **stairs**, by emptying the eighth of them —
+  with any card but a Plus, which owes one more and is answered from the draw pile.
 - The final table lists everyone by remaining cards, fewest first; ties share a place. A
   stairs round adds a column for how far down the staircase each player got, and ranks by
   that first.
@@ -373,7 +385,8 @@ Each of these is a genuine fork. We picked one, implemented it, and tested it.
 | Does the +3 change the colour?                    | **No.**                                                                                                                        | Same principle: Change Colour is the only card that repaints the table.                                                                                                               |
 | Who may answer a +3, and when?                    | **Any holder of a breaker, out of turn**, in a window that closes on the first answer.                                         | This is the card's whole point; restricting it to the next player would make it an ordinary defensive card.                                                                           |
 | Change Direction with two players                 | **Turn passes to the opponent.**                                                                                               | Follows directly from the modular next-player calculation instead of adding a special case.                                                                                           |
-| Can you win on a Plus, +2, +3 or Taki card?       | **Yes.** Any outstanding obligation is void.                                                                                   | An empty hand ends the round; requiring a further card from an empty hand is incoherent.                                                                                              |
+| Can you win on a +2, +3 or Taki card?             | **Yes.** Any outstanding obligation is void.                                                                                   | An empty hand ends the round, and those obligations fall on somebody else or on nobody.                                                                                               |
+| Can you win on a Plus?                            | **No.** You take the card the Plus owes and the turn passes.                                                                   | The obligation is on the player putting the card down, and it is a card they still owe the table — so the hand is not finished, and a round cannot end on a debt.                     |
 | Colourless cards inside a Taki sequence           | **Not allowed.**                                                                                                               | A sequence is defined by a colour, and a colourless card has none.                                                                                                                    |
 | Which effects apply when a sequence closes?       | **Only the last card's.**                                                                                                      | Otherwise a long sequence could chain several Stops, which no edition intends.                                                                                                        |
 | Does a +2 run stack?                              | **Yes, by two per card, with no cap.**                                                                                         | This is the printed rule. There is no release valve: a run is answered with a +2 or paid for.                                                                                         |
@@ -437,6 +450,13 @@ Ann plays Green Taki, then Green 3, then Green 7. She holds a Red Taki and would
 carry on in red. She cannot: inside a sequence, colour is the only rule, and the Red Taki is
 refused with `wrongTakiColor`. Her turn ends with the sequence she opened, in the colour she
 opened it in. One turn is one sequence, and one colour.
+
+**9 — A last card that is a Plus**
+
+Ann is down to one card, Red Plus, and has declared it. She plays it: her hand is empty, and
+the round does **not** end. The Plus owes one more card and she has none, so she takes one
+from the draw pile and the turn passes to Ben. She is back on a single card — a different
+one — so her declaration is gone and she must shout again, or Ben may call her out.
 
 ---
 
@@ -509,12 +529,16 @@ opened it in. One turn is one sequence, and one colour.
 **הנחת הקלף האחרון מנצחת בסבב**, עם הכרזה או בלעדיה. מה שקלף אחרון בלי הכרזה מסכן הוא
 להיתפס לפני שמספיקים להניח אותו — ראו "אחרון בידי" למטה.
 
+**חוץ מפלוס.** פלוס חייב עוד קלף אחד, ולמי שהרגע סיים את היד אין מה לתת — ולכן פלוס שמונח
+כקלף אחרון לא מנצח: לוקחים קלף אחד מהקופה והתור עובר. זה הקלף היחיד בחבילה שלא יכול לסיים
+סבב.
+
 ### קלפים מיוחדים
 
 | קלף              | השפעה                                                                                                                                                                       |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **עצור**         | השחקן הבא מפסיד את תורו. בשני שחקנים התור חוזר מיד אליך.                                                                                                                    |
-| **פלוס**         | חייבים עוד קלף אחד: אפשר להניח אותו, ואפשר לקחת קלף מהקופה במקום. פלוס נוסף מחדש את החובה.                                                                                  |
+| **פלוס**         | חייבים עוד קלף אחד: אפשר להניח אותו, ואפשר לקחת קלף מהקופה במקום. פלוס נוסף מחדש את החובה. כקלף אחרון הוא לא מנצח — לוקחים את הקלף שחייבים.                                 |
 | **קח 2**         | השחקן הבא חייב שני קלפים — אלא אם יניח קח 2 משלו, שמעלה את הקנס בשניים ומעביר אותו הלאה.                                                                                    |
 | **שינוי כיוון**  | סדר המשחק מתהפך. בשני שחקנים התור עובר בכל מקרה ליריב.                                                                                                                      |
 | **שינוי צבע**    | אפשר להניח על כל קלף. בוחרים את הצבע הבא והתור עובר.                                                                                                                        |
@@ -648,7 +672,8 @@ opened it in. One turn is one sequence, and one colour.
   - קלף אחרון **פלוס** → חייבים להניח עוד קלף, מחוץ לרצף ולפי ההתאמה הרגילה;
   - קלף אחרון **קח 2** → נפתח קנס של שניים מול השחקן הבא;
   - קלף אחרון **שינוי כיוון** → הכיוון מתהפך ואז התור עובר.
-- מי שנגמרו לו הקלפים בתוך רצף מנצח מיד.
+- מי שנגמרו לו הקלפים בתוך רצף מנצח מיד — אלא אם הקלף שסיים את היד היה **פלוס**, שחייב עוד
+  קלף. אז הרצף נסגר, לוקחים קלף מהקופה עבור הפלוס, והתור עובר.
 
 ### סופר טאקי
 
@@ -671,7 +696,9 @@ opened it in. One turn is one sequence, and one colour.
 1. הקלף יוצא מהיד ועולה על הערמה.
 2. הצבע הנוכחי הופך לצבע הקלף, לצבע שנבחר בשינוי צבע, או נשאר כפי שהיה בכל קלף אחר ללא
    צבע.
-3. **בדיקת ניצחון:** היד ריקה → הסבב נגמר בניצחון, ושום דבר אחר לא חל.
+3. **בדיקת ניצחון:** היד ריקה → הסבב נגמר בניצחון, ושום דבר אחר לא חל. היוצא מן הכלל היחיד
+   הוא **פלוס**: היד עדיין חייבת קלף, ולכן נמשך קלף מהקופה, רצף פתוח שלכם נסגר, והתור עובר
+   במקום שהסבב ייגמר.
 4. אם הקלף היה שבירת פלוס 3 → הפלוס 3 הפתוח מסתדר והתור ממשיך.
 5. אם רצף פתוח → הקלף רק מצטרף לרצף, ואף השפעה לא חלה עדיין.
 6. אחרת, אם הקלף טאקי או סופר טאקי → נפתח רצף והתור נשאר אצלך.
@@ -700,12 +727,15 @@ opened it in. One turn is one sequence, and one colour.
 
 - הסבב נפתח בדיוק כמו סבב רגיל: **8 קלפים** לכל שחקן.
 - מי שנגמרים לו הקלפים מקבל מיד יד חדשה, **קטנה באחד**: 8, אחר כך 7, 6, 5, 4, 3, 2, ולבסוף 1.
-- מי שמסיים גם את היד של **קלף אחד** — כלומר סיים שמונה ידיים — מנצח בסבב.
+- מי שמסיים גם את היד של **קלף אחד** — כלומר סיים שמונה ידיים — מנצח בסבב. פלוס לא יכול
+  להיות הקלף שעושה את זה: כמו בסבב רגיל הוא חייב עוד קלף, ולכן לוקחים קלף מהקופה ונשארים
+  במדרגה האחרונה.
 - הקלפים החדשים נלקחים מחבילת המשיכה, שמתמלאת מערמת ההשלכה כרגיל, כך שמדרגות הן בערך
   שלושים ושישה קלפים לשחקן ולא שמונה.
 - שום דבר אחר לא משתנה. המדרגה קורית בתוך התור שגרם לה, ושאר התור נמשך בדיוק כרגיל: פלוס
   עוד נותן קלף נוסף לשחק, עצור עוד מדלג על המושב הבא, ורצף טאקי שהיה פתוח נשאר פתוח —
-  ממשיכים אותו עם היד שהתקבלה עכשיו.
+  ממשיכים אותו עם היד שהתקבלה עכשיו. פלוס נדחה רק במדרגה שהייתה **מנצחת**; בכל השאר היד
+  החדשה היא שמשלמת עליו.
 - נקודה שכדאי לומר במפורש: המדרגה אל היד האחרונה משאירה קלף בודד ביד, ולכן **הכלל של
   "אחרון בידי" חל עליו כמו על כל קלף בודד** — צריך להכריז, או שאפשר להיתפס. הכרזה שנעשתה
   על הקלף שהונח _אינה_ עוברת ליד החדשה; היד החדשה דורשת הכרזה משלה.
@@ -714,7 +744,8 @@ opened it in. One turn is one sequence, and one colour.
 
 ### סוף הסבב
 
-- הסבב מנוצח על ידי סיום הקלפים ביד — ובמדרגות, על ידי סיום היד השמינית.
+- הסבב מנוצח על ידי סיום הקלפים ביד — ובמדרגות, על ידי סיום היד השמינית — בכל קלף חוץ
+  מפלוס, שחייב עוד קלף ונענה מהקופה.
 - הטבלה המסכמת מציגה את כולם לפי מספר הקלפים שנשארו, מהמעט לרב; תוצאות שוות חולקות מקום.
   בסבב מדרגות נוספת עמודה של ידיים שהושלמו, והדירוג נקבע לפיה קודם.
 - **ניקוד.** החדר שומר ניקוד מצטבר של **סבבים שנוצחו** — רק נצחונות, בלי נקודות על הקלפים
@@ -743,7 +774,8 @@ opened it in. One turn is one sequence, and one colour.
 | האם פלוס 3 משנה צבע?                        | **לא.**                                                                          | אותו עיקרון: רק שינוי צבע צובע מחדש את השולחן.                                                                                                |
 | מי יכול לענות לפלוס 3, ומתי?                | **כל מחזיק שבירה, שלא בתור**, עד לתשובה הראשונה.                                 | זה כל הרעיון של הקלף; הגבלה לשחקן הבא הייתה הופכת אותו לקלף רגיל.                                                                             |
 | שינוי כיוון בשני שחקנים                     | **התור עובר ליריב.**                                                             | נובע ישירות מחישוב השחקן הבא, בלי מקרה מיוחד.                                                                                                 |
-| ניצחון בקלף פלוס, קח 2, פלוס 3 או טאקי      | **מנצחים.** כל חובה שנותרה מתבטלת.                                               | יד ריקה מסיימת את הסבב; דרישה לקלף נוסף מיד ריקה חסרת משמעות.                                                                                 |
+| ניצחון בקלף קח 2, פלוס 3 או טאקי            | **מנצחים.** כל חובה שנותרה מתבטלת.                                               | יד ריקה מסיימת את הסבב, והחובות האלה נופלות על מישהו אחר או על אף אחד.                                                                        |
+| ניצחון בקלף פלוס                            | **לא.** לוקחים את הקלף שהפלוס חייב והתור עובר.                                   | החובה היא של מי שהניח את הקלף, וזה קלף שהוא עדיין חייב לשולחן — היד לא הסתיימה, וסבב לא נגמר על חוב.                                          |
 | קלפים ללא צבע בתוך רצף                      | **אסור.**                                                                        | רצף מוגדר על ידי צבע, ולקלף ללא צבע אין.                                                                                                      |
 | טאקי בצבע אחר בתוך רצף פתוח                 | **מותר ישירות על טאקי, ומעביר את הרצף לצבע שלו; אסור אחרי שקלף רגיל נכנס לרצף.** | מה שקובע הוא הרצף ולא הקלף העליון — אחרת טאקי אדום ← אדום 3 ← טאקי אדום ← טאקי צהוב היה מחליף צבע, וזה בדיוק המקרה ששחקנים אומרים שאינו חוקי. |
 | סופר טאקי בתוך רצף פתוח                     | **מותר ישירות על טאקי, באותם תנאים, ומשאיר את הצבע כמו שהוא.**                   | טאקי צבעוני חוקי על סופר טאקי; התמונה ההפוכה חייבת להתקיים גם היא, אחרת "טאקי על טאקי" היה אומר דבר אחד בכיוון אחד ודבר אחר בכיוון השני.      |
@@ -803,6 +835,12 @@ opened it in. One turn is one sequence, and one colour.
 אן מניחה טאקי ירוק, אחריו ירוק 3, אחריו ירוק 7. ביד שלה יש טאקי אדום והיא רוצה להמשיך
 באדום. אי אפשר: בתוך רצף הצבע הוא הכלל היחיד, והטאקי האדום נדחה בקוד `wrongTakiColor`.
 התור שלה נגמר עם הרצף שפתחה, בצבע שבו פתחה אותו. תור אחד הוא רצף אחד, וצבע אחד.
+
+**9 — קלף אחרון שהוא פלוס**
+
+לאן נשאר קלף אחד, פלוס אדום, והיא הכריזה עליו. היא מניחה אותו: היד ריקה, והסבב **לא** נגמר.
+הפלוס חייב עוד קלף ואין לה, ולכן היא לוקחת קלף מהקופה והתור עובר לבן. היא שוב עם קלף בודד —
+אחר — ולכן ההכרזה שלה פגה והיא צריכה להכריז מחדש, אחרת בן יכול לתפוס אותה.
 
 ## שחקן שאינו נוכח
 

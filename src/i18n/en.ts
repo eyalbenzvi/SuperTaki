@@ -308,6 +308,8 @@ export const en = {
   'event.lastCardCaught.other': '{by} caught {name} without a declaration — {count} cards drawn.',
   'event.breakerSpent.one': '{name} played a +3 Breaker with no +3 to break — 1 card drawn.',
   'event.breakerSpent.other': '{name} played a +3 Breaker with no +3 to break — {count} cards drawn.',
+  'event.plusLastCardDrawn':
+    '{name} finished on a Plus, which owes one more card — so it is taken from the pile, not a win.',
   'event.directionChangedCw': 'The play order is now forwards.',
   'event.directionChangedCcw': 'The play order is now reversed.',
   'event.extraTurn': '{name} plays again.',

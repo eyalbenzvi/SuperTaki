@@ -250,7 +250,9 @@ function sequenceAction(view: BotView): GameAction {
   }
   if (hand.length === 1) {
     // Emptying the hand inside a sequence takes the round — or, in stairs, a step
-    // of it and a fresh hand. Both are worth having at once.
+    // of it and a fresh hand. Both are worth having at once. A Plus is the one card
+    // that buys neither, and it still goes down: a card from the pile in its place
+    // is no worse than the Plus was, and the sequence is spent either way.
     return play(legal[0] as Card);
   }
   const ordered = legal
@@ -298,8 +300,17 @@ function winningCard(view: BotView): Card | null {
   }
   const only = view.hand[0] as Card;
   const context = playContextFromPublic(view.table);
-  // A breaker cannot win: its three cards are drawn before the win check.
-  if (only.kind === 'breakPlusThree' || !isCardPlayable(only, context)) {
+  /*
+   * Two cards leave a hand without finishing it, and neither is a win to be
+   * played on sight. A breaker's three cards are drawn before the win check, and a
+   * Plus owes one more card, which an empty hand can only take from the pile.
+   *
+   * The Plus is still worth playing on the turn below — one card from the pile
+   * beats the card in hand plus one from the pile — but it goes through the
+   * ordinary turn, after the declaration, because the hand it leaves behind is a
+   * single card somebody can call out.
+   */
+  if (only.kind === 'breakPlusThree' || only.kind === 'plus' || !isCardPlayable(only, context)) {
     return null;
   }
   return only;

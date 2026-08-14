@@ -285,6 +285,16 @@ export type GameEvent =
    * cards instead. `penalty` is how many they actually drew.
    */
   | { readonly type: 'breakerSpent'; readonly playerId: PlayerId; readonly penalty: number }
+  /**
+   * A Plus was played as the last card, so the hand is not finished: its owner
+   * owes one more card, has none, and takes it from the pile instead of winning.
+   *
+   * Its own line rather than a bare draw, because the hand went from one card to
+   * none and back to one inside a single move, and everybody at the table — the
+   * player most of all — watched it reach nought. "Why did that not end the
+   * round?" is the whole content of the moment.
+   */
+  | { readonly type: 'plusLastCardDrawn'; readonly playerId: PlayerId }
   | { readonly type: 'directionChanged'; readonly direction: TurnDirection }
   | { readonly type: 'extraTurn'; readonly playerId: PlayerId }
   | { readonly type: 'turnChanged'; readonly playerId: PlayerId }

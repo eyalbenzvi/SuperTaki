@@ -293,6 +293,7 @@ export const he: Translations = {
   'event.lastCardCaught.other': '{by} תפס/ה את {name} בלי הכרזה — לוקח/ת {count} קלפים.',
   'event.breakerSpent.one': '{name} הניח/ה שבירת פלוס 3 בלי פלוס 3 לשבור — לוקח/ת קלף אחד.',
   'event.breakerSpent.other': '{name} הניח/ה שבירת פלוס 3 בלי פלוס 3 לשבור — לוקח/ת {count} קלפים.',
+  'event.plusLastCardDrawn': '{name} סיים/ה בפלוס — הפלוס חייב עוד קלף, אז לוקח/ת מהחבילה. אין ניצחון.',
   'event.directionChangedCw': 'כיוון המשחק עכשיו קדימה.',
   'event.directionChangedCcw': 'כיוון המשחק עכשיו הפוך.',
   'event.extraTurn': '{name} משחק/ת שוב.',

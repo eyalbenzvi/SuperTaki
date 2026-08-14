@@ -61,6 +61,10 @@ describe('event descriptions', () => {
     [{ type: 'directionChanged', direction: 1 }, 'The play order is now forwards.'],
     [{ type: 'directionChanged', direction: -1 }, 'The play order is now reversed.'],
     [{ type: 'extraTurn', playerId: 'p1' }, 'Dana plays again.'],
+    [
+      { type: 'plusLastCardDrawn', playerId: 'p1' },
+      'Dana finished on a Plus, which owes one more card — so it is taken from the pile, not a win.',
+    ],
     [{ type: 'turnChanged', playerId: 'p2' }, 'Eli is up.'],
     [{ type: 'drawPileRecycled', count: 12 }, 'The discard pile was shuffled back in (12 cards).'],
     [{ type: 'drawPileExhausted' }, 'There are no cards left to draw.'],

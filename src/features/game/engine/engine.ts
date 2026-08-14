@@ -553,6 +553,55 @@ function applyPlayCard(
   if ((draft.hands[playerId] ?? []).length === 0) {
     // `null` in a classic round: there is no staircase to be a step of.
     const step = draft.mode === 'stairs' ? (draft.stairs[playerId] ?? 0) + 1 : null;
+    const stepping = step !== null && step < STAIRS_STAGES;
+
+    /*
+     * A Plus cannot be the card that ends a round.
+     *
+     * It is an obligation to put one more card down, and a hand with nothing left
+     * in it has nothing to put — so the obligation is settled the only way still
+     * open, from the draw pile, exactly as a Plus may always be paid. The round
+     * goes on, with the player holding the card they were made to take, and the
+     * turn passes, because drawing ends a turn here as it does everywhere else.
+     *
+     * Only where the empty hand would have *won*. A step of the staircase is not an
+     * end, and it hands the player seven new cards to play the Plus from — so there
+     * the obligation is met the ordinary way, out of the hand, and the step below
+     * is taken exactly as any other card would take it.
+     *
+     * It is all resolved inside this command rather than leaving somebody holding
+     * nothing with the turn still theirs: an empty hand mid-turn is a state with
+     * one legal move in it, and one that no other part of the game — the table, the
+     * robots, the standings — has any reason to have to read.
+     */
+    if (!stepping && card.kind === 'plus') {
+      const drawEvents: GameEvent[] = [];
+      if (drawCards(draft, playerId, 1, drawEvents) > 0) {
+        // A sequence of theirs ends with the hand that was feeding it. The Plus is
+        // its closing card, and it has just been answered from the pile.
+        if (draft.takiMode?.playerId === playerId) {
+          events.push({ type: 'takiClosed', playerId, cardsPlayed: draft.takiMode.cardsPlayed });
+          draft.takiMode = null;
+        }
+        /*
+         * The shout went with the Plus, and the Plus is on the pile. What arrived in
+         * its place is a fresh single card owing a fresh declaration — the same rule
+         * a step of the staircase follows just below, and for the same reason.
+         */
+        draft.declaredLastCard = draft.declaredLastCard.filter((candidate) => candidate !== playerId);
+        events.push({ type: 'plusLastCardDrawn', playerId }, ...drawEvents);
+        advanceTurn(draft, events);
+        draft.version += 1;
+        return { ok: true, state: freeze(draft), events };
+      }
+      /*
+       * Nothing anywhere left to draw. The obligation cannot be paid at all, and an
+       * empty hand with no pile behind it ends the round the way an empty hand
+       * always does — the win below takes it from here.
+       */
+      events.push(...drawEvents);
+    }
+
     if (step !== null) {
       draft.stairs = { ...draft.stairs, [playerId]: step };
     }
