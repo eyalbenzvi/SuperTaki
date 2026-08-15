@@ -1,3 +1,4 @@
+import { anyAssisted } from '../engine/assist.ts';
 import type { PlayerId } from '../engine/state.ts';
 import {
   BOT_ANSWER_MAX_MS,
@@ -8,6 +9,8 @@ import {
   BOT_DECLARE_MIN_MS,
   BOT_SEQUENCE_MAX_MS,
   BOT_SEQUENCE_MIN_MS,
+  BOT_SOFT_DECLARE_MAX_MS,
+  BOT_SOFT_DECLARE_MIN_MS,
   BOT_THINK_MAX_MS,
   BOT_THINK_MIN_MS,
 } from '../network/timing.ts';
@@ -269,13 +272,13 @@ export class BotRunner {
       return held;
     }
     const move = chooseBotMove(view, () => this.options.random(playerId));
-    const pause = move === null ? 0 : this.pauseFor(playerId, move, standIn);
+    const pause = move === null ? 0 : this.pauseFor(playerId, move, standIn, view);
     const decision = { version, move, pause };
     this.decided.set(playerId, decision);
     return decision;
   }
 
-  private pauseFor(playerId: PlayerId, move: BotMove, standIn: boolean): number {
+  private pauseFor(playerId: PlayerId, move: BotMove, standIn: boolean, view: BotView): number {
     const inSequence = move.inSequence === true;
     if (this.options.pauseMs) {
       return this.options.pauseMs(move.kind, inSequence);
@@ -295,7 +298,14 @@ export class BotRunner {
       case 'breaker':
         return between(BOT_ANSWER_MIN_MS, BOT_ANSWER_MAX_MS);
       case 'declare':
-        return between(BOT_DECLARE_MIN_MS, BOT_DECLARE_MAX_MS);
+        /*
+         * The one pause that gets longer rather than shorter when the table is
+         * leaning towards somebody: a robot nobody can catch is a rule a child never
+         * gets to enforce. See `BOT_SOFT_DECLARE_MIN_MS`.
+         */
+        return anyAssisted(view.lenientToward)
+          ? between(BOT_SOFT_DECLARE_MIN_MS, BOT_SOFT_DECLARE_MAX_MS)
+          : between(BOT_DECLARE_MIN_MS, BOT_DECLARE_MAX_MS);
       case 'catch':
         return between(BOT_CATCH_MIN_MS, BOT_CATCH_MAX_MS);
       case 'turn':

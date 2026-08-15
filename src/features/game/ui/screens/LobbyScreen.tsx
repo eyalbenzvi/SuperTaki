@@ -6,6 +6,7 @@ import { QrCode } from '../../../../components/QrCode.tsx';
 import { SegmentedControl } from '../../../../components/SegmentedControl.tsx';
 import { useT } from '../../../../app/useT.ts';
 import { canShare, copyText, shareLink } from '../../../../lib/share.ts';
+import type { AssistLevel } from '../../engine/assist.ts';
 import { MAX_PLAYERS, MIN_PLAYERS, type GameMode } from '../../engine/state.ts';
 import type { LobbyPlayer } from '../../network/protocol.ts';
 import {
@@ -23,6 +24,99 @@ const PLAYER_COUNTS = Array.from(
   { length: MAX_PLAYERS - MIN_PLAYERS + 1 },
   (_, index) => MIN_PLAYERS + index,
 );
+
+/**
+ * Who the table quietly leans towards, and how far.
+ *
+ * The only control in the app whose effect nobody but the person using it may ever
+ * learn about, which decides everything about how it is drawn: it is the last thing
+ * inside a disclosure that is itself inside the creator-only settings, it names no
+ * mechanism, and it says out loud — to the one person who can read it — that the
+ * rules do not change. A parent needs to know what they are turning on; a nine-year-
+ * old leaning over needs to find nothing worth reading.
+ *
+ * Everything it displays comes back from the room. The room drops the creator's own
+ * seat from the list, ignores robots, and turns the whole thing off rather than
+ * accept a list that covers every human at the table — so tapping a name is a
+ * request, and this shows the answer.
+ */
+function AssistControl({ players }: { readonly players: readonly LobbyPlayer[] }): ReactNode {
+  const t = useT();
+  const settings = useAppStore((state) => state.assist.settings);
+  const setAssist = useAppStore((state) => state.setAssist);
+  const localPlayerId = useAppStore((state) => state.localPlayerId);
+
+  const eligible = players.filter((player) => player.bot !== true && player.id !== localPlayerId);
+  const level = settings?.level ?? 'off';
+  const chosen = settings?.playerIds ?? [];
+  const on = level !== 'off' && chosen.length > 0;
+
+  const toggle = (playerId: string): void => {
+    const next = chosen.includes(playerId) ? chosen.filter((id) => id !== playerId) : [...chosen, playerId];
+    // Turning the first name on has to name a strength too, or the request would ask
+    // the room to lean by nothing at somebody, which it reads as "off".
+    setAssist(next.length === 0 ? 'off' : level === 'off' ? 'light' : level, next);
+  };
+
+  if (eligible.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="disclosure">
+      <summary>{t('assist.title')}</summary>
+      <div className="stack stack--tight">
+        <p className="text-small muted">{t('assist.body')}</p>
+
+        <span className="field__label">{t('assist.whoLabel')}</span>
+        <div className="btn-group btn-group--fill">
+          {eligible.map((player) => (
+            <Button
+              key={player.id}
+              size="sm"
+              variant={chosen.includes(player.id) ? 'primary' : 'ghost'}
+              aria-pressed={chosen.includes(player.id)}
+              onClick={() => {
+                toggle(player.id);
+              }}
+            >
+              {player.name}
+            </Button>
+          ))}
+        </div>
+
+        <span className="field__label">{t('assist.levelLabel')}</span>
+        <SegmentedControl<AssistLevel>
+          block
+          label={t('assist.levelLabel')}
+          value={level}
+          disabled={chosen.length === 0}
+          onChange={(next) => {
+            setAssist(next, chosen);
+          }}
+          /* Spelled out rather than mapped from the level list: a key built at
+             runtime is a key the orphan check in `tests/unit/i18n.test.ts` cannot
+             see, and four literals are a small price for it going on working. */
+          options={[
+            { value: 'off', label: t('common.off') },
+            { value: 'light', label: t('assist.light') },
+            { value: 'medium', label: t('assist.medium') },
+            { value: 'strong', label: t('assist.strong') },
+          ]}
+        />
+        <span className="field__hint">
+          {/*
+            The one place the promise is written down for the person making it: no
+            rule moves, and everybody at the table is playing the same game. Also
+            the place the limit is stated, because a host who marks everybody and is
+            told nothing would think it had worked.
+          */}
+          {on ? t('assist.onHint') : t('assist.offHint')}
+        </span>
+      </div>
+    </details>
+  );
+}
 
 /** How long "Copied" stays on the button before it offers to copy again. */
 const COPIED_MS = 2000;
@@ -326,6 +420,20 @@ export function LobbyScreen(): ReactNode {
               ]}
             />
             <span className="field__hint">{standIn ? t('robot.standInHint') : t('robot.standInOff')}</span>
+
+            {/*
+              The one setting on this screen that is nobody else's business.
+              Folded away behind its own disclosure, inside the creator-only
+              settings that are already folded away, because a person setting it up
+              is sitting at a table with the children it is about — and a heading
+              nobody opened is a heading nobody read over a shoulder.
+
+              Rendered from what the room sent back rather than from what was last
+              tapped: the room drops the creator's own seat, ignores robots and
+              refuses a list covering the whole table, so this is the only place the
+              real setting exists.
+            */}
+            <AssistControl players={players} />
           </div>
         </details>
       ) : null}

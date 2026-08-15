@@ -47,6 +47,11 @@ out of the same projections a remote client is sent:
 | its own hand                            | the draw pile's order         |
 | which seats can answer for themselves   | who _else_ holds a +3 Breaker |
 | whether an open +3 is waiting on **it** | anything else about that list |
+| which seats to go easy on, and how easy | why, or anything they hold    |
+
+The last row is a number per _seat_, decided by the person running the table before a card was
+dealt. It carries no cards and says nothing whatever about what anybody is holding, so all
+three tests above hold unchanged.
 
 Three tests hold the line: no card id from another hand or from the draw pile appears in a
 serialised view; the same decision comes out however the _other_ hands are rearranged; and
@@ -124,21 +129,46 @@ plays a whole staircase out against one.
   first.
 - It never calls out somebody who is not there — they cannot shout, so that would be farming
   rather than catching. A seat a robot is _playing_ is fair game: the robot can shout.
+- It never calls out a seat the table has been asked to go easy on, and never aims a +2, a +3
+  or a Stop at one. See **Going easy** below.
+
+## Going easy
+
+A table can ask its robots to be gentle with particular seats — see
+[assist.md](assist.md), which is where the whole feature is explained and where the reasons
+live. Four things change, and none of them is a rule:
+
+| What              | Ordinary table                         | A seat the table is leaning towards                              |
+| ----------------- | -------------------------------------- | ---------------------------------------------------------------- |
+| Calling them out  | anybody silent on one card             | never that seat; the humans may still call it                    |
+| +2 / +3 / Stop    | worth _more_ against a seat nearly out | ranked below every ordinary card in the hand                     |
+| Choosing a card   | always the best-scoring                | the second-best 25–50% of the time, at the top two dial settings |
+| Its own last card | 0–100 ms, effectively uncatchable      | 0.9–2 s, which a child can actually beat                         |
+
+The last one gives back something a robot had taken. `BOT_DECLARE_*` is short on purpose — a
+robot that paused was caught every round by whoever happened to be looking, so the rule stopped
+being enforced and started being farmed. That argument is about a table of equals, and it is
+the wrong argument at a table with a six-year-old at it: catching a robot out is one of the few
+moments in this game a small child can win unaided.
+
+A robot is never lenient towards its **own** seat, including a human seat it is standing in
+for: that hand is played to win it, which is the point of covering it at all.
 
 ## Timing
 
 All in `network/timing.ts`, all jittered from a per-seat seeded stream.
 
-| Constant                      | Value      | What it is                                     |
-| ----------------------------- | ---------- | ---------------------------------------------- |
-| `BOT_THINK_MIN_MS` … `MAX`    | 0.7–1.7 s  | before an ordinary move                        |
-| `BOT_SEQUENCE_MIN_MS` … `MAX` | 0.62–0.9 s | between cards inside a Taki sequence           |
-| `BOT_DECLARE_MIN_MS` … `MAX`  | 0–0.1 s    | before declaring its own last card             |
-| `BOT_CATCH_MIN_MS` … `MAX`    | 2.2–4.0 s  | before calling somebody out                    |
-| `BOT_ANSWER_MIN_MS` … `MAX`   | 0.5–1.2 s  | before answering an open +3                    |
-| `BOT_STALL_MS`                | 15 s       | before the room passes a robot's own seat      |
-| `STAND_IN_ABSENT_MS`          | 45 s       | absence before a robot may play a human's seat |
-| `STAND_IN_IDLE_MS`            | 90 s       | silence, while present, before the same        |
+| Constant                          | Value      | What it is                                          |
+| --------------------------------- | ---------- | --------------------------------------------------- |
+| `BOT_THINK_MIN_MS` … `MAX`        | 0.7–1.7 s  | before an ordinary move                             |
+| `BOT_SEQUENCE_MIN_MS` … `MAX`     | 0.62–0.9 s | between cards inside a Taki sequence                |
+| `BOT_DECLARE_MIN_MS` … `MAX`      | 0–0.1 s    | before declaring its own last card                  |
+| `BOT_SOFT_DECLARE_MIN_MS` … `MAX` | 0.9–2 s    | the same, at a table that is going easy on somebody |
+| `BOT_CATCH_MIN_MS` … `MAX`        | 2.2–4.0 s  | before calling somebody out                         |
+| `BOT_ANSWER_MIN_MS` … `MAX`       | 0.5–1.2 s  | before answering an open +3                         |
+| `BOT_STALL_MS`                    | 15 s       | before the room passes a robot's own seat           |
+| `STAND_IN_ABSENT_MS`              | 45 s       | absence before a robot may play a human's seat      |
+| `STAND_IN_IDLE_MS`                | 90 s       | silence, while present, before the same             |
 
 `BOT_STALL_MS` is the one that is not about pacing. A robot cannot be absent, so no grace,
 hold or vacate would ever rescue a table stuck on one — a suspended tab, a throttled timer or
