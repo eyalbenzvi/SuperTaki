@@ -115,6 +115,7 @@ would wake the room, on a cadence, for every player, for as long as the room liv
 | { type: 'kickPlayer'; playerId: string }
 | { type: 'addBot' }
 | { type: 'setStandInEnabled'; enabled: boolean }
+| { type: 'setAssist'; level: 'off' | 'light' | 'medium' | 'strong'; playerIds: string[] }
 | { type: 'standInNow'; playerId: string }
 | { type: 'stopStandIn'; playerId: string }
 | { type: 'skipAbsentTurn'; playerId: string }
@@ -181,8 +182,25 @@ least `LAST_CARD_GRACE_MS` by the **room's** clock. See `docs/rules.md`.
 | `playAgainState` | `{agreed, required}`                          | Vote progress for the next round.                                                                                               |
 | `paused`         | `{pausedBy}`                                  | Somebody asked the table to wait.                                                                                               |
 | `nudged`         | `{fromPlayerId}`                              | **Unicast.** It is your turn and somebody is waiting.                                                                           |
+| `assistState`    | `{catchDelayMs, settings?}`                   | **Unicast, per recipient.** `catchDelayMs` is about the recipient alone; `settings` goes to the creator's socket only.          |
 | `kicked`         | `{reason}`                                    | `removedByCreator \| duplicateConnection`                                                                                       |
 | `roomClosed`     | `{reason}`                                    | `roomClosed`. Terminal. Sent to a socket that woke from a hibernation into a room whose record no longer parses.                |
+
+### `assistState`, and the one thing this protocol keeps from the table
+
+Every other fact a table decides — its size, its mode, whether robots may cover a seat — is
+broadcast to everybody, on the argument that a fact about the table belongs to everybody at it.
+The easements are the deliberate exception, because an easement that is announced is not an
+easement (see [assist.md](assist.md)). So they never appear in `lobbySnapshot`, and travel in
+a message that is built **per connection**:
+
+- `settings` — the level and the marked seats — goes only to the socket whose player is
+  `creatorPlayerId`. Not to the marked player, either.
+- `catchDelayMs` goes to everybody and describes only the recipient: how long their own "never
+  declared!" button waits before it works. It names nobody and reveals no list.
+
+There is no code path that puts `settings` in a message more than one player receives, and a
+worker test asserts that on the raw frames rather than on the parsed model.
 
 `actionAccepted` cannot be inferred from the state moving forward, because in this game other
 players legally act out of turn: a new snapshot may have nothing to do with my move, and

@@ -29,7 +29,10 @@ const NONE = { seats: '', served: false } as const;
  * `LAST_CARD_GRACE_MS`, which is a fifth of a second, and it errs in the direction
  * the rule already leans — towards the player being called out.
  */
-export function useCatchGrace(opponents: readonly OpponentView[]): readonly OpponentView[] {
+export function useCatchGrace(
+  opponents: readonly OpponentView[],
+  delayMs: number = LAST_CARD_GRACE_MS,
+): readonly OpponentView[] {
   const seats = opponents
     .filter((opponent) => opponent.catchable)
     .map((opponent) => opponent.id)
@@ -40,17 +43,23 @@ export function useCatchGrace(opponents: readonly OpponentView[]): readonly Oppo
   // Nothing else will re-render this screen when a window merely expires: the
   // table state has not changed, only the clock.
   useEffect(() => {
-    if (seats === '') {
+    if (seats === '' || delayMs <= 0) {
       return;
     }
     const timer = setTimeout(() => {
       setGrace({ seats, served: true });
-    }, LAST_CARD_GRACE_MS);
+    }, delayMs);
     return () => {
       clearTimeout(timer);
     };
-  }, [seats]);
+  }, [seats, delayMs]);
 
-  const served = grace.served && grace.seats === seats;
+  /*
+   * A player the table is leaning towards waits for nothing, and that is settled
+   * during render rather than by a timer of length nought: the room waives the same
+   * window from its side, so there is nothing to synchronise and no moment for the
+   * two answers to disagree in.
+   */
+  const served = delayMs <= 0 || (grace.served && grace.seats === seats);
   return served ? opponents : opponents.map((o) => (o.catchable ? { ...o, catchable: false } : o));
 }

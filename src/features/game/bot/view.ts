@@ -1,3 +1,4 @@
+import { NO_ASSIST, assistFor, type AssistWeights } from '../engine/assist.ts';
 import type { Card } from '../engine/cards.ts';
 import type { GameState, PlayerId } from '../engine/state.ts';
 import { toPrivateHandView, toPublicGameState, type PublicGameState } from '../engine/views.ts';
@@ -52,6 +53,22 @@ export interface BotView {
    * path that unfreezes everybody.
    */
   readonly canAnswerPlusThree: boolean;
+  /**
+   * Seats this robot has been asked to go easy on, and how easy.
+   *
+   * Not a fact about anybody's cards, and that is why it is allowed through a
+   * boundary whose whole purpose is to keep cards out: it is a number per *seat*,
+   * decided by the person running the table before a card was dealt, and knowing it
+   * tells a robot nothing whatever about what anybody is holding. The tests that
+   * guard this file — no card id from another hand, the same decision however the
+   * other hands are rearranged — are untouched by it.
+   *
+   * Its own seat is never in here. A robot covering a child's seat plays that hand
+   * to win it; leniency is something a robot extends to the people across the table,
+   * and a robot that extended it to itself would be throwing away the very hand the
+   * feature exists to protect.
+   */
+  readonly lenientToward: AssistWeights;
 }
 
 export function botViewFor(
@@ -59,11 +76,19 @@ export function botViewFor(
   playerId: PlayerId,
   isPresent: (playerId: PlayerId) => boolean,
 ): BotView {
+  const lenientToward: Record<PlayerId, number> = {};
+  for (const player of state.players) {
+    const weight = player.id === playerId ? 0 : assistFor(state.assist, player.id);
+    if (weight > 0) {
+      lenientToward[player.id] = weight;
+    }
+  }
   return {
     playerId,
     table: toPublicGameState(state),
     hand: toPrivateHandView(state, playerId).cards,
     seats: state.players.map((player) => ({ id: player.id, present: isPresent(player.id) })),
     canAnswerPlusThree: state.plusThree?.awaiting.includes(playerId) === true,
+    lenientToward: Object.keys(lenientToward).length > 0 ? lenientToward : NO_ASSIST,
   };
 }

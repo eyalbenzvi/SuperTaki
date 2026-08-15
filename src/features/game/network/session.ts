@@ -1,7 +1,7 @@
 import type { Card } from '../engine/cards.ts';
 import type { GameEvent, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
-import type { JoinRejectionReason, LobbySnapshot } from './protocol.ts';
+import type { AssistSettings, JoinRejectionReason, LobbySnapshot } from './protocol.ts';
 import type { RoomErrorCode } from './roomTransport.ts';
 
 /**
@@ -77,6 +77,17 @@ export type SessionUpdate =
   /** It is this player's turn and another player is waiting on them. */
   | { readonly type: 'nudged'; readonly fromPlayerId: string }
   | { readonly type: 'playAgain'; readonly agreed: readonly string[]; readonly required: number }
+  /**
+   * What this client alone is told about the table's easements.
+   *
+   * `settings` arrives only at the seat holding the lobby buttons; everybody else
+   * gets the delay on their own catch button and nothing else. See `docs/assist.md`.
+   */
+  | {
+      readonly type: 'assist';
+      readonly catchDelayMs: number;
+      readonly settings?: AssistSettings;
+    }
   | {
       readonly type: 'identity';
       readonly playerId: string;

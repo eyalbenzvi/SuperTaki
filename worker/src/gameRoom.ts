@@ -29,6 +29,12 @@ import type { BotMove, BotMoveKind } from '../../src/features/game/bot/policy.ts
 import { robotName } from '../../src/features/game/bot/names.ts';
 import { BotRunner } from '../../src/features/game/bot/runner.ts';
 import { botViewFor } from '../../src/features/game/bot/view.ts';
+import {
+  assistFor,
+  assistWeight,
+  type AssistWeights,
+  type AssistLevel,
+} from '../../src/features/game/engine/assist.ts';
 import { applyCommand, createGame, currentPlayer } from '../../src/features/game/engine/engine.ts';
 import { createRng, nextFloat, seedFromString } from '../../src/features/game/engine/prng.ts';
 import {
@@ -57,8 +63,9 @@ import {
   ABSENT_TURN_GRACE_CLOSED_MS,
   BOT_STALL_MS,
   IDLE_TURN_NUDGE_MS,
-  LAST_CARD_GRACE_MS,
   LOBBY_GRACE_MS,
+  catchGraceMs,
+  ownCatchDelayMs,
   RESUME_ATTEMPT_SUPPRESSES_SKIP_MS,
   SEAT_GRACE_MS,
   STAND_IN_ABSENT_MS,
@@ -625,7 +632,127 @@ export class GameRoom {
   private emitLobby(): void {
     if (this.record !== null) {
       this.broadcast('lobbyState', { lobby: this.lobbySnapshot() });
+      /*
+       * Alongside the snapshot rather than on its own occasions, because the two
+       * facts it carries both move for reasons the lobby is already announcing: the
+       * buttons pass to another seat when the creator leaves, and a client's own
+       * catch delay settles when the round is dealt. Riding along is a frame nobody
+       * notices; a missed update is a creator who cannot see the list they own.
+       */
+      this.emitAssist();
     }
+  }
+
+  // -------------------------------------------------------------------- easements
+
+  /**
+   * The table's lean, as the per-seat weights the engine takes.
+   *
+   * Built here and handed to `createGame`, which stores it with the round. Bot seats
+   * are dropped on the way through: a robot has no evening to be spoiled and the
+   * setter refuses to mark one, so this is belt and braces against a record written
+   * before a seat became a robot.
+   */
+  private assistWeights(): AssistWeights {
+    const record = this.record;
+    if (record === null || record.assist.level === 'off') {
+      return {};
+    }
+    const weight = assistWeight(record.assist.level);
+    const weights: Record<string, number> = {};
+    for (const playerId of record.assist.playerIds) {
+      const seat = this.seatFor(playerId);
+      if (seat !== undefined && !seat.bot) {
+        weights[playerId] = weight;
+      }
+    }
+    /*
+     * A lean everybody shares is not a lean. The setter refuses to mark the whole
+     * table, and this refuses again at the moment it would take effect — because
+     * between the two a seat can leave, and a table of three that becomes a table of
+     * two marked children should quietly stop leaning rather than silently start
+     * sorting hands for no reason.
+     */
+    const seated = record.seats.filter((seat) => !seat.bot).length;
+    return Object.keys(weights).length >= seated ? {} : weights;
+  }
+
+  /** This seat's weight in the round being played, or nought outside one. */
+  private assistOf(playerId: string): number {
+    return this.game === null ? 0 : assistFor(this.game.assist, playerId);
+  }
+
+  /**
+   * Tells each connection what it, and only it, is allowed to know.
+   *
+   * The whole secrecy argument in one method: there is no broadcast here. The list
+   * itself goes to the seat holding the lobby buttons — the only person who could
+   * change it anyway — and every other socket receives a single number about its own
+   * button. A player who reads their own frames learns how long their own catch
+   * waits, which is a fact about themselves and names nobody.
+   */
+  private emitAssist(only?: Connection): void {
+    const record = this.record;
+    if (record === null) {
+      return;
+    }
+    const creatorId = this.creatorSeat()?.playerId ?? record.creatorPlayerId;
+    const targets = only ? [only] : [...this.connections.values()];
+    for (const connection of targets) {
+      const playerId = connection.playerId;
+      if (playerId === null) {
+        continue;
+      }
+      this.send(connection.socket, 'assistState', {
+        catchDelayMs: ownCatchDelayMs(this.assistOf(playerId)),
+        ...(playerId === creatorId
+          ? {
+              settings: {
+                level: record.assist.level,
+                playerIds: [...record.assist.playerIds],
+              },
+            }
+          : {}),
+      });
+    }
+  }
+
+  /**
+   * Sets who the table leans towards.
+   *
+   * Refused once the cards are dealt, like every other table setting.
+   *
+   * The seat holding the buttons is not eligible, which is where the "never
+   * everybody" rule actually comes from: somebody is always playing the ordinary
+   * game, however the list is asked for. It is also the shape of the evening this is
+   * for — one adult and two children, where marking both children is exactly right —
+   * and it means nobody can quietly hand themselves an advantage.
+   *
+   * The whole-table check below is therefore not the main path but the leftover one:
+   * the buttons pass to another seat when a creator leaves, and a list written before
+   * that can end up naming everybody who is left. {@link assistWeights} checks the
+   * same thing again at the moment it would take effect, because seats move between
+   * the two.
+   */
+  private setAssist(level: AssistLevel, playerIds: readonly string[]): void {
+    const record = this.record;
+    if (record === null || record.phase !== 'lobby') {
+      return;
+    }
+    const creatorId = this.creatorSeat()?.playerId ?? record.creatorPlayerId;
+    const eligible = record.seats.filter((seat) => !seat.bot && seat.playerId !== creatorId);
+    const chosen = eligible.filter((seat) => playerIds.includes(seat.playerId)).map((seat) => seat.playerId);
+    const humans = record.seats.filter((seat) => !seat.bot).length;
+    const next: { level: AssistLevel; playerIds: string[] } =
+      level === 'off' || chosen.length === 0 || chosen.length >= humans
+        ? { level: 'off', playerIds: [] }
+        : { level, playerIds: chosen };
+    record.assist = next;
+    this.roomDirty = true;
+    // Deliberately not logged with the names in it: the room's log is the one place
+    // this could leak to somebody reading a deployment's output.
+    this.log('the table set its easements', { level: next.level, count: next.playerIds.length });
+    this.emitAssist();
   }
 
   // --------------------------------------------------------------- connections
@@ -897,6 +1024,9 @@ export class GameRoom {
       versionFloor: 0,
       round: 0,
       standInEnabled: true,
+      // A new table leans towards nobody. It is turned on from the lobby, by the
+      // person who knows who is sitting at it.
+      assist: { level: 'off', playerIds: [] },
       pausedBy: null,
       waitingSince: null,
       emptySince: null,
@@ -928,6 +1058,10 @@ export class GameRoom {
       displayName: seat.name,
       lobby: this.lobbySnapshot(),
     });
+    // A room being created broadcasts nothing — there is nobody to broadcast to — so
+    // the creator would otherwise have to wait for a second player before the lobby
+    // could offer them this at all.
+    this.emitAssist(connection);
   }
 
   /**
@@ -1080,10 +1214,25 @@ export class GameRoom {
     this.roomDirty = true;
   }
 
-  /** Whether `playerId` is still inside the head start their last card bought them. */
-  private withinLastCardGrace(playerId: string): boolean {
-    const since = this.record?.lastCardSince[playerId];
-    return since !== undefined && this.now() - since < LAST_CARD_GRACE_MS;
+  /**
+   * Whether `targetId` is still inside the head start their last card bought them,
+   * as against this particular caller.
+   *
+   * A pair rather than a player, because both ends of it can be leaned towards: a
+   * marked seat keeps its head start for longer, and a marked caller does not wait
+   * at all. `catcherId` is left out by the alarm that exists only to wake a robot,
+   * which is never marked and therefore always faces the full window.
+   */
+  private withinLastCardGrace(targetId: string, catcherId?: string): boolean {
+    const since = this.record?.lastCardSince[targetId];
+    if (since === undefined) {
+      return false;
+    }
+    const grace = catchGraceMs(
+      this.assistOf(targetId),
+      catcherId === undefined ? 0 : this.assistOf(catcherId),
+    );
+    return this.now() - since < grace;
   }
 
   private broadcastGameState(): void {
@@ -1213,7 +1362,7 @@ export class GameRoom {
         this.rejectAction(connection, 'nothingToCatch', requestId, origin);
         return false;
       }
-      if (this.withinLastCardGrace(action.targetId)) {
+      if (this.withinLastCardGrace(action.targetId, playerId)) {
         this.rejectAction(connection, 'nothingToCatch', requestId, origin);
         return false;
       }
@@ -1339,6 +1488,12 @@ export class GameRoom {
       record.versionFloor + 1,
       record.round,
       record.gameMode,
+      /*
+       * Read once, here, and stored with the round. Everything the deal and the draw
+       * pile do afterwards is a function of the state, so a setting changed between
+       * rounds reaches the next one and never this one.
+       */
+      this.assistWeights(),
     );
     if (!result.ok) {
       this.log('could not deal a round', { code: result.rejection.code });
@@ -1606,6 +1761,9 @@ export class GameRoom {
         return;
       case 'setStandInEnabled':
         this.setStandInEnabled(command.enabled);
+        return;
+      case 'setAssist':
+        this.setAssist(command.level, command.playerIds);
         return;
       case 'standInNow':
         this.standInNow(command.playerId);
@@ -2267,8 +2425,10 @@ export class GameRoom {
    */
   private scheduleLastCard(record: RoomRecord, now: number): void {
     let earliest: number | null = null;
-    for (const since of Object.values(record.lastCardSince)) {
-      const at = since + LAST_CARD_GRACE_MS;
+    for (const [playerId, since] of Object.entries(record.lastCardSince)) {
+      // The window a robot faces, which is the full one: a robot is never a seat the
+      // table leans towards, so nothing here shortens for it.
+      const at = since + catchGraceMs(this.assistOf(playerId), 0);
       if (at > now && (earliest === null || at < earliest)) {
         earliest = at;
       }

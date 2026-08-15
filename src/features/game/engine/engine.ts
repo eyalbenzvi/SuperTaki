@@ -1,4 +1,15 @@
 import {
+  NO_ASSIST,
+  OPENING_SCAN_LIMIT,
+  assignHands,
+  assistFor,
+  biasedStartIndex,
+  chooseDrawIndex,
+  frontLoadForDraw,
+  preferredOpeningColor,
+  type AssistWeights,
+} from './assist.ts';
+import {
   CARDS_DEALT_PER_PLAYER,
   LAST_CARD_PENALTY,
   PLUS_THREE_PENALTY,
@@ -43,6 +54,7 @@ interface Draft {
   mode: GameMode;
   stairs: Record<PlayerId, number>;
   players: readonly EnginePlayer[];
+  assist: AssistWeights;
   hands: Record<PlayerId, Card[]>;
   drawPile: Card[];
   discardPile: Card[];
@@ -73,6 +85,7 @@ function toDraft(state: GameState): Draft {
     mode: state.mode,
     stairs: { ...state.stairs },
     players: state.players,
+    assist: state.assist,
     hands,
     drawPile: state.drawPile.slice(),
     discardPile: state.discardPile.slice(),
@@ -115,6 +128,7 @@ function freeze(draft: Draft): GameState {
     mode: draft.mode,
     stairs: draft.stairs,
     players: draft.players,
+    assist: draft.assist,
     hands: draft.hands,
     drawPile: draft.drawPile,
     discardPile: draft.discardPile,
@@ -148,6 +162,23 @@ export function currentPlayer(state: GameState): EnginePlayer | null {
   return state.players[state.currentPlayerIndex] ?? null;
 }
 
+/**
+ * The same context as {@link playContextFromState}, from the mutable copy a command
+ * is halfway through. The draw pile leans on it — a card is worth more when it can
+ * be put straight back down — and a half-resolved command is precisely when that
+ * question is asked.
+ */
+function playContextFromDraft(draft: Draft): PlayContext {
+  return {
+    activeColor: draft.activeColor,
+    topCard: topCard(draft),
+    openTakiColor: draft.takiMode?.color ?? null,
+    takiSwitchOpen: draft.takiMode?.takisOnly ?? false,
+    pendingDraw: draft.pendingDraw,
+    freePlay: draft.freePlay,
+  };
+}
+
 /** Builds the {@link PlayContext} for the supplied authoritative state. */
 export function playContextFromState(state: GameState): PlayContext {
   return {
@@ -175,6 +206,13 @@ export function playContextFromState(state: GameState): PlayContext {
  * modes open with the same eight cards, so nothing about this function's deal
  * depends on it — in "stairs" the difference begins the first time somebody runs
  * out. See {@link GameMode}.
+ *
+ * `assist` is fixed here for the same reason and does three things to this
+ * function, all of them after the shuffle and none of them to the deck: which seat
+ * receives which of the hands just dealt, which number card the pile stops on for
+ * the opening, and which seat moves first. With no weight on any seat all three are
+ * no-ops and the round is dealt exactly as it was before the feature existed. See
+ * `assist.ts` and `docs/assist.md`.
  */
 export function createGame(
   players: readonly EnginePlayer[],
@@ -182,6 +220,7 @@ export function createGame(
   initialVersion = 1,
   startingSeat = 0,
   mode: GameMode = 'classic',
+  assist: AssistWeights = NO_ASSIST,
 ): CommandResult {
   if (players.length < MIN_PLAYERS) {
     return reject('notEnoughPlayers');
@@ -198,28 +237,50 @@ export function createGame(
   const rng = shuffled.state;
   const pile = shuffled.items;
 
-  const hands: Record<PlayerId, Card[]> = {};
-  for (const player of players) {
-    hands[player.id] = [];
-  }
+  const dealt: Card[][] = players.map(() => []);
   for (let round = 0; round < CARDS_DEALT_PER_PLAYER; round += 1) {
-    for (const player of players) {
+    for (let seat = 0; seat < players.length; seat += 1) {
       const card = pile.shift();
       if (card) {
-        (hands[player.id] as Card[]).push(card);
+        (dealt[seat] as Card[]).push(card);
       }
     }
   }
+  /*
+   * Who gets which of the hands just dealt. A permutation of them and nothing more:
+   * the deck, the order it was shuffled in and what is left in `pile` are all
+   * untouched, which is what makes this method invisible rather than merely quiet.
+   */
+  const assigned = assignHands(dealt, players, assist);
+  const hands: Record<PlayerId, Card[]> = {};
+  players.forEach((player, seat) => {
+    hands[player.id] = (assigned[seat] ?? []).slice();
+  });
 
+  /*
+   * The opening card, with a colour the table would like it to be.
+   *
+   * The walk is the one that was always here — stop on the first number card,
+   * bury what it passes — with one extra condition and a budget on it. A number
+   * card of the wrong colour is buried exactly as an action card is, so the pile
+   * still holds every card it held, and past `OPENING_SCAN_LIMIT` the preference
+   * gives up rather than digging a hole in the deck.
+   */
+  const preferredColor = preferredOpeningColor(hands, players, assist);
   const buried: Card[] = [];
   let opening: Card | null = null;
+  let scanned = 0;
   while (pile.length > 0) {
     const card = pile.shift() as Card;
-    if (isNumberCard(card)) {
+    if (
+      isNumberCard(card) &&
+      (preferredColor === null || card.color === preferredColor || scanned >= OPENING_SCAN_LIMIT)
+    ) {
       opening = card;
       break;
     }
     buried.push(card);
+    scanned += 1;
   }
   if (!opening) {
     // Impossible with the documented deck, but keep the engine total.
@@ -232,7 +293,8 @@ export function createGame(
    * meant the host moved first in every round, for ever. A table notices that by
    * about the fifth round.
    */
-  const firstIndex = ((startingSeat % players.length) + players.length) % players.length;
+  const rotated = ((startingSeat % players.length) + players.length) % players.length;
+  const firstIndex = biasedStartIndex(players, assist, startingSeat, rotated);
   const stairs: Record<PlayerId, number> = {};
   for (const player of players) {
     stairs[player.id] = 0;
@@ -243,6 +305,7 @@ export function createGame(
     mode,
     stairs,
     players,
+    assist,
     hands,
     drawPile,
     discardPile: [opening],
@@ -295,8 +358,17 @@ function advanceTurn(draft: Draft, events: GameEvent[]): void {
   events.push({ type: 'turnChanged', playerId: next.id });
 }
 
-/** Refills the draw pile from the discard pile, keeping the visible top card. */
-function recycleDrawPile(draft: Draft, events: GameEvent[]): void {
+/**
+ * Refills the draw pile from the discard pile, keeping the visible top card.
+ *
+ * `beneficiary` is whoever's draw ran the pile out, and it matters only when that
+ * seat is one the table is leaning towards: the shuffle happens either way, and the
+ * cards it produced are then arranged so the best few of them are the ones that
+ * seat is about to meet. A recycle lands mid-penalty as often as not, which is
+ * exactly when it is worth having. For an unmarked seat this is the shuffle and
+ * nothing else.
+ */
+function recycleDrawPile(draft: Draft, beneficiary: PlayerId, events: GameEvent[]): void {
   if (draft.drawPile.length > 0 || draft.discardPile.length <= 1) {
     return;
   }
@@ -304,9 +376,41 @@ function recycleDrawPile(draft: Draft, events: GameEvent[]): void {
   const recyclable = draft.discardPile.slice(0, -1);
   const shuffled = shuffle(recyclable, draft.rng);
   draft.rng = shuffled.state;
-  draft.drawPile = shuffled.items;
+  const weight = assistFor(draft.assist, beneficiary);
+  draft.drawPile =
+    weight > 0
+      ? frontLoadForDraw(
+          shuffled.items,
+          weight,
+          draft.hands[beneficiary] ?? [],
+          playContextFromDraft(draft),
+        ).slice()
+      : shuffled.items;
   draft.discardPile = [keep];
   events.push({ type: 'drawPileRecycled', count: shuffled.items.length });
+}
+
+/**
+ * Lifts one card out of the draw pile for `playerId`.
+ *
+ * The top card for everybody, and for a seat the table is leaning towards the best
+ * of the few beneath it — see {@link chooseDrawIndex}. A `splice` rather than a
+ * `shift`, so the pile loses exactly one card either way and the rest keep their
+ * order. Nobody can see a face-down pile, which is what makes this the quietest
+ * method here and the one that reaches the draws that matter: the penalties.
+ */
+function takeCard(draft: Draft, playerId: PlayerId): Card | undefined {
+  const weight = assistFor(draft.assist, playerId);
+  if (weight <= 0 || draft.drawPile.length <= 1) {
+    return draft.drawPile.shift();
+  }
+  const index = chooseDrawIndex(
+    draft.drawPile,
+    weight,
+    draft.hands[playerId] ?? [],
+    playContextFromDraft(draft),
+  );
+  return draft.drawPile.splice(index, 1)[0];
 }
 
 /** Draws `count` cards, recycling when needed. Returns how many were actually drawn. */
@@ -314,9 +418,9 @@ function drawCards(draft: Draft, playerId: PlayerId, count: number, events: Game
   let drawn = 0;
   for (let i = 0; i < count; i += 1) {
     if (draft.drawPile.length === 0) {
-      recycleDrawPile(draft, events);
+      recycleDrawPile(draft, playerId, events);
     }
-    const card = draft.drawPile.shift();
+    const card = takeCard(draft, playerId);
     if (!card) {
       events.push({ type: 'drawPileExhausted' });
       break;

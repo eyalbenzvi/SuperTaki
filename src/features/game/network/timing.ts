@@ -168,6 +168,57 @@ export const CAUGHT_NOTICE_MS = 8_000;
 export const LAST_CARD_GRACE_MS = 200;
 
 /**
+ * How much longer that head start lasts for a seat the table is leaning towards,
+ * indexed by how far it is leaning.
+ *
+ * The four-card penalty for forgetting to shout is the harshest thing in the game
+ * and lands hardest on the youngest person at the table, who is also the one most
+ * likely to be looking at their cards rather than at the button. A second or two is
+ * enough for a parent's "last card!" to reach them and nowhere near enough to make
+ * a genuinely silent player safe: stay quiet and you are still caught, exactly as
+ * the rule says.
+ *
+ * This is the one method in the feature that another player can, in principle,
+ * meet — they tap, and the room says there is nobody to catch. What makes that
+ * survivable is that it is *already* the commonest outcome of tapping that button:
+ * a target who shouted a moment before produces the identical refusal, and has
+ * since long before any of this existed. It reads as having been beaten to it,
+ * because most of the time that is what it is.
+ */
+export const ASSIST_LAST_CARD_GRACE_MS = [0, 800, 1_600, 2_500] as const;
+
+/**
+ * How long `target` is protected from being called out by `catcher`.
+ *
+ * A leaned-towards catcher never waits at all. That is the other half of the same
+ * kindness and it costs nothing to anybody: the window exists to cover the moment
+ * between a hand reaching one card and a button appearing on other screens, and
+ * waiving it does not let anybody press a button that is not there — it only means
+ * that when they do reach it first, they win the race they were already in.
+ */
+export function catchGraceMs(targetWeight: number, catcherWeight: number): number {
+  if (catcherWeight > 0) {
+    return 0;
+  }
+  const steps = ASSIST_LAST_CARD_GRACE_MS.length - 1;
+  const index = Math.min(Math.max(Math.trunc(targetWeight) || 0, 0), steps);
+  return LAST_CARD_GRACE_MS + (ASSIST_LAST_CARD_GRACE_MS[index] as number);
+}
+
+/**
+ * How long *this* client holds its own "never declared!" button back.
+ *
+ * Sent to each player separately and about themselves only, which is what keeps it
+ * off the snapshot the whole table receives. It has to agree with
+ * {@link catchGraceMs} from the catcher's side or the button becomes a control that
+ * appears and then refuses — and it does agree, exactly, because both read the
+ * catcher's own weight and nothing else.
+ */
+export function ownCatchDelayMs(weight: number): number {
+  return weight > 0 ? 0 : LAST_CARD_GRACE_MS;
+}
+
+/**
  * How long a robot appears to think before it plays.
  *
  * Not decoration. A robot that answered in the same tick as the snapshot that
@@ -213,6 +264,25 @@ export const BOT_SEQUENCE_MAX_MS = 900;
  */
 export const BOT_DECLARE_MIN_MS = 0;
 export const BOT_DECLARE_MAX_MS = 100;
+
+/**
+ * The same, at a table that is leaning towards somebody.
+ *
+ * The range above exists so a robot cannot be farmed for four cards every round.
+ * That argument is about a table of equals, and it is the wrong argument at a table
+ * with a six-year-old at it: catching a robot out is one of the few moments in this
+ * game a small child can *win* on their own, without a card going their way, and a
+ * window they cannot physically reach is a moment they never get. So the pause goes
+ * back to something a person can beat — long enough to see the robot's hand come
+ * down to one card and reach for the button, short enough that an adult watching
+ * would call it thinking rather than waiting.
+ *
+ * Nothing is given away by it. The robot really does declare, it really is
+ * catchable for exactly as long as this lasts, and a table where nobody is leaned
+ * towards never sees these numbers at all.
+ */
+export const BOT_SOFT_DECLARE_MIN_MS = 900;
+export const BOT_SOFT_DECLARE_MAX_MS = 2_000;
 
 /**
  * Before a robot calls somebody else out.

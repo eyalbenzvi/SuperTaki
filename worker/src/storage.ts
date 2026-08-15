@@ -124,6 +124,25 @@ export const roomRecordSchema = z.object({
    * `emptySince`.
    */
   gameMode: z.enum(['classic', 'stairs']).default('classic'),
+  /**
+   * Who the table quietly leans towards, and how far. See `docs/assist.md`.
+   *
+   * The table's setting, and the round in play carries its own copy in `GameState` —
+   * the same split as `gameMode`, for the same reason. Kept here between rounds so
+   * that a room which hibernates overnight comes back still knowing which children
+   * it was being gentle with, rather than quietly becoming a fair table at the worst
+   * possible moment.
+   *
+   * Defaulted per the rule stated on `emptySince`: an older record must reload as a
+   * table that leans towards nobody, rather than be thrown away with every seat in
+   * it.
+   */
+  assist: z
+    .object({
+      level: z.enum(['off', 'light', 'medium', 'strong']),
+      playerIds: z.array(playerId).max(6),
+    })
+    .default({ level: 'off', playerIds: [] }),
   /** Highest state version this room has ever broadcast. */
   versionFloor: z.number().int().nonnegative(),
   /** Rounds dealt so far, so the starting seat rotates. */
@@ -212,6 +231,16 @@ export const gameStateSchema = z.object({
     .array(z.object({ id: playerId, name: z.string().min(1).max(32), left: z.boolean().optional() }))
     .min(2)
     .max(6),
+  /**
+   * How far this round's deal and draw pile lean towards each seat.
+   *
+   * Defaulted to nothing, which is the value that makes an older record behave as
+   * it did before the field existed — a round dealt without any lean carries on
+   * being drawn without one. Stored with the *round* rather than read back off the
+   * room on every command, so a hand dealt generously cannot be drawn into meanly
+   * because somebody opened the settings mid-round.
+   */
+  assist: z.record(playerId, z.number().int().min(0).max(3)).default({}),
   hands: z.record(playerId, z.array(cardSchema).max(200)),
   drawPile: z.array(cardSchema).max(200),
   discardPile: z.array(cardSchema).max(200),

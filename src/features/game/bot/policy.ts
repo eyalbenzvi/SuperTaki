@@ -1,3 +1,4 @@
+import { assistFor } from '../engine/assist.ts';
 import { CARD_COLORS, cardColor, type Card, type CardColor } from '../engine/cards.ts';
 import { isCardPlayable } from '../engine/rules.ts';
 import { playContextFromPublic, type PublicGameState } from '../engine/views.ts';
@@ -104,21 +105,74 @@ function activeSeatCount(table: PublicGameState): number {
   return table.players.filter((player) => player.left !== true).length;
 }
 
-/** How many cards the seat that would move next is holding. */
-function nextPlayerCardCount(table: PublicGameState): number {
+/** The seat that would move next, or `null` when there is nobody to name. */
+function nextPlayer(table: PublicGameState): PublicGameState['players'][number] | null {
   const players = table.players;
   const index = players.findIndex((player) => player.id === table.currentPlayerId);
   if (index < 0) {
-    return Number.POSITIVE_INFINITY;
+    return null;
   }
   for (let step = 1; step <= players.length; step += 1) {
     const at = (((index + step * table.direction) % players.length) + players.length) % players.length;
     const candidate = players[at];
     if (candidate && candidate.left !== true && candidate.id !== table.currentPlayerId) {
-      return candidate.cardCount;
+      return candidate;
     }
   }
-  return Number.POSITIVE_INFINITY;
+  return null;
+}
+
+/** How many cards the seat that would move next is holding. */
+function nextPlayerCardCount(table: PublicGameState): number {
+  return nextPlayer(table)?.cardCount ?? Number.POSITIVE_INFINITY;
+}
+
+/**
+ * How gently this robot has been asked to treat the seat about to be hit, and the
+ * gentlest it has been asked to be with anybody still in the round.
+ *
+ * Two numbers because two kinds of card need them. A +2 or a Stop lands on one
+ * person, so what matters is who is next. A +3 lands on the whole table, so what
+ * matters is whether anybody it would land on is somebody the table is looking
+ * after. Both are nought at an ordinary table, and every use of them below is
+ * written so that nought changes nothing.
+ */
+function leniencyAhead(view: BotView): number {
+  const next = nextPlayer(view.table);
+  return next === null ? 0 : assistFor(view.lenientToward, next.id);
+}
+
+function leniencyAtTable(view: BotView): number {
+  let most = 0;
+  for (const player of view.table.players) {
+    if (player.left !== true) {
+      most = Math.max(most, assistFor(view.lenientToward, player.id));
+    }
+  }
+  return most;
+}
+
+/**
+ * How often the robot takes the second-best card instead of the best one.
+ *
+ * The most human-looking of every method in this feature and the only one that
+ * cannot be caught, because there is nothing to catch: a robot that plays a good
+ * card instead of the perfect one is indistinguishable from a robot, a cousin or
+ * anybody else at the table. It is deliberately *not* a robot that plays badly —
+ * the second-best card is still a real move, so the table stays worth beating.
+ *
+ * Nought at a light lean: the first step of the dial is meant to be all luck and no
+ * charity.
+ */
+function slackChance(lenience: number): number {
+  switch (lenience) {
+    case 2:
+      return 0.25;
+    case 3:
+      return 0.5;
+    default:
+      return 0;
+  }
 }
 
 /**
@@ -131,18 +185,35 @@ function nextPlayerCardCount(table: PublicGameState): number {
 function scoreCard(card: Card, view: BotView): number {
   const { table, hand } = view;
   const counts = colorCounts(hand);
-  const pressure = nextPlayerCardCount(table) <= 3;
+  /*
+   * The three punishing cards, and the one thing leniency changes about them: they
+   * stop being worth *more* against somebody who is nearly out and start being worth
+   * less than anything else in the hand. Not forbidden — a hand holding nothing else
+   * still plays one, because a robot that could not take its turn would stop the
+   * table — just ranked below every ordinary card, which is the difference between a
+   * robot that spares a child and a robot that cannot hurt one.
+   *
+   * Below `colorChange`'s 1, so the demotion is never a tie with a card the robot
+   * would otherwise have hoarded, and one step lower for each turn of the dial.
+   */
+  const ahead = leniencyAhead(view);
+  const pressure = ahead === 0 && nextPlayerCardCount(table) <= 3;
 
   switch (card.kind) {
-    case 'plusThree':
-      // Every other seat draws three unless somebody answers with a breaker.
-      return 9;
+    case 'plusThree': {
+      // Every other seat draws three unless somebody answers with a breaker — which
+      // is why this one asks about the whole table rather than the next seat.
+      const shared = leniencyAtTable(view);
+      return shared > 0 ? 1 - shared : 9;
+    }
     case 'plusTwo':
-      return pressure ? 8 : 7;
+      return ahead > 0 ? 1 - ahead : pressure ? 8 : 7;
     case 'stop':
       // With two players a Stop comes straight back round: it is an extra turn,
-      // not a way of picking on the next seat.
-      return activeSeatCount(table) === 2 ? 8 : pressure ? 7 : 5;
+      // not a way of picking on the next seat. Which is exactly why it is demoted
+      // when the next seat is one the table is looking after: at two players the
+      // extra turn *is* the harm.
+      return ahead > 0 ? 1 - ahead : activeSeatCount(table) === 2 ? 8 : pressure ? 7 : 5;
     case 'taki': {
       // A sequence is worth what follows it: every other card of that colour.
       const followers = Math.max(counts[card.color] - 1, 0);
@@ -214,19 +285,31 @@ function candidates(view: BotView): Card[] {
   return view.hand.filter((card) => card.kind !== 'breakPlusThree' && isCardPlayable(card, context));
 }
 
-/** Picks one of the joint-best cards, so two robots do not play in lockstep. */
+/**
+ * Picks one of the joint-best cards, so two robots do not play in lockstep.
+ *
+ * At a table that is leaning towards somebody, it sometimes picks one of the
+ * joint-*second*-best instead — see {@link slackChance}. The extra draw from the
+ * seat's stream is taken only when there is a real chance of using it, so an
+ * ordinary table consumes exactly the randomness it always did and replays exactly
+ * as it always did.
+ */
 function pickBest(cards: readonly Card[], view: BotView, random: () => number): Card {
-  let best: Card[] = [];
-  let bestScore = Number.NEGATIVE_INFINITY;
+  const tiers = new Map<number, Card[]>();
   for (const card of cards) {
     const score = scoreCard(card, view);
-    if (score > bestScore) {
-      bestScore = score;
-      best = [card];
-    } else if (score === bestScore) {
-      best.push(card);
+    const tier = tiers.get(score);
+    if (tier) {
+      tier.push(card);
+    } else {
+      tiers.set(score, [card]);
     }
   }
+  const scores = [...tiers.keys()].sort((a, b) => b - a);
+  const slack = slackChance(leniencyAtTable(view));
+  const tier =
+    slack > 0 && scores.length > 1 && random() < slack ? (scores[1] as number) : (scores[0] as number);
+  const best = tiers.get(tier) as Card[];
   const index = Math.min(Math.floor(random() * best.length), best.length - 1);
   return best[index] as Card;
 }
@@ -317,6 +400,13 @@ function winningCard(view: BotView): Card | null {
  * Absence is the one exception, and it is not the robot's kindness: somebody who
  * is not there cannot shout, so calling them out would be farming rather than
  * catching. A seat a robot is playing counts as present — it can shout.
+ *
+ * A seat the table is leaning towards is the second exception, and that one *is*
+ * kindness. Four cards for forgetting to shout is the harshest thing in the game
+ * and the one a small child forgets most reliably, so a robot that enforced it
+ * would undo, in a single call, everything the deal and the draw pile had quietly
+ * done all round. The humans at the table may still call them out, which is the
+ * point: the rule survives, and only the machine stops policing it.
  */
 function silentSeat(view: BotView): string | null {
   for (const player of view.table.players) {
@@ -324,6 +414,7 @@ function silentSeat(view: BotView): string | null {
     if (
       player.id !== view.playerId &&
       player.left !== true &&
+      assistFor(view.lenientToward, player.id) === 0 &&
       present &&
       player.cardCount === 1 &&
       !view.table.declaredLastCard.includes(player.id)

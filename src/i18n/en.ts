@@ -338,6 +338,27 @@ export const en = {
   'robot.standInHint':
     'When somebody stops answering, a robot plays their hand so the round keeps moving. They get their seat back the moment they come back.',
   'robot.standInOff': 'A missing player draws a card, their turn is passed, and nobody plays their hand.',
+
+  /*
+   * The easements, written for the one person who can read them.
+   *
+   * Every string here has to do two jobs at once: tell a parent exactly what they
+   * are switching on, and give a child reading over their shoulder nothing to go
+   * on. So the heading names no child and no mechanism, and the body says the one
+   * thing that makes the feature defensible — that the rules of the game do not
+   * move — which is also the least interesting sentence on the screen.
+   */
+  'assist.title': 'Evening the table',
+  'assist.body':
+    'For a table with a much younger player at it. Their cards fall a little kinder and the robots go a little easier on them. The rules of the game do not change, nobody is told, and nothing on anybody\u2019s screen looks different.',
+  'assist.whoLabel': 'Who',
+  'assist.levelLabel': 'How much',
+  'assist.light': 'A little',
+  'assist.medium': 'Some',
+  'assist.strong': 'A lot',
+  'assist.onHint':
+    'Applies from the next deal. It cannot cover everybody at the table — a table that all leans the same way is simply a table.',
+  'assist.offHint': 'Pick a player to turn this on. It cannot be everybody, and it cannot be you.',
   'robot.playingFor': 'A robot is playing for {name}',
   'robot.playingForBody':
     'Their hand is being played until they come back. It is their seat, not the robot\u2019s.',

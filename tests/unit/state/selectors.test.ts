@@ -24,6 +24,7 @@ import type { AppState } from '../../../src/features/game/state/store.ts';
 import type { Card } from '../../../src/features/game/engine/cards.ts';
 import type { PublicGameState } from '../../../src/features/game/engine/views.ts';
 import type { LobbySnapshot } from '../../../src/features/game/network/protocol.ts';
+import { LAST_CARD_GRACE_MS } from '../../../src/features/game/network/timing.ts';
 
 const red5: Card = { id: 'c1', kind: 'number', color: 'red', value: 5 };
 const blue3: Card = { id: 'c2', kind: 'number', color: 'blue', value: 3 };
@@ -99,6 +100,7 @@ function state(patch: Partial<AppState> = {}): AppState {
     pausedBy: null,
     nudge: null,
     caught: null,
+    assist: { catchDelayMs: LAST_CARD_GRACE_MS, settings: null },
     actionPending: false,
     leaveIntent: false,
     online: true,

@@ -249,6 +249,52 @@ describe('lobby', () => {
   });
 });
 
+/*
+ * The one control on this screen that everybody else must never find.
+ *
+ * It sits inside the creator-only settings panel, behind a disclosure of its own,
+ * and it is rendered from what the room sent back rather than from the last tap —
+ * so a screen that was told nothing shows nothing, which is exactly what every
+ * screen but one is told.
+ */
+describe('the easements', () => {
+  it('is offered to the seat holding the buttons', async () => {
+    const setAssist = vi.fn();
+    enterLobby({ setAssist, assist: { catchDelayMs: 200, settings: { level: 'off', playerIds: [] } } });
+    const { user } = renderApp();
+
+    await user.click(screen.getByText('הגדרות החדר'));
+    await user.click(screen.getByText('איזון השולחן'));
+    // Only the other seat: nobody may hand themselves an advantage.
+    expect(screen.getByRole('button', { name: 'אלי' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'דנה' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'אלי' }));
+    // The first name turned on has to name a strength too, or the room reads it as off.
+    expect(setAssist).toHaveBeenCalledWith('light', [GUEST_ID]);
+  });
+
+  it('shows the room’s answer rather than the request', async () => {
+    enterLobby({
+      assist: { catchDelayMs: 200, settings: { level: 'strong', playerIds: [GUEST_ID] } },
+    });
+    const { user } = renderApp();
+
+    await user.click(screen.getByText('הגדרות החדר'));
+    await user.click(screen.getByText('איזון השולחן'));
+    expect(screen.getByRole('button', { name: 'אלי' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('radio', { name: 'הרבה' })).toBeChecked();
+  });
+
+  it('is nowhere on anybody else’s screen', () => {
+    // Their store was never told: the room sends the list to one connection only.
+    enterLobby({ localPlayerId: GUEST_ID });
+    renderApp();
+    expect(screen.queryByText('הגדרות החדר')).not.toBeInTheDocument();
+    expect(screen.queryByText('איזון השולחן')).not.toBeInTheDocument();
+  });
+});
+
 describe('sharing the invite', () => {
   it('copies the link and confirms it', async () => {
     enterLobby();

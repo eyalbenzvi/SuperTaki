@@ -28,6 +28,12 @@ hands. Rounds won are kept as a running score for as long as the room is open. T
 the engine implements are in [docs/rules.md](docs/rules.md); the app has no rules page, so read
 that if a card's behaviour is not what you expected.
 
+A table with a much younger player at it can be quietly **evened out**: the person who opened
+the room can mark some of the other players — never all of them, and never themselves — and
+their cards fall a little kinder while the robots go a little easier on them. No rule changes,
+no count anybody can see is different, and nobody at the table is told, including the child it
+is for. See [docs/assist.md](docs/assist.md).
+
 ---
 
 ## Table of contents
@@ -345,6 +351,7 @@ no UI imports, and the UI holds no game rules.
 - [docs/protocol.md](docs/protocol.md) — message envelope, every message type, validation, versioning, examples
 - [docs/rules.md](docs/rules.md) — exact deck, exact rules, +2 runs, the King, the +3 breaker window, game modes and the running score, decisions where editions disagree (bilingual)
 - [docs/robots.md](docs/robots.md) — robot players: what they know, how they play, when one covers a human seat
+- [docs/assist.md](docs/assist.md) — easements: how a table can lean towards a much younger player without changing a rule or telling anybody
 - [docs/threat-model.md](docs/threat-model.md) — what a malicious client can and cannot do, and what the operator can see
 - [docs/deployment.md](docs/deployment.md) — GitHub Pages step by step
 - [docs/qa-report.md](docs/qa-report.md) — what was tested, coverage, manual checklist, known limitations

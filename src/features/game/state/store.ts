@@ -4,11 +4,12 @@ import { releaseSound, setSoundEnabled, unlockSound } from '../../../lib/audio.t
 import { createLogger } from '../../../lib/logger.ts';
 import { sanitizeDisplayName } from '../../../lib/sanitize.ts';
 import type { Card } from '../engine/cards.ts';
+import type { AssistLevel } from '../engine/assist.ts';
 import type { GameEvent, GameMode, RejectionCode } from '../engine/state.ts';
 import type { PublicGameState } from '../engine/views.ts';
 import { ClientSession } from '../network/clientSession.ts';
 import type { ChannelFactory } from '../network/roomTransport.ts';
-import type { GameAction, LobbySnapshot, RoomCommand } from '../network/protocol.ts';
+import type { AssistSettings, GameAction, LobbySnapshot, RoomCommand } from '../network/protocol.ts';
 import { buildInviteUrl, generateRoomCode } from '../network/roomCode.ts';
 import { RoomError } from '../network/roomTransport.ts';
 import {
@@ -19,7 +20,7 @@ import {
   type SessionError,
   type SessionUpdate,
 } from '../network/session.ts';
-import { ACTION_LOCK_MS } from '../network/timing.ts';
+import { ACTION_LOCK_MS, LAST_CARD_GRACE_MS } from '../network/timing.ts';
 import {
   applyLanguage,
   applyTheme,
@@ -120,6 +121,20 @@ export interface AppState {
     readonly nonce: number;
   } | null;
 
+  /**
+   * The easements, as far as this client is told about them.
+   *
+   * `settings` is populated only on the creator's device, because the room only
+   * sends it there — every other player's copy stays `null` for the life of the
+   * room, and there is no derivation that would fill it in. `catchDelayMs` is how
+   * long this player's own "never declared!" button waits, which is about them and
+   * says nothing about anybody else. See `docs/assist.md`.
+   */
+  assist: {
+    readonly catchDelayMs: number;
+    readonly settings: AssistSettings | null;
+  };
+
   /** True from the moment a move is submitted until the table answers. */
   actionPending: boolean;
   /** Set when the player asks to leave; the shell owns the confirmation. */
@@ -165,6 +180,8 @@ export interface AppActions {
   readonly addBot: () => void;
   /** Whether a robot may play a seat nobody is answering for. */
   readonly setStandInEnabled: (enabled: boolean) => void;
+  /** Sets who the table quietly leans towards. Lobby only, and creator only. */
+  readonly setAssist: (level: AssistLevel, playerIds: readonly string[]) => void;
   /** Puts a robot on somebody's seat now, rather than waiting. */
   readonly standInNow: (playerId: string) => void;
   /** Hands a seat back from the robot playing it. */
@@ -269,6 +286,12 @@ export function __setChannelFactoryForTests(next: ChannelFactory | null): void {
   channelFactory = next;
 }
 
+/** What every client believes before the room has told it anything. */
+const NO_ASSIST_STATE = {
+  catchDelayMs: LAST_CARD_GRACE_MS,
+  settings: null,
+} as const;
+
 function initialState(): AppState {
   const language = loadLanguage();
   const theme = loadTheme();
@@ -297,6 +320,7 @@ function initialState(): AppState {
     pausedBy: null,
     nudge: null,
     caught: null,
+    assist: NO_ASSIST_STATE,
     actionPending: false,
     leaveIntent: false,
     online: typeof navigator === 'undefined' || navigator.onLine !== false,
@@ -321,6 +345,12 @@ const CLEARED_SESSION: Partial<AppState> = {
   leaveIntent: false,
   pausedBy: null,
   caught: null,
+  /*
+   * Cleared with the session, and not merely tidiness: a creator's list belongs to
+   * the room it was set in, and carrying one into the next room would show the next
+   * table's host a list of children who are not at it.
+   */
+  assist: NO_ASSIST_STATE,
 };
 
 function screenForLobbyPhase(phase: LobbySnapshot['phase']): Screen {
@@ -500,6 +530,21 @@ export const useAppStore = create<AppStore>((set, get) => {
       case 'nudged':
         nudgeCounter += 1;
         set({ nudge: { fromPlayerId: update.fromPlayerId, nonce: nudgeCounter } });
+        return;
+      case 'assist':
+        /*
+         * `settings` is kept when a later message omits it rather than being cleared
+         * by it. The room sends the list only to the seat holding the buttons, and
+         * only that field is conditional — so an update with no list means "not for
+         * you", which for the creator's own device never happens, and for anybody
+         * else's leaves a `null` exactly as null.
+         */
+        set((state) => ({
+          assist: {
+            catchDelayMs: update.catchDelayMs,
+            settings: update.settings ?? state.assist.settings,
+          },
+        }));
         return;
       case 'playAgain':
         set({ playAgain: { agreed: update.agreed, required: update.required } });
@@ -801,6 +846,17 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     setStandInEnabled: (enabled) => {
       command({ type: 'setStandInEnabled', enabled });
+    },
+
+    setAssist: (level, playerIds) => {
+      /*
+       * Sent, and then waited for. The room decides what the list actually becomes —
+       * it drops the creator's own seat, ignores robots, and refuses a list that
+       * covers the whole table — so echoing the request into the store locally would
+       * show a host their own request rather than the setting. `assistState` comes
+       * back either way.
+       */
+      command({ type: 'setAssist', level, playerIds: [...playerIds] });
     },
 
     standInNow: (playerId) => {

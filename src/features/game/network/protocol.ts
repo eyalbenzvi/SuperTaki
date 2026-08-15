@@ -9,6 +9,7 @@ import { DISPLAY_NAME_MAX_LENGTH } from '../../../lib/sanitize.ts';
  * behaviour we already get, without weakening the policy or the console noise.
  */
 z.config({ jitless: true });
+import { ASSIST_LEVELS } from '../engine/assist.ts';
 import type { Card } from '../engine/cards.ts';
 import { REJECTION_CODES } from '../engine/state.ts';
 
@@ -120,6 +121,29 @@ const rejectionCodeSchema = z.enum(REJECTION_CODES);
 const gameModeSchema = z.enum(['classic', 'stairs']);
 /** Hands emptied so far, out of the eight a staircase has. */
 const stairsStepSchema = z.number().int().min(0).max(8);
+
+const assistLevelSchema = z.enum(ASSIST_LEVELS);
+
+/**
+ * Who the table is quietly leaning towards, and how far.
+ *
+ * The one thing in this protocol that is deliberately *not* in the lobby snapshot.
+ * Everything else a table decides — its size, its mode, whether robots may cover a
+ * seat — is broadcast to every player, on the argument that a fact about the table
+ * belongs to everybody at it. This is the exception, and the exception is the
+ * feature: an easement that is announced is not an easement, it is a label, and the
+ * child wearing it would rather have lost.
+ *
+ * So it travels in a message of its own, sent to one seat — see `assistState` — and
+ * every screen that is not the creator's is told nothing whatever. See
+ * `docs/assist.md`.
+ */
+export const assistSettingsSchema = z.object({
+  level: assistLevelSchema,
+  /** Seats the table is leaning towards. Never all of them; the room refuses that. */
+  playerIds: z.array(playerIdSchema).max(6).readonly(),
+});
+export type AssistSettings = z.infer<typeof assistSettingsSchema>;
 
 export const takiModeSchema = z.object({
   color: colorSchema,
@@ -494,6 +518,19 @@ export const roomCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('kickPlayer'), playerId: playerIdSchema }),
   z.object({ type: z.literal('addBot') }),
   z.object({ type: z.literal('setStandInEnabled'), enabled: z.boolean() }),
+  /**
+   * Sets who the table leans towards, and how far.
+   *
+   * The lobby only, exactly like `setGameMode` and for the same reason twice over: a
+   * round is dealt the way it is dealt, so a change mid-round would do nothing to the
+   * round in play — and the whole point is that nothing about it is visible, which a
+   * change that took effect halfway through a hand would not stay.
+   */
+  z.object({
+    type: z.literal('setAssist'),
+    level: assistLevelSchema,
+    playerIds: z.array(playerIdSchema).max(6),
+  }),
   z.object({ type: z.literal('standInNow'), playerId: playerIdSchema }),
   z.object({ type: z.literal('stopStandIn'), playerId: playerIdSchema }),
   /** Passes the turn of a seat that is not there. Never reaches the engine from a client. */
@@ -601,6 +638,27 @@ export const roomMessageSchema = z.discriminatedUnion('type', [
   message('paused', z.object({ pausedBy: playerIdSchema.nullable() })),
   /** Somebody nudged this player: it is their turn and they may not have noticed. */
   message('nudged', z.object({ fromPlayerId: playerIdSchema })),
+  /**
+   * What this one client is told about the table's easements, which is almost
+   * nothing.
+   *
+   * Two fields with two very different audiences. `catchDelayMs` goes to everybody
+   * and is about the recipient alone — how long their own "never declared!" button
+   * waits before it works — so it names nobody and reveals nobody. `settings` is the
+   * list itself and goes to the seat holding the lobby buttons and to no other, so
+   * that the person running the table can change it and nobody else can read it.
+   *
+   * Sent per connection rather than broadcast, which is the structural half of the
+   * promise: there is no code path that puts this in a message more than one player
+   * receives.
+   */
+  message(
+    'assistState',
+    z.object({
+      catchDelayMs: z.number().int().min(0).max(60_000),
+      settings: assistSettingsSchema.optional(),
+    }),
+  ),
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;

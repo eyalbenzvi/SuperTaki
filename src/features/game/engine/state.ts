@@ -1,3 +1,4 @@
+import type { AssistWeights } from './assist.ts';
 import type { Card, CardColor, CardId } from './cards.ts';
 import type { RngState } from './prng.ts';
 
@@ -120,6 +121,21 @@ export interface GameState {
    */
   readonly stairs: Readonly<Record<PlayerId, number>>;
   readonly players: readonly EnginePlayer[];
+  /**
+   * How far the deal and the draw pile lean towards each seat. See `assist.ts`.
+   *
+   * A property of the *round*, exactly as `mode` is, and fixed by the same argument:
+   * a round is dealt the way it is dealt. The alternative — reading it out of the
+   * room on every command — would mean a hand dealt generously could be drawn into
+   * meanly halfway through, at the moment somebody happened to change a setting, and
+   * a replayed round would depend on something outside the state it replays from.
+   *
+   * Private information, and more sharply so than the hands beside it: a hand is
+   * secret until it is played, this is secret for good. It has no projection in
+   * `views.ts` and it is never any part of what a client is sent — see
+   * `docs/assist.md`.
+   */
+  readonly assist: AssistWeights;
   /** Hands keyed by player id. Private information. */
   readonly hands: Readonly<Record<PlayerId, readonly Card[]>>;
   /** Face-down pile; index 0 is the next card to be drawn. */

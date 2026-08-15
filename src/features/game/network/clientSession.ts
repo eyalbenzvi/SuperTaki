@@ -634,6 +634,13 @@ export class ClientSession implements Session {
           required: message.payload.required,
         });
         return;
+      case 'assistState':
+        this.observer({
+          type: 'assist',
+          catchDelayMs: message.payload.catchDelayMs,
+          ...(message.payload.settings ? { settings: message.payload.settings } : {}),
+        });
+        return;
       case 'paused':
         this.observer({ type: 'paused', pausedBy: message.payload.pausedBy });
         return;

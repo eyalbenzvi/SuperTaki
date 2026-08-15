@@ -86,6 +86,11 @@ export function GameScreen(): ReactNode {
    * and re-render every seat — the exact cost that memo exists to avoid.
    */
   const beat = useAppStore((state) => state.beat);
+  /*
+   * Its own selector for the same reason as `beat`: a number that changes once a
+   * round has no business re-identifying `table` on every move.
+   */
+  const catchDelayMs = useAppStore((state) => state.assist.catchDelayMs);
   const playCard = useAppStore((state) => state.playCard);
   const drawCard = useAppStore((state) => state.drawCard);
   const closeTaki = useAppStore((state) => state.closeTaki);
@@ -137,7 +142,10 @@ export function GameScreen(): ReactNode {
         (event.type === 'cardDrawn' && event.playerId === table.localPlayerId) ||
         (event.type === 'lastCardCaught' && event.playerId === table.localPlayerId),
     ) ?? false;
-  const seats = useCatchGrace(useMemo(() => opponents(table), [table]));
+  const seats = useCatchGrace(
+    useMemo(() => opponents(table), [table]),
+    catchDelayMs,
+  );
   const turnName = currentPlayerName(table);
 
   useEffect(

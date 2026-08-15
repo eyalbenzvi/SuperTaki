@@ -59,6 +59,8 @@ export function players(...names: string[]): EnginePlayer[] {
 export interface StateOverrides {
   players?: EnginePlayer[];
   mode?: GameState['mode'];
+  /** How far the table leans towards each seat. Defaults to not at all. */
+  assist?: GameState['assist'];
   /** Hands already emptied, for a stairs round. Defaults to nought for every seat. */
   stairs?: Record<PlayerId, number>;
   hands?: Record<PlayerId, Card[]>;
@@ -99,6 +101,7 @@ export function makeState(overrides: StateOverrides = {}): GameState {
     mode: overrides.mode ?? 'classic',
     stairs,
     players: list,
+    assist: overrides.assist ?? {},
     hands,
     drawPile: overrides.drawPile ?? cards('green:4', 'green:5', 'green:6'),
     discardPile,
